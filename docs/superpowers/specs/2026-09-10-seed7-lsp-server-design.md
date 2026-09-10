@@ -108,7 +108,12 @@ exception
 end block;
 ```
 
-which converts a crash into a JSON-RPC internal error plus a stderr line, and a live server.
+which converts a crash into a JSON-RPC internal error plus a stderr line, and a live
+server. The catchable set is fixed by `seed7_05.s7i:277-291`: MEMORY_ERROR,
+ASSERTION_ERROR, NUMERIC_ERROR, OVERFLOW_ERROR, RANGE_ERROR, INDEX_ERROR, FILE_ERROR,
+DATABASE_ERROR, GRAPHIC_ERROR, ILLEGAL_ACTION, CREATE_ERROR, DESTROY_ERROR, COPY_ERROR,
+IN_ERROR. There is no `SIZE_ERROR` and no catch-all clause, so `ILLEGAL_ACTION` must be
+listed explicitly — it is what `string(jsonValue)` raises on a non-string value.
 
 Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~25 ms; upgrade path is one cached `program` per document version if typing ever measurably lags.
 
@@ -141,7 +146,8 @@ Hover prose comes from the `(** ... *)` comment immediately preceding a declarat
 No editor is required to test any of this, which is the point of the module split.
 
 - `tests/<module>_test.sd7` — assert-based unit checks, run by `make test`, printing `ok`/`FAIL` and exiting non-zero on failure. Coverage where the logic is: `utf8Length` (ascii/latin/CJK/emoji boundaries), `doc_store` position round-trips including astral characters and CRLF, `scan` on nested `(* (* *) *)`, `#` comments, string/char escapes, radix numbers, `$`/`#` pragma lines; diagnostics mapping (dedupe, col=0, EOF downgrade, cap).
-- `tests/transcript.sd7` — golden runner: feed a scripted frame stream (initialize → didOpen → didChange → hover/definition/completion → shutdown → exit) through `transport.sd7`+`rpc.sd7`+dispatch, compare normalised JSON to `tests/golden/*.json`. This is the conformance harness every client-facing change must pass.
+- `tests/transcript.py` — golden runner (python3, so no child-process plumbing in
+  Seed7; the product itself stays Seed7-only): feed a scripted frame stream (initialize → didOpen → didChange → hover/definition/completion → shutdown → exit) through `transport.sd7`+`rpc.sd7`+dispatch, compare normalised JSON to `tests/golden/*.json`. This is the conformance harness every client-facing change must pass.
 - `tests/programs/` — tiny `.sd7`/`.s7i` fixtures with expected diagnostics, including a truncated file and one with a deliberate type error.
 - One explicit check that `str()` never appears in serialization paths, so the §3.2 trap cannot regress.
 
