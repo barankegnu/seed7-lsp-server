@@ -1,0 +1,15 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "transport.sd7";
+
+const proc: main is func
+  begin
+    check("ascii",     str(utf8Length("hello")),  "5");
+    check("latin",     str(utf8Length("ä")),      "2");
+    check("euro",      str(utf8Length("€")),      "3");
+    check("cjk",       str(utf8Length("日本")),    "6");
+    check("astral",    str(utf8Length("𐐀")),       "4");
+    check("mixed",     str(utf8Length("ä€ 日本")), "12");
+    check("empty",     str(utf8Length("")),       "0");
+    report("transport");
+  end func;

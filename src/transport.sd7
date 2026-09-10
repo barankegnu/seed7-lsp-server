@@ -1,0 +1,51 @@
+$ include "seed7_05.s7i";
+  include "utf8.s7i";
+
+const func integer: utf8Length (in string: stri) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: i is 0;
+    var integer: cp is 0;
+  begin
+    for i range 1 to length(stri) do
+      cp := ord(stri[i]);
+      if cp < 128 then
+        n +:= 1;
+      elsif cp < 2048 then
+        n +:= 2;
+      elsif cp < 65536 then
+        n +:= 3;
+      else
+        n +:= 4;
+      end if;
+    end for;
+  end func;
+
+const proc: writeMessage (in string: body) is func
+  begin
+    write(STD_UTF8_OUT, "Content-Length: " <& utf8Length(body) <& "\r\n\r\n" <& body);
+    flush(STD_UTF8_OUT);
+  end func;
+
+const func boolean: readMessage (inout string: body) is func
+  result
+    var boolean: okay is FALSE;
+  local
+    var string: line is "";
+    var integer: contentLength is 0;
+  begin
+    if hasNext(STD_UTF8_IN) then
+      line := getln(STD_UTF8_IN);
+      while line <> "" and hasNext(STD_UTF8_IN) do
+        if startsWith(line, "Content-Length: ") then
+          contentLength := integer(line[17 ..]);
+        end if;
+        line := getln(STD_UTF8_IN);
+      end while;
+      if contentLength <> 0 then
+        body := gets(STD_UTF8_IN, contentLength);
+        okay := length(body) <> 0;
+      end if;
+    end if;
+  end func;

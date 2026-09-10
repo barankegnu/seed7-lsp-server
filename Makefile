@@ -1,6 +1,6 @@
 S7      ?= s7
 SRC     := src
-TESTS   := jsonw
+TESTS   := jsonw transport
 
 .PHONY: test server $(addprefix test-,$(TESTS))
 
