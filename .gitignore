@@ -56,3 +56,6 @@ dkms.conf
 
 # Local git worktrees
 .worktrees
+
+# SDD scratch (ledger, briefs, review packages)
+.superpowers
