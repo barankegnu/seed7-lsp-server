@@ -1,0 +1,96 @@
+$ include "seed7_05.s7i";
+
+const type: lsDoc is new struct
+    var string: text is "";
+    var integer: version is 0;
+    var array integer: lineStart is 1 times 1;
+  end struct;
+
+const func array integer: lineStarts (in string: text) is func
+  result
+    var array integer: starts is 1 times 1;
+  local
+    var integer: i is 0;
+  begin
+    starts := 1 times 1;
+    for i range 1 to length(text) do
+      if text[i] = '\n' then
+        if i = 1 or text[pred(i)] <> '\r' then
+          starts &:= succ(i);
+        end if;
+      elsif text[i] = '\r' then
+        if i < length(text) and text[succ(i)] = '\n' then
+          starts &:= succ(succ(i));
+        else
+          starts &:= succ(i);
+        end if;
+      end if;
+    end for;
+  end func;
+
+const func integer: utf16Before (in string: text, in integer: stop) is func
+  result
+    var integer: units is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to pred(stop) do
+      if i > length(text) then
+        units +:= 0;
+      elsif ord(text[i]) >= 65536 then
+        units +:= 2;
+      else
+        units +:= 1;
+      end if;
+    end for;
+  end func;
+
+const func integer: lineWidth (in string: text, in integer: start) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: i is 0;
+  begin
+    i := start;
+    while i <= length(text) and text[i] <> '\n' and text[i] <> '\r' do
+      i +:= 1;
+      n +:= 1;
+    end while;
+  end func;
+
+const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
+  begin
+    doc.text := text;
+    doc.version := version;
+    doc.lineStart := lineStarts(text);
+  end func;
+
+const func integer: lineCount (in lsDoc: doc) is
+  return length(doc.lineStart);
+
+const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: column1) is func
+  result
+    var string: out is "";
+  local
+    var integer: lineIdx is 0;
+    var integer: start is 1;
+    var integer: ch is 0;
+    var integer: width is 0;
+  begin
+    lineIdx := line1;
+    if lineIdx < 1 then
+      lineIdx := 1;
+    elsif lineIdx > lineCount(doc) then
+      lineIdx := lineCount(doc);
+    end if;
+    start := doc.lineStart[lineIdx];
+    width := lineWidth(doc.text, start);
+    ch := column1 - 1;
+    if ch < 0 then
+      ch := 0;
+    elsif ch > width then
+      ch := width;
+    end if;
+    out := "{\"line\":" <& lineIdx - 1 <& ",\"character\":" <&
+           utf16Before(doc.text, start + ch) - utf16Before(doc.text, start) <& "}";
+  end func;
