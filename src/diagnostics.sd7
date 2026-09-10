@@ -1,0 +1,81 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "jsonw.sd7";
+  include "rpc.sd7";
+
+const type: seenHash is hash [string] integer;
+
+const integer: SEV_ERROR is 1;
+const integer: SEV_WARNING is 2;
+const integer: SEV_INFORMATION is 3;
+
+const func array lspDiag: mapDiagnostics (in array lspDiag: raw,
+                                          in integer: maxPublish) is func
+  result
+    var array lspDiag: out is 0 times lspDiag.value;
+  local
+    var seenHash: seen is seenHash.EMPTY_HASH;
+    var integer: i is 0;
+    var lspDiag: diag is lspDiag.value;
+    var string: keyStr is "";
+  begin
+    for i range 1 to length(raw) do
+      diag := raw[i];
+      keyStr := str(diag.line1) & ":" <& diag.column1 <& ":" <& diag.message;
+      if keyStr in seen then
+        # duplicate from the analyzer's error recovery, drop it
+      elsif diag.message = "" then
+      elsif length(out) >= maxPublish then
+      else
+        seen @:= [keyStr] 1;
+        if diag.atEof then
+          diag.severity := SEV_INFORMATION;
+        else
+          diag.severity := SEV_ERROR;
+        end if;
+        out &:= diag;
+      end if;
+    end for;
+  end func;
+
+const func string: diagnosticsJson (in string: uri, in lsDoc: doc,
+                                    in array lspDiag: diags) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var integer: i is 0;
+  begin
+    openObject(w);
+      field(w, "uri"); addStr(w, uri);
+      field(w, "diagnostics");
+      openArray(w);
+        for i range 1 to length(diags) do
+          openObject(w);
+            field(w, "range");
+            openObject(w);
+              field(w, "start"); raw(w, lspRange(doc, diags[i].line1, diags[i].column1));
+              field(w, "end");
+              if diags[i].column1 > 0 then
+                raw(w, lspRange(doc, diags[i].line1, diags[i].column1 + 1));
+              else
+                raw(w, lspRange(doc, diags[i].line1, 2147483647));
+              end if;
+            closeObject(w);
+            field(w, "severity"); addInt(w, diags[i].severity);
+            field(w, "source");   addStr(w, "seed7");
+            field(w, "message");  addStr(w, diags[i].message);
+          closeObject(w);
+        end for;
+      closeArray(w);
+    closeObject(w);
+    out := finishJson(w);
+  end func;
+
+const proc: publish (in string: uri, in lsDoc: doc,
+                     in array lspDiag: diags) is func
+  begin
+    sendNotification("textDocument/publishDiagnostics",
+                     diagnosticsJson(uri, doc, diags));
+  end func;
