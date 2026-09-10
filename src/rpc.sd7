@@ -12,6 +12,7 @@ const type: rpcMsg is new struct
     var string: method is "";
     var integer: id is 0;
     var boolean: isRequest is FALSE;
+    var boolean: parseOkay is TRUE;
     var jsonValue: params is jsonValue.value;
   end struct;
 
@@ -82,7 +83,15 @@ const func rpcMsg: parseMessage (in string: body) is func
     var jsonValue: root is jsonValue.value;
     var jsonValue: idValue is jsonValue.value;
   begin
-    root := readJson(body);
+    block
+      root := readJson(body);
+    exception
+      catch RANGE_ERROR:    msg.parseOkay := FALSE;
+      catch INDEX_ERROR:    msg.parseOkay := FALSE;
+      catch ILLEGAL_ACTION: msg.parseOkay := FALSE;
+    end block;
+    if not msg.parseOkay then
+    else
     msg.method := strAt(root, "method", "");
     msg.params := atKey(root, "params");
     idValue := atKey(root, "id");
@@ -90,6 +99,23 @@ const func rpcMsg: parseMessage (in string: body) is func
     if msg.isRequest then
       msg.id := intAt(root, "id", 0);
     end if;
+    end if;
+  end func;
+
+const proc: sendParseError (in integer: code, in string: message) is func
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "jsonrpc"); addStr(w, "2.0");
+      field(w, "id");      raw(w, "null");
+      field(w, "error");
+      openObject(w);
+        field(w, "code");    addInt(w, code);
+        field(w, "message"); addStr(w, message);
+      closeObject(w);
+    closeObject(w);
+    writeMessage(finishJson(w));
   end func;
 
 const proc: sendResult (in integer: id, in string: resultJson) is func

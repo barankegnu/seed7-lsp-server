@@ -359,6 +359,44 @@ Expected: FAIL — `Include file "transport.sd7" not found`.
 $ include "seed7_05.s7i";
   include "utf8.s7i";
 
+const integer: MAX_FRAME_BYTES is 67108864;
+
+# TRUE once a frame arrived whose length cannot be trusted. Its end is then
+# unknowable, so the stream is finished -- continuing would silently desync.
+var boolean: framingFatal is FALSE;
+
+const func integer: headerNumber (in string: text) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: i is 0;
+    var boolean: parsable is TRUE;
+  begin
+    parsable := length(text) <> 0;
+    for i range 1 to length(text) do
+      if text[i] < '0' or text[i] > '9' then
+        parsable := FALSE;
+      end if;
+    end for;
+    if parsable then
+      block
+        n := integer(text);
+      exception
+        catch RANGE_ERROR: n := 0;
+        catch NUMERIC_ERROR: n := 0;
+      end block;
+      if n > MAX_FRAME_BYTES then
+        n := 0;
+        parsable := FALSE;
+      end if;
+    end if;
+    if not parsable then
+      framingFatal := TRUE;
+      writeln(STD_UTF8_ERR, "seed7-lsp: invalid Content-Length '" <& text <& "'");
+      n := 0;
+    end if;
+  end func;
+
 const func integer: utf8Length (in string: stri) is func
   result
     var integer: n is 0;
@@ -397,7 +435,7 @@ const func boolean: readMessage (inout string: body) is func
       line := getln(STD_UTF8_IN);
       while line <> "" and hasNext(STD_UTF8_IN) do
         if startsWith(line, "Content-Length: ") then
-          contentLength := integer(line[17 ..]);
+          contentLength := headerNumber(line[17 ..]);
         end if;
         line := getln(STD_UTF8_IN);
       end while;
@@ -675,6 +713,7 @@ const type: rpcMsg is new struct
     var string: method is "";
     var integer: id is 0;
     var boolean: isRequest is FALSE;
+    var boolean: parseOkay is TRUE;
     var jsonValue: params is jsonValue.value;
   end struct;
 
@@ -745,7 +784,15 @@ const func rpcMsg: parseMessage (in string: body) is func
     var jsonValue: root is jsonValue.value;
     var jsonValue: idValue is jsonValue.value;
   begin
-    root := readJson(body);
+    block
+      root := readJson(body);
+    exception
+      catch RANGE_ERROR:    msg.parseOkay := FALSE;
+      catch INDEX_ERROR:    msg.parseOkay := FALSE;
+      catch ILLEGAL_ACTION: msg.parseOkay := FALSE;
+    end block;
+    if not msg.parseOkay then
+    else
     msg.method := strAt(root, "method", "");
     msg.params := atKey(root, "params");
     idValue := atKey(root, "id");
@@ -753,6 +800,23 @@ const func rpcMsg: parseMessage (in string: body) is func
     if msg.isRequest then
       msg.id := intAt(root, "id", 0);
     end if;
+    end if;
+  end func;
+
+const proc: sendParseError (in integer: code, in string: message) is func
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "jsonrpc"); addStr(w, "2.0");
+      field(w, "id");      raw(w, "null");
+      field(w, "error");
+      openObject(w);
+        field(w, "code");    addInt(w, code);
+        field(w, "message"); addStr(w, message);
+      closeObject(w);
+    closeObject(w);
+    writeMessage(finishJson(w));
   end func;
 
 const proc: sendResult (in integer: id, in string: resultJson) is func
@@ -1350,7 +1414,9 @@ const proc: main is func
       else
         block
           msg := parseMessage(body);
-          if not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
+          if not msg.parseOkay then
+            sendParseError(-32700, "Parse error: body is not JSON");
+          elsif not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
             if msg.isRequest then
               sendError(msg.id, -32002, "Server was not initialized");
             end if;
@@ -1381,6 +1447,8 @@ const proc: main is func
     end while;
     if gotInitialize and gotShutdown then
       exit(0);
+    elsif framingFatal then
+      exit(2);
     end if;
   end func;
 ```
@@ -1459,34 +1527,41 @@ def frame(obj):
     body = json.dumps(obj).encode("utf-8")
     return b"Content-Length: %d\r\n\r\n" % len(body) + body
 
-def read_frames(stream, count):
-    out = []
-    while len(out) < count:
-        line = stream.readline()
-        if not line:
+def split_frames(out):
+    """Return (frames, junk) where junk counts stray non-frame bytes on stdout.
+
+    A server that dies mid-request writes its runtime error text to stdout, which
+    corrupts the JSON-RPC channel; that must be visible, not a KeyError here."""
+    frames, junk, pos = [], 0, 0
+    while True:
+        i = out.find(b"Content-Length: ", pos)
+        if i < 0:
+            if out[pos:].strip():
+                junk += 1
             break
-        headers = {}
-        while line.strip():
-            k, _, v = line.decode().partition(":")
-            headers[k.strip().lower()] = v.strip()
-            line = stream.readline()
-        n = int(headers["content-length"])
-        buf = b""
-        while len(buf) < n:
-            chunk = stream.read(n - len(buf))
-            if not chunk:
-                break
-            buf += chunk
-        out.append(json.loads(buf.decode("utf-8")))
-    return out
+        if out[pos:i].strip():
+            junk += 1
+        j = out.find(b"\r\n\r\n", i)
+        if j < 0:
+            junk += 1
+            break
+        n = int(out[i + 16:j].decode())
+        body = out[j + 4:j + 4 + n]
+        if len(body) != n:
+            junk += 1
+            break
+        frames.append(json.loads(body.decode("utf-8")))
+        pos = j + 4 + n
+    return frames, junk
+
 
 def run(frames):
     p = subprocess.Popen(CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, cwd="/tmp")
-    out, err = p.communicate(b"".join(frames), timeout=60)
-    import io
-    replies = read_frames(io.BytesIO(out), 10 ** 6) if out else []
-    return replies, p.returncode, err.decode("utf-8", "replace")
+    out, err = p.communicate(b"".join(frames), timeout=90)
+    replies, junk = split_frames(out)
+    return replies, p.returncode, err.decode("utf-8", "replace"), junk
+
 
 def expect(cond, label):
     global passed
@@ -1512,7 +1587,7 @@ msgs = [
     {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
     {"jsonrpc": "2.0", "method": "exit"},
 ]
-replies, code, err = run([frame(m) for m in msgs])
+replies, code, err, junk = run([frame(m) for m in msgs])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
 
@@ -1533,29 +1608,15 @@ expect(by_id.get(2, {}).get("error", {}).get("code") == -32601, "unimplemented h
 expect("result" in by_id.get(3, {}) and by_id[3]["result"] is None, "shutdown answers null")
 expect(code == 0, "exit after shutdown is status 0, got %d" % code)
 
-replies, code, err = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
+replies, code, err, junk = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
                             "params": {"textDocument": {"uri": "file:///tmp/x.sd7"},
                                        "position": {"line": 0, "character": 0}}}),
                      frame({"jsonrpc": "2.0", "method": "exit"})])
 expect(replies and replies[0]["error"]["code"] == -32002, "request before initialize -> -32002")
 expect(code == 1, "exit without shutdown is status 1, got %d" % code)
 
-# --- crash containment: one bad frame must cost a request, not the server ---
-replies, code, err = run([
-    frame(msgs[0]),
-    b"Content-Length: 16\r\n\r\n{not json at all",
-    frame({"jsonrpc": "2.0", "id": 5, "method": "shutdown"}),
-    frame({"jsonrpc": "2.0", "method": "exit"}),
-])
-by_id = {r.get("id"): r for r in replies if "id" in r}
-expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
-expect("handler failed" in err, "the handler failure names itself on stderr")
-expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
-       "malformed frame answered with an internal error")
-expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
-
 # --- a frame with no Content-Length has no knowable end: report it ---
-replies, code, err = run([
+replies, code, err, junk = run([
     frame(msgs[0]),
     b"Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n",
     frame({"jsonrpc": "2.0", "id": 9, "method": "shutdown"}),
@@ -1564,7 +1625,7 @@ replies, code, err = run([
 expect("without Content-Length" in err, "frame lacking Content-Length is reported")
 
 # --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
-replies, code, err = run([
+replies, code, err, junk = run([
     frame(msgs[0]),
     frame({"jsonrpc": "2.0", "id": 6, "method": "shutdown"}),
     frame({"jsonrpc": "2.0", "id": 7, "method": "textDocument/hover",
@@ -1576,7 +1637,7 @@ expect(any(r.get("id") == 7 and r.get("error", {}).get("code") == -32600 for r i
        "request after shutdown refused with -32600")
 
 # --- full sync: the LAST contentChanges element wins ---
-replies, code, err = run([
+replies, code, err, junk = run([
     frame(msgs[0]), frame(msgs[1]),
     frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
            {"textDocument": {"uri": "file:///tmp/tt_b.sd7", "languageId": "seed7",
@@ -1592,6 +1653,30 @@ bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnost
 expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
        "last of several contentChanges wins")
 
+# --- hostile framing must cost a request, never the server (review I1) ---
+for label, hdr in [("non-numeric", b"Content-Length: abc"),
+                   ("negative",    b"Content-Length: -5"),
+                   ("oversized",   b"Content-Length: 999999999")]:
+    replies, code, err, junk = run([frame(msgs[0]),
+                              hdr + b"\r\n\r\n",
+                              frame({"jsonrpc": "2.0", "id": 11, "method": "shutdown"}),
+                              frame({"jsonrpc": "2.0", "method": "exit"})])
+    expect(code == 2 and junk == 0 and "invalid Content-Length" in err,
+           "%s Content-Length: clean fatal exit, stdout uncorrupted" % label)
+
+# --- malformed JSON body is a Parse error (-32700), not an internal error ---
+replies, code, err, junk = run([frame(msgs[0]),
+                          b"Content-Length: 16\r\n\r\n{not json at all",
+                          frame({"jsonrpc": "2.0", "id": 12, "method": "shutdown"}),
+                          frame({"jsonrpc": "2.0", "method": "exit"})])
+expect(any(r.get("error", {}).get("code") == -32700 for r in replies),
+       "malformed JSON answered with -32700")
+expect(any(r.get("id") == 12 and "result" in r for r in replies) and code == 0 and junk == 0,
+       "server keeps serving after a parse error, stdout uncorrupted")
+expect(all(r.get("id") is None or "method" in r for r in replies
+           if r.get("error", {}).get("code") == -32700),
+       "parse error carries a null id, per JSON-RPC")
+
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
 ```
@@ -1599,7 +1684,7 @@ sys.exit(1 if fails else 0)
 - [ ] **Step 2: Run it and confirm the lifecycle assertions pass**
 
 Run: `python3 tests/transcript.py`
-Expected: 14 `ok` lines then `transcript: 21 checks, 0 failed`. Failures seen while
+Expected: 14 `ok` lines then `transcript: 23 checks, 0 failed`. Failures seen while
 writing this plan, for orientation: a `" <& x < "` typo emitted
 `{"capabilities":FALSE}` (comparison instead of append), and a missing separator comma
 in `raw()` produced `}{` between objects.
@@ -1618,7 +1703,7 @@ Expected: `src/analysis.sd7` only — invariant 1 of the spec's §2.
 - [ ] **Step 4: Run the whole suite**
 
 Run: `make test`
-Expected: 8 suites, 70 checks, 0 failed.
+Expected: 8 suites, 72 checks, 0 failed.
 
 - [ ] **Step 4: Write the client launch snippets into `README.md`**
 
@@ -1628,7 +1713,7 @@ Expected: 8 suites, 70 checks, 0 failed.
 An LSP server for the [SEED7](https://seed7.net) language, written in Seed7.
 Requires a working `s7` interpreter and its standard library.
 
-    make test          # 8 suites, 70 checks, no editor needed
+    make test          # 8 suites, 72 checks, no editor needed
     make server        # speak LSP on stdin/stdout
 
 Run `s7 -q -l src src/main.sd7` as the server command.

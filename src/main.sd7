@@ -12,7 +12,9 @@ const proc: main is func
       else
         block
           msg := parseMessage(body);
-          if not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
+          if not msg.parseOkay then
+            sendParseError(-32700, "Parse error: body is not JSON");
+          elsif not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
             if msg.isRequest then
               sendError(msg.id, -32002, "Server was not initialized");
             end if;
@@ -43,5 +45,7 @@ const proc: main is func
     end while;
     if gotInitialize and gotShutdown then
       exit(0);
+    elsif framingFatal then
+      exit(2);
     end if;
   end func;

@@ -109,7 +109,8 @@ end block;
 ```
 
 which converts a crash into a JSON-RPC internal error plus a stderr line, and a live
-server. The catchable set is fixed by `seed7_05.s7i:277-291`: MEMORY_ERROR,
+server. Since every accessor is total, no crafted input currently reaches this net; it
+stays as defence in depth and is deliberately **not** claimed as test coverage. The catchable set is fixed by `seed7_05.s7i:277-291`: MEMORY_ERROR,
 ASSERTION_ERROR, NUMERIC_ERROR, OVERFLOW_ERROR, RANGE_ERROR, INDEX_ERROR, FILE_ERROR,
 DATABASE_ERROR, GRAPHIC_ERROR, ILLEGAL_ACTION, CREATE_ERROR, DESTROY_ERROR, COPY_ERROR,
 IN_ERROR. There is no `SIZE_ERROR` and no catch-all clause, so `ILLEGAL_ACTION` must be
@@ -136,7 +137,16 @@ Hover prose comes from the `(** ... *)` comment immediately preceding a declarat
 
 ## 6. Errors, config, logging
 
-- Protocol errors from `rpc.sd7`: `-32700`, `-32600`, `-32601`, `-32602`, `-32603`, `-32001` (requested), `-32002` (server not initialized), `InvalidRequest` after shutdown.
+- Protocol errors from `rpc.sd7`: `-32700` for a body that is not JSON (id `null`),
+  `-32600` for a request after `shutdown`, `-32601` for an unknown method, `-32603` for
+  an unexpected exception inside a handler, `-32002` for traffic before `initialize`.
+- Framing errors are separated by recoverability: a header block with no
+  `Content-Length` is logged and reading continues; an unparsable, negative, or
+  over-limit (`MAX_FRAME_BYTES` = 64 MiB) `Content-Length` makes the frame's end
+  unknowable, so it is logged, the read loop stops, and the process exits **2** —
+  desyncing silently would corrupt every later message. Never write anything but
+  frames to stdout: an uncaught Seed7 exception prints to stdout and pollutes the
+  channel.
 - Missing/unusable `s7`, or an analysis failure that is not our bug: one `window/showMessage` Error at startup, then `window/logMessage` only. The server never dies because the toolchain is broken.
 - Settings via `workspace/configuration` (client capability permitting) with `initializationOptions` fallback: `seed7.interpreterPath`, `seed7.libraryPaths[]`, `seed7.maxDiagnostics` (100), `seed7.logLevel`.
 - Logging goes to stderr, level-gated; never to stdout.
@@ -165,6 +175,14 @@ No editor is required to test any of this, which is the point of the module spli
 
 ## 9. Risks
 
+0. **Analysis executes the analysed code (accept, then gate).** Seed7 folds constant
+   expressions at analysis time, so `parseStri` runs user code from the buffer with the
+   user's privileges — proven: a buffer whose `const` initializer opens a file created
+   it under `s7 -a` and under `parseFile`, with 0 errors. There is no interpreter flag
+   against it. This is inherent to decisions (a) and B, must be documented at the top of
+   the README, and wants a trust gate in M3 (configured roots or an explicit
+   `initializationOptions` acknowledgement). Cost of ignoring it: "open a cloned repo"
+   becomes "execute a cloned repo".
 1. **Long-session memory.** Each analysis allocates a full `program`. Refcount destruction should make this a non-issue, but it is unmeasured over hours. Mitigation: `s7 -a` on a loop while watching RSS is an afternoon; if it grows, restart-on-idle is honest and invisible to the client.
 2. **Version skew with the interpreter.** `getError` fields and `errorType` names are the interface we depend on. Pinning a minimum 5.4.x and reporting the interpreter version in `serverInfo` makes mismatches visible instead of mysterious.
 3. **`globalObjects` is global to the program**, thousands of entries; per-keystroke filtering must stay cheap. Measure before optimising; a name-prefix hash is the obvious fix.

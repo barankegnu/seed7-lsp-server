@@ -1,6 +1,44 @@
 $ include "seed7_05.s7i";
   include "utf8.s7i";
 
+const integer: MAX_FRAME_BYTES is 67108864;
+
+# TRUE once a frame arrived whose length cannot be trusted. Its end is then
+# unknowable, so the stream is finished -- continuing would silently desync.
+var boolean: framingFatal is FALSE;
+
+const func integer: headerNumber (in string: text) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: i is 0;
+    var boolean: parsable is TRUE;
+  begin
+    parsable := length(text) <> 0;
+    for i range 1 to length(text) do
+      if text[i] < '0' or text[i] > '9' then
+        parsable := FALSE;
+      end if;
+    end for;
+    if parsable then
+      block
+        n := integer(text);
+      exception
+        catch RANGE_ERROR: n := 0;
+        catch NUMERIC_ERROR: n := 0;
+      end block;
+      if n > MAX_FRAME_BYTES then
+        n := 0;
+        parsable := FALSE;
+      end if;
+    end if;
+    if not parsable then
+      framingFatal := TRUE;
+      writeln(STD_UTF8_ERR, "seed7-lsp: invalid Content-Length '" <& text <& "'");
+      n := 0;
+    end if;
+  end func;
+
 const func integer: utf8Length (in string: stri) is func
   result
     var integer: n is 0;
@@ -39,7 +77,7 @@ const func boolean: readMessage (inout string: body) is func
       line := getln(STD_UTF8_IN);
       while line <> "" and hasNext(STD_UTF8_IN) do
         if startsWith(line, "Content-Length: ") then
-          contentLength := integer(line[17 ..]);
+          contentLength := headerNumber(line[17 ..]);
         end if;
         line := getln(STD_UTF8_IN);
       end while;
