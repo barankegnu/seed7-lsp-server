@@ -1344,13 +1344,20 @@ const proc: main is func
             handle(msg);
           end if;
         exception
-          catch MEMORY_ERROR:    sendError(0, -32603, "out of memory");
-          catch ILLEGAL_ACTION:  sendError(0, -32603, "illegal action in handler");
-          catch RANGE_ERROR:     sendError(0, -32603, "range error in handler");
-          catch INDEX_ERROR:     sendError(0, -32603, "index error in handler");
-          catch NUMERIC_ERROR:   sendError(0, -32603, "numeric error in handler");
-          catch OVERFLOW_ERROR:  sendError(0, -32603, "overflow in handler");
-          catch ASSERTION_ERROR: sendError(0, -32603, "assertion failed in handler");
+          catch MEMORY_ERROR:    handlerFailed("memory", body);
+          catch ASSERTION_ERROR: handlerFailed("assertion", body);
+          catch NUMERIC_ERROR:   handlerFailed("numeric", body);
+          catch OVERFLOW_ERROR:  handlerFailed("overflow", body);
+          catch RANGE_ERROR:     handlerFailed("range", body);
+          catch INDEX_ERROR:     handlerFailed("index", body);
+          catch FILE_ERROR:      handlerFailed("file", body);
+          catch DATABASE_ERROR:  handlerFailed("database", body);
+          catch GRAPHIC_ERROR:   handlerFailed("graphic", body);
+          catch ILLEGAL_ACTION:  handlerFailed("illegal action", body);
+          catch CREATE_ERROR:    handlerFailed("create", body);
+          catch DESTROY_ERROR:   handlerFailed("destroy", body);
+          catch COPY_ERROR:      handlerFailed("copy", body);
+          catch IN_ERROR:        handlerFailed("input", body);
         end block;
       end if;
     end while;
@@ -1457,10 +1464,11 @@ def read_frames(stream, count):
 
 def run(frames):
     p = subprocess.Popen(CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.DEVNULL, cwd="/tmp")
-    out, _ = p.communicate(b"".join(frames), timeout=60)
+                         stderr=subprocess.PIPE, cwd="/tmp")
+    out, err = p.communicate(b"".join(frames), timeout=60)
     import io
-    return read_frames(io.BytesIO(out), 10 ** 6) if out else [] , p.returncode
+    replies = read_frames(io.BytesIO(out), 10 ** 6) if out else []
+    return replies, p.returncode, err.decode("utf-8", "replace")
 
 def expect(cond, label):
     global passed
@@ -1486,7 +1494,7 @@ msgs = [
     {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
     {"jsonrpc": "2.0", "method": "exit"},
 ]
-replies, code = run([frame(m) for m in msgs])
+replies, code, err = run([frame(m) for m in msgs])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
 
@@ -1507,12 +1515,25 @@ expect(by_id.get(2, {}).get("error", {}).get("code") == -32601, "unimplemented h
 expect("result" in by_id.get(3, {}) and by_id[3]["result"] is None, "shutdown answers null")
 expect(code == 0, "exit after shutdown is status 0, got %d" % code)
 
-replies, code = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
+replies, code, err = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
                             "params": {"textDocument": {"uri": "file:///tmp/x.sd7"},
                                        "position": {"line": 0, "character": 0}}}),
                      frame({"jsonrpc": "2.0", "method": "exit"})])
 expect(replies and replies[0]["error"]["code"] == -32002, "request before initialize -> -32002")
 expect(code == 1, "exit without shutdown is status 1, got %d" % code)
+
+# --- crash containment: one bad frame must cost a request, not the server ---
+replies, code, err = run([
+    frame(msgs[0]),
+    b"Content-Length: 16\r\n\r\n{not json at all",
+    frame({"jsonrpc": "2.0", "id": 5, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
+expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
+       "malformed frame answered with an internal error")
+expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
@@ -1521,7 +1542,7 @@ sys.exit(1 if fails else 0)
 - [ ] **Step 2: Run it and confirm the lifecycle assertions pass**
 
 Run: `python3 tests/transcript.py`
-Expected: 14 `ok` lines then `transcript: 14 checks, 0 failed`. Failures seen while
+Expected: 14 `ok` lines then `transcript: 17 checks, 0 failed`. Failures seen while
 writing this plan, for orientation: a `" <& x < "` typo emitted
 `{"capabilities":FALSE}` (comparison instead of append), and a missing separator comma
 in `raw()` produced `}{` between objects.
@@ -1540,7 +1561,7 @@ Expected: `src/analysis.sd7` only — invariant 1 of the spec's §2.
 - [ ] **Step 4: Run the whole suite**
 
 Run: `make test`
-Expected: 8 suites, 63 checks, 0 failed.
+Expected: 8 suites, 66 checks, 0 failed.
 
 - [ ] **Step 4: Write the client launch snippets into `README.md`**
 
@@ -1550,7 +1571,7 @@ Expected: 8 suites, 63 checks, 0 failed.
 An LSP server for the [SEED7](https://seed7.net) language, written in Seed7.
 Requires a working `s7` interpreter and its standard library.
 
-    make test          # 8 suites, 63 checks, no editor needed
+    make test          # 8 suites, 66 checks, no editor needed
     make server        # speak LSP on stdin/stdout
 
 Run `s7 -q -l src src/main.sd7` as the server command.

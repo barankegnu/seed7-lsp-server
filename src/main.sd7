@@ -20,13 +20,20 @@ const proc: main is func
             handle(msg);
           end if;
         exception
-          catch MEMORY_ERROR:    sendError(0, -32603, "out of memory");
-          catch ILLEGAL_ACTION:  sendError(0, -32603, "illegal action in handler");
-          catch RANGE_ERROR:     sendError(0, -32603, "range error in handler");
-          catch INDEX_ERROR:     sendError(0, -32603, "index error in handler");
-          catch NUMERIC_ERROR:   sendError(0, -32603, "numeric error in handler");
-          catch OVERFLOW_ERROR:  sendError(0, -32603, "overflow in handler");
-          catch ASSERTION_ERROR: sendError(0, -32603, "assertion failed in handler");
+          catch MEMORY_ERROR:    handlerFailed("memory", body);
+          catch ASSERTION_ERROR: handlerFailed("assertion", body);
+          catch NUMERIC_ERROR:   handlerFailed("numeric", body);
+          catch OVERFLOW_ERROR:  handlerFailed("overflow", body);
+          catch RANGE_ERROR:     handlerFailed("range", body);
+          catch INDEX_ERROR:     handlerFailed("index", body);
+          catch FILE_ERROR:      handlerFailed("file", body);
+          catch DATABASE_ERROR:  handlerFailed("database", body);
+          catch GRAPHIC_ERROR:   handlerFailed("graphic", body);
+          catch ILLEGAL_ACTION:  handlerFailed("illegal action", body);
+          catch CREATE_ERROR:    handlerFailed("create", body);
+          catch DESTROY_ERROR:   handlerFailed("destroy", body);
+          catch COPY_ERROR:      handlerFailed("copy", body);
+          catch IN_ERROR:        handlerFailed("input", body);
         end block;
       end if;
     end while;

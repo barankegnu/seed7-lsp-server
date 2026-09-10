@@ -22,6 +22,14 @@ const proc: note (in string: text) is func
     writeln(STD_UTF8_ERR, "seed7-lsp: " <& text);
   end func;
 
+# A handler that raises must cost the request, never the server: log enough to
+# reproduce it, answer a JSON-RPC internal error, and keep reading.
+const proc: handlerFailed (in string: kind, in string: body) is func
+  begin
+    note("handler failed (" <& kind <& "): " <& body);
+    sendError(0, -32603, "internal error: " <& kind);
+  end func;
+
 const func string: capabilitiesJson is func
   result
     var string: out is "";

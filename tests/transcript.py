@@ -34,10 +34,11 @@ def read_frames(stream, count):
 
 def run(frames):
     p = subprocess.Popen(CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.DEVNULL, cwd="/tmp")
-    out, _ = p.communicate(b"".join(frames), timeout=60)
+                         stderr=subprocess.PIPE, cwd="/tmp")
+    out, err = p.communicate(b"".join(frames), timeout=60)
     import io
-    return read_frames(io.BytesIO(out), 10 ** 6) if out else [] , p.returncode
+    replies = read_frames(io.BytesIO(out), 10 ** 6) if out else []
+    return replies, p.returncode, err.decode("utf-8", "replace")
 
 def expect(cond, label):
     global passed
@@ -63,7 +64,7 @@ msgs = [
     {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
     {"jsonrpc": "2.0", "method": "exit"},
 ]
-replies, code = run([frame(m) for m in msgs])
+replies, code, err = run([frame(m) for m in msgs])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
 
@@ -84,12 +85,25 @@ expect(by_id.get(2, {}).get("error", {}).get("code") == -32601, "unimplemented h
 expect("result" in by_id.get(3, {}) and by_id[3]["result"] is None, "shutdown answers null")
 expect(code == 0, "exit after shutdown is status 0, got %d" % code)
 
-replies, code = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
+replies, code, err = run([frame({"jsonrpc": "2.0", "id": 9, "method": "textDocument/hover",
                             "params": {"textDocument": {"uri": "file:///tmp/x.sd7"},
                                        "position": {"line": 0, "character": 0}}}),
                      frame({"jsonrpc": "2.0", "method": "exit"})])
 expect(replies and replies[0]["error"]["code"] == -32002, "request before initialize -> -32002")
 expect(code == 1, "exit without shutdown is status 1, got %d" % code)
+
+# --- crash containment: one bad frame must cost a request, not the server ---
+replies, code, err = run([
+    frame(msgs[0]),
+    b"Content-Length: 16\r\n\r\n{not json at all",
+    frame({"jsonrpc": "2.0", "id": 5, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
+expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
+       "malformed frame answered with an internal error")
+expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
