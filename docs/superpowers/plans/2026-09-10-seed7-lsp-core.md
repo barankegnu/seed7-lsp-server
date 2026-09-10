@@ -1549,10 +1549,19 @@ replies, code, err = run([
 ])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
-expect("frame" in err or "handler" in err, "the bad frame is logged, not swallowed")
+expect("handler failed" in err, "the handler failure names itself on stderr")
 expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
        "malformed frame answered with an internal error")
 expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
+
+# --- a frame with no Content-Length has no knowable end: report it ---
+replies, code, err = run([
+    frame(msgs[0]),
+    b"Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n",
+    frame({"jsonrpc": "2.0", "id": 9, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+expect("without Content-Length" in err, "frame lacking Content-Length is reported")
 
 # --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
 replies, code, err = run([
@@ -1590,7 +1599,7 @@ sys.exit(1 if fails else 0)
 - [ ] **Step 2: Run it and confirm the lifecycle assertions pass**
 
 Run: `python3 tests/transcript.py`
-Expected: 14 `ok` lines then `transcript: 20 checks, 0 failed`. Failures seen while
+Expected: 14 `ok` lines then `transcript: 21 checks, 0 failed`. Failures seen while
 writing this plan, for orientation: a `" <& x < "` typo emitted
 `{"capabilities":FALSE}` (comparison instead of append), and a missing separator comma
 in `raw()` produced `}{` between objects.
@@ -1609,7 +1618,7 @@ Expected: `src/analysis.sd7` only — invariant 1 of the spec's §2.
 - [ ] **Step 4: Run the whole suite**
 
 Run: `make test`
-Expected: 8 suites, 69 checks, 0 failed.
+Expected: 8 suites, 70 checks, 0 failed.
 
 - [ ] **Step 4: Write the client launch snippets into `README.md`**
 
@@ -1619,7 +1628,7 @@ Expected: 8 suites, 69 checks, 0 failed.
 An LSP server for the [SEED7](https://seed7.net) language, written in Seed7.
 Requires a working `s7` interpreter and its standard library.
 
-    make test          # 8 suites, 69 checks, no editor needed
+    make test          # 8 suites, 70 checks, no editor needed
     make server        # speak LSP on stdin/stdout
 
 Run `s7 -q -l src src/main.sd7` as the server command.

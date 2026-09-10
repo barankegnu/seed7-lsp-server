@@ -101,10 +101,19 @@ replies, code, err = run([
 ])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
-expect("frame" in err or "handler" in err, "the bad frame is logged, not swallowed")
+expect("handler failed" in err, "the handler failure names itself on stderr")
 expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
        "malformed frame answered with an internal error")
 expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
+
+# --- a frame with no Content-Length has no knowable end: report it ---
+replies, code, err = run([
+    frame(msgs[0]),
+    b"Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n",
+    frame({"jsonrpc": "2.0", "id": 9, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+expect("without Content-Length" in err, "frame lacking Content-Length is reported")
 
 # --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
 replies, code, err = run([
