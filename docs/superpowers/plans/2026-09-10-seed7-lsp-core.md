@@ -1367,9 +1367,12 @@ Expected: `lsp_server: 4 checks, 0 failed`.
 
 - [ ] **Step 6: Smoke the binary by hand**
 
-Run: `make server` — then type nothing and press Ctrl-D. Expected: prompt returns
-immediately, no crash, no output (EOF on stdin ends the loop; without `initialize`
-the exit status is 1, which `echo $?` will show).
+Run: `printf '' | make -s server; echo $?`
+Expected: no output, no crash, and **exit status 0**. Falling off the read loop at EOF
+is not the `exit` notification: status 1 comes from handling `exit` when `shutdown`
+was never seen, which Task 8's transcript asserts. Corrected from the plan's first
+draft, which claimed status 1 here — the behaviour is 0, because `main` ends without
+calling `exit` when the loop simply runs out of input.
 
 - [ ] **Step 7: Commit**
 
