@@ -1,0 +1,36 @@
+$ include "seed7_05.s7i";
+  include "lsp_server.sd7";
+
+const proc: main is func
+  local
+    var string: body is "";
+    var rpcMsg: msg is rpcMsg.value;
+  begin
+    libraryDirs &:= ".";
+    while readMessage(body) do
+      if body = "" then
+      else
+        block
+          msg := parseMessage(body);
+          if not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
+            if msg.isRequest then
+              sendError(msg.id, -32002, "Server was not initialized");
+            end if;
+          else
+            handle(msg);
+          end if;
+        exception
+          catch MEMORY_ERROR:    sendError(0, -32603, "out of memory");
+          catch ILLEGAL_ACTION:  sendError(0, -32603, "illegal action in handler");
+          catch RANGE_ERROR:     sendError(0, -32603, "range error in handler");
+          catch INDEX_ERROR:     sendError(0, -32603, "index error in handler");
+          catch NUMERIC_ERROR:   sendError(0, -32603, "numeric error in handler");
+          catch OVERFLOW_ERROR:  sendError(0, -32603, "overflow in handler");
+          catch ASSERTION_ERROR: sendError(0, -32603, "assertion failed in handler");
+        end block;
+      end if;
+    end while;
+    if gotInitialize and gotShutdown then
+      exit(0);
+    end if;
+  end func;

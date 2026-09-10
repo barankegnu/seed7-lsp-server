@@ -1,0 +1,14 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "lsp_server.sd7";
+
+const proc: main is func
+  begin
+    check("space decoded",  pathOf("file:///tmp/my%20dir/a.sd7"), "/tmp/my dir/a.sd7");
+    check("plain uri kept", pathOf("/tmp/a.sd7"), "/tmp/a.sd7");
+    checkTrue("caps announce full sync",
+              pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
+    checkTrue("caps are valid json wrapper", startsWith(capabilitiesJson, "{") and
+              endsWith(capabilitiesJson, "}"));
+    report("lsp_server");
+  end func;

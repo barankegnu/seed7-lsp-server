@@ -14,6 +14,22 @@ S7      ?= s7
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 SRC     := src
 
 
@@ -30,7 +46,39 @@ SRC     := src
 
 
 
-TESTS   := jsonw transport doc_store rpc analysis diagnostics
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TESTS   := jsonw transport doc_store rpc analysis diagnostics lsp_server
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -48,6 +96,38 @@ TESTS   := jsonw transport doc_store rpc analysis diagnostics
 
 
 .PHONY: test server $(addprefix test-,$(TESTS))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -111,7 +191,55 @@ test: $(addprefix test-,$(TESTS))
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 $(addprefix test-,$(TESTS)): test-%:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -159,7 +287,55 @@ $(addprefix test-,$(TESTS)): test-%:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 server:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
