@@ -298,6 +298,8 @@ server:
 
 Run: `make test`
 Expected: `ok   emit` and `jsonw: 1 checks, 0 failed`.
+Note: the `server` target in this Makefile refers to `src/main.sd7`, which does not
+exist until Task 7. `make test` never touches it, so leave the target alone.
 
 - [ ] **Step 7: Commit**
 
@@ -832,6 +834,8 @@ the test independent of cwd).
 
 ```seed7
 $ include "seed7_05.s7i";
+  include "stdio.s7i";
+  include "filesys.s7i";
   include "lsp_tst.sd7";
   include "analysis.sd7";
 
@@ -839,8 +843,11 @@ const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
     var array string: dirs is 0 times "";
+    var string: libPath is "/tmp/seed7_lsp_probe.s7i";
+    var file: out is STD_NULL;
   begin
-    dirs &:= "/home/username/seed7/lib";
+    # Empty libraryDirs is enough: the interpreter resolves its own stdlib,
+    # so the test does not depend on where Seed7 happens to be installed.
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1 + \"a\");\n  end func;\n", dirs);
     check("semantic error count", str(length(a.diags)), "2");
     check("first error has no column", str(a.diags[1].column1), "0");
@@ -849,7 +856,18 @@ const proc: main is func
     check("truncated file has EOF class", str(a.diags[length(a.diags)].atEof), "TRUE");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(\"ok\");\n  end func;\n", dirs);
     check("valid file is clean", str(length(a.diags)), "0");
-    checkTrue("driver wraps a library", pos(driverFor("/tmp/x.s7i"), "include \"/tmp/x.s7i\";") <> 0);
+    checkTrue("driver wraps a library", pos(driverFor(libPath), "include \"/tmp/seed7_lsp_probe.s7i\";") <> 0);
+
+    # A library file is not analysable alone -- prove the synthetic driver works
+    # against a real .s7i rather than only checking the text of the wrapper.  The
+    # probe file lives under /tmp and is truncated by "w" on every run.
+    out := open(libPath, "w");
+    write(out, "const func integer: probeDouble (in integer: n) is\n  return n * 2;\n");
+    close(out);
+    a := analyzeText(driverFor(libPath), dirs);
+    check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
+    a := analyzeText(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
+    checkTrue("missing include is reported", length(a.diags) <> 0);
     report("analysis");
   end func;
 ```
@@ -907,7 +925,7 @@ const func analysisResult: analyzeText (in string: text,
 - [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `s7 -q -l src tests/analysis_test.sd7`
-Expected: `analysis: 6 checks, 0 failed`. If `semantic error count` reports more
+Expected: `analysis: 8 checks, 0 failed`. If `semantic error count` reports more
 than 2, the interpreter version differs — record the version in the commit message
 rather than weakening the assertion.
 
@@ -1519,7 +1537,7 @@ Expected: `src/analysis.sd7` only — invariant 1 of the spec's §2.
 - [ ] **Step 4: Run the whole suite**
 
 Run: `make test`
-Expected: 8 suites, 61 checks, 0 failed.
+Expected: 8 suites, 63 checks, 0 failed.
 
 - [ ] **Step 4: Write the client launch snippets into `README.md`**
 
@@ -1529,7 +1547,7 @@ Expected: 8 suites, 61 checks, 0 failed.
 An LSP server for the [SEED7](https://seed7.net) language, written in Seed7.
 Requires a working `s7` interpreter and its standard library.
 
-    make test          # 7 suites, no editor needed
+    make test          # 8 suites, 63 checks, no editor needed
     make server        # speak LSP on stdin/stdout
 
 Run `s7 -q -l src src/main.sd7` as the server command.
