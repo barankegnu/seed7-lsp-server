@@ -1,0 +1,37 @@
+$ include "seed7_05.s7i";
+  include "stdio.s7i";
+  include "filesys.s7i";
+  include "lsp_tst.sd7";
+  include "analysis.sd7";
+
+const proc: main is func
+  local
+    var analysisResult: a is analysisResult.value;
+    var array string: dirs is 0 times "";
+    var string: libPath is "/tmp/seed7_lsp_probe.s7i";
+    var file: out is STD_NULL;
+  begin
+    # Empty libraryDirs is enough: the interpreter resolves its own stdlib,
+    # so the test does not depend on where Seed7 happens to be installed.
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1 + \"a\");\n  end func;\n", dirs);
+    check("semantic error count", str(length(a.diags)), "2");
+    check("first error has no column", str(a.diags[1].column1), "0");
+    check("not flagged as EOF", str(a.diags[1].atEof), "FALSE");
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n", dirs);
+    check("truncated file has EOF class", str(a.diags[length(a.diags)].atEof), "TRUE");
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(\"ok\");\n  end func;\n", dirs);
+    check("valid file is clean", str(length(a.diags)), "0");
+    checkTrue("driver wraps a library", pos(driverFor(libPath), "include \"/tmp/seed7_lsp_probe.s7i\";") <> 0);
+
+    # A library file is not analysable alone -- prove the synthetic driver works
+    # against a real .s7i rather than only checking the text of the wrapper.  The
+    # probe file lives under /tmp and is truncated by "w" on every run.
+    out := open(libPath, "w");
+    write(out, "const func integer: probeDouble (in integer: n) is\n  return n * 2;\n");
+    close(out);
+    a := analyzeText(driverFor(libPath), dirs);
+    check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
+    a := analyzeText(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
+    checkTrue("missing include is reported", length(a.diags) <> 0);
+    report("analysis");
+  end func;

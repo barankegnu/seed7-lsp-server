@@ -2,16 +2,36 @@ S7      ?= s7
 
 
 
+
+
+
+
 SRC     := src
 
 
 
-TESTS   := jsonw transport doc_store rpc
+
+
+
+
+TESTS   := jsonw transport doc_store rpc analysis
+
+
+
+
 
 
 
 
 .PHONY: test server $(addprefix test-,$(TESTS))
+
+
+
+
+
+
+
+
 
 
 
@@ -27,7 +47,19 @@ test: $(addprefix test-,$(TESTS))
 
 
 
+
+
+
+
+
+
+
+
 $(addprefix test-,$(TESTS)): test-%:
+
+
+
+
 
 
 
@@ -39,7 +71,19 @@ $(addprefix test-,$(TESTS)): test-%:
 
 
 
+
+
+
+
+
+
+
+
 server:
+
+
+
+
 
 
 

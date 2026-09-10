@@ -1,0 +1,40 @@
+$ include "seed7_05.s7i";
+  include "progs.s7i";
+
+const type: lspDiag is new struct
+    var integer: line1 is 1;
+    var integer: column1 is 0;
+    var string: message is "";
+    var boolean: atEof is FALSE;
+    var integer: severity is 1;
+  end struct;
+
+const type: analysisResult is new struct
+    var boolean: completed is FALSE;
+    var array lspDiag: diags is 0 times lspDiag.value;
+  end struct;
+
+const func string: driverFor (in string: path) is
+  return "$ include \"seed7_05.s7i\";\n  include " <& literal(path) <& ";\n";
+
+const func analysisResult: analyzeText (in string: text,
+                                        in array string: libraryDirs) is func
+  result
+    var analysisResult: out is analysisResult.value;
+  local
+    var program: prog is program.EMPTY;
+    var parseError: err is parseError.value;
+    var integer: i is 0;
+    var lspDiag: diag is lspDiag.value;
+  begin
+    prog := parseStri(text, parseOptions.value, libraryDirs);
+    out.completed := TRUE;
+    for i range 1 to errorCount(prog) do
+      err := getError(prog, i);
+      diag.line1 := err.lineNumber;
+      diag.column1 := err.columnNumber;
+      diag.message := err.message;
+      diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
+      out.diags &:= diag;
+    end for;
+  end func;
