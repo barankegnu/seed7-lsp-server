@@ -25,7 +25,8 @@ GNU Make, and one python3 script used only as the end-to-end transcript driver.
 - Protocol: LSP 3.18, JSON-RPC 2.0, `Content-Length` framing, CRLF (`\r\n`) header terminator.
 - Positions are 0-based line/character, **UTF-16 code units**; announce
   `"positionEncoding": "utf-16"` and omit negotiation.
-- Text sync: `TextDocumentSyncKind.Full` (1). Never incremental in this plan.
+- Text sync: `TextDocumentSyncKind.Full` (1). Never incremental in this plan. The
+  **last** element of `contentChanges` carries the whole text, not the first.
 - Diagnostics come from `errorCount`/`getError`, never from scraping `s7` stderr
   (which goes to stderr and still exits 0).
 - Only `analysis.sd7` may `include "progs.s7i"`. Only `doc_store.sd7` converts
@@ -400,7 +401,11 @@ const func boolean: readMessage (inout string: body) is func
         end if;
         line := getln(STD_UTF8_IN);
       end while;
-      if contentLength <> 0 then
+      if contentLength = 0 then
+        # A header block with no Content-Length has no knowable end; report it
+        # rather than swallowing the messages behind it in silence.
+        writeln(STD_UTF8_ERR, "seed7-lsp: frame without Content-Length ignored");
+      else
         body := gets(STD_UTF8_IN, contentLength);
         okay := length(body) <> 0;
       end if;
@@ -1178,6 +1183,14 @@ const proc: note (in string: text) is func
     writeln(STD_UTF8_ERR, "seed7-lsp: " <& text);
   end func;
 
+# A handler that raises must cost the request, never the server: log enough to
+# reproduce it, answer a JSON-RPC internal error, and keep reading.
+const proc: handlerFailed (in string: kind, in string: body) is func
+  begin
+    note("handler failed (" <& kind <& "): " <& body);
+    sendError(0, -32603, "internal error: " <& kind);
+  end func;
+
 const func string: capabilitiesJson is func
   result
     var string: out is "";
@@ -1263,10 +1276,11 @@ const proc: handleChange (in rpcMsg: msg) is func
   begin
     uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
     if uri <> "" and uri in openDocs then
-      # ponytail: full sync means one change object with the whole text;
-      # a batching client that sends several would need the last element.
+      # Full sync: the last change object holds the whole text (LSP 3.18).
       changes := atKey(msg.params, "contentChanges");
-      last := itemAt(changes, 1);
+      if category(changes) = JSON_ARRAY then
+        last := itemAt(changes, length(changes));
+      end if;
       if category(last) = JSON_OBJECT then
         setVersion(openDocs[uri], strAt(last, "text", openDocs[uri].text),
                    intAt(atKey(msg.params, "textDocument"), "version",
@@ -1339,6 +1353,10 @@ const proc: main is func
           if not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
             if msg.isRequest then
               sendError(msg.id, -32002, "Server was not initialized");
+            end if;
+          elsif gotShutdown and msg.method <> "exit" then
+            if msg.isRequest then
+              sendError(msg.id, -32600, "InvalidRequest: server is shut down");
             end if;
           else
             handle(msg);
@@ -1531,9 +1549,39 @@ replies, code, err = run([
 ])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
+expect("frame" in err or "handler" in err, "the bad frame is logged, not swallowed")
 expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
        "malformed frame answered with an internal error")
 expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
+
+# --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
+replies, code, err = run([
+    frame(msgs[0]),
+    frame({"jsonrpc": "2.0", "id": 6, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "id": 7, "method": "textDocument/hover",
+           "params": {"textDocument": {"uri": "file:///tmp/tt_a.sd7"},
+                      "position": {"line": 0, "character": 0}}}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+expect(any(r.get("id") == 7 and r.get("error", {}).get("code") == -32600 for r in replies),
+       "request after shutdown refused with -32600")
+
+# --- full sync: the LAST contentChanges element wins ---
+replies, code, err = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_b.sd7", "languageId": "seed7",
+                             "version": 1, "text": BROKEN}}}),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didChange", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_b.sd7", "version": 3},
+            "contentChanges": [{"text": FIXED}, {"text": BROKEN}]}}),
+    frame({"jsonrpc": "2.0", "id": 8, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+          and r["params"]["uri"] == "file:///tmp/tt_b.sd7"]
+expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
+       "last of several contentChanges wins")
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
@@ -1542,7 +1590,7 @@ sys.exit(1 if fails else 0)
 - [ ] **Step 2: Run it and confirm the lifecycle assertions pass**
 
 Run: `python3 tests/transcript.py`
-Expected: 14 `ok` lines then `transcript: 17 checks, 0 failed`. Failures seen while
+Expected: 14 `ok` lines then `transcript: 20 checks, 0 failed`. Failures seen while
 writing this plan, for orientation: a `" <& x < "` typo emitted
 `{"capabilities":FALSE}` (comparison instead of append), and a missing separator comma
 in `raw()` produced `}{` between objects.
@@ -1561,7 +1609,7 @@ Expected: `src/analysis.sd7` only — invariant 1 of the spec's §2.
 - [ ] **Step 4: Run the whole suite**
 
 Run: `make test`
-Expected: 8 suites, 66 checks, 0 failed.
+Expected: 8 suites, 69 checks, 0 failed.
 
 - [ ] **Step 4: Write the client launch snippets into `README.md`**
 
@@ -1571,7 +1619,7 @@ Expected: 8 suites, 66 checks, 0 failed.
 An LSP server for the [SEED7](https://seed7.net) language, written in Seed7.
 Requires a working `s7` interpreter and its standard library.
 
-    make test          # 8 suites, 66 checks, no editor needed
+    make test          # 8 suites, 69 checks, no editor needed
     make server        # speak LSP on stdin/stdout
 
 Run `s7 -q -l src src/main.sd7` as the server command.

@@ -43,7 +43,11 @@ const func boolean: readMessage (inout string: body) is func
         end if;
         line := getln(STD_UTF8_IN);
       end while;
-      if contentLength <> 0 then
+      if contentLength = 0 then
+        # A header block with no Content-Length has no knowable end; report it
+        # rather than swallowing the messages behind it in silence.
+        writeln(STD_UTF8_ERR, "seed7-lsp: frame without Content-Length ignored");
+      else
         body := gets(STD_UTF8_IN, contentLength);
         okay := length(body) <> 0;
       end if;

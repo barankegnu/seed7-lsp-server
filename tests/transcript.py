@@ -101,9 +101,39 @@ replies, code, err = run([
 ])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(5, {}).get("result") is None, "server still answers after a malformed frame")
+expect("frame" in err or "handler" in err, "the bad frame is logged, not swallowed")
 expect(any(r.get("error", {}).get("code") == -32603 for r in replies),
        "malformed frame answered with an internal error")
 expect("handler failed" in err, "the failure is logged to stderr, not swallowed")
+
+# --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
+replies, code, err = run([
+    frame(msgs[0]),
+    frame({"jsonrpc": "2.0", "id": 6, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "id": 7, "method": "textDocument/hover",
+           "params": {"textDocument": {"uri": "file:///tmp/tt_a.sd7"},
+                      "position": {"line": 0, "character": 0}}}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+expect(any(r.get("id") == 7 and r.get("error", {}).get("code") == -32600 for r in replies),
+       "request after shutdown refused with -32600")
+
+# --- full sync: the LAST contentChanges element wins ---
+replies, code, err = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_b.sd7", "languageId": "seed7",
+                             "version": 1, "text": BROKEN}}}),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didChange", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_b.sd7", "version": 3},
+            "contentChanges": [{"text": FIXED}, {"text": BROKEN}]}}),
+    frame({"jsonrpc": "2.0", "id": 8, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+          and r["params"]["uri"] == "file:///tmp/tt_b.sd7"]
+expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
+       "last of several contentChanges wins")
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)

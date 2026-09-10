@@ -16,6 +16,10 @@ const proc: main is func
             if msg.isRequest then
               sendError(msg.id, -32002, "Server was not initialized");
             end if;
+          elsif gotShutdown and msg.method <> "exit" then
+            if msg.isRequest then
+              sendError(msg.id, -32600, "InvalidRequest: server is shut down");
+            end if;
           else
             handle(msg);
           end if;

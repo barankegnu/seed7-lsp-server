@@ -115,10 +115,11 @@ const proc: handleChange (in rpcMsg: msg) is func
   begin
     uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
     if uri <> "" and uri in openDocs then
-      # ponytail: full sync means one change object with the whole text;
-      # a batching client that sends several would need the last element.
+      # Full sync: the last change object holds the whole text (LSP 3.18).
       changes := atKey(msg.params, "contentChanges");
-      last := itemAt(changes, 1);
+      if category(changes) = JSON_ARRAY then
+        last := itemAt(changes, length(changes));
+      end if;
       if category(last) = JSON_OBJECT then
         setVersion(openDocs[uri], strAt(last, "text", openDocs[uri].text),
                    intAt(atKey(msg.params, "textDocument"), "version",
