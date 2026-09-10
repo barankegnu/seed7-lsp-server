@@ -1,0 +1,119 @@
+$ include "seed7_05.s7i";
+
+const type: jsonWriter is new struct
+    var string: buf is "";
+  end struct;
+
+const func string: hexByte (in integer: value) is
+  return str(value radix 16 lpad0 2);
+
+const proc: jsonEscape (inout string: buf, in string: stri) is func
+  local
+    var integer: i is 0;
+    var char: ch is ' ';
+  begin
+    buf &:= "\"";
+    for i range 1 to length(stri) do
+      ch := stri[i];
+      if ch = '"' then
+        buf &:= "\\\"";
+      elsif ch = '\\' then
+        buf &:= "\\" & "\\";
+      elsif ch = '\n' then
+        buf &:= "\\n";
+      elsif ch = '\r' then
+        buf &:= "\\r";
+      elsif ch = '\9;' then
+        buf &:= "\\t";
+      elsif ord(ch) < 32 then
+        buf &:= "\\" <& "u00" <& hexByte(ord(ch));
+      else
+        buf &:= stri[i .. i];
+      end if;
+    end for;
+    buf &:= "\"";
+  end func;
+
+const proc: trimComma (inout string: buf) is func
+  begin
+    if endsWith(buf, ",") then
+      buf := buf[1 .. pred(length(buf))];
+    end if;
+  end func;
+
+const proc: openObject (inout jsonWriter: w) is func
+  begin
+    w.buf &:= "{";
+  end func;
+
+const proc: closeObject (inout jsonWriter: w) is func
+  begin
+    trimComma(w.buf);
+    w.buf &:= "}";
+    w.buf &:= ",";
+  end func;
+
+const proc: openArray (inout jsonWriter: w) is func
+  begin
+    w.buf &:= "[";
+  end func;
+
+const proc: closeArray (inout jsonWriter: w) is func
+  begin
+    trimComma(w.buf);
+    w.buf &:= "]";
+    w.buf &:= ",";
+  end func;
+
+const proc: field (inout jsonWriter: w, in string: name) is func
+  begin
+    trimComma(w.buf);
+    if endsWith(w.buf, "{") then
+    else
+      w.buf &:= ",";
+    end if;
+    jsonEscape(w.buf, name);
+    w.buf &:= ":";
+  end func;
+
+const proc: addStr (inout jsonWriter: w, in string: value) is func
+  begin
+    jsonEscape(w.buf, value);
+    w.buf &:= ",";
+  end func;
+
+const proc: addInt (inout jsonWriter: w, in integer: value) is func
+  begin
+    w.buf &:= str(value);
+    w.buf &:= ",";
+  end func;
+
+const proc: addBool (inout jsonWriter: w, in boolean: value) is func
+  begin
+    if value then
+      w.buf &:= "true";
+    else
+      w.buf &:= "false";
+    end if;
+    w.buf &:= ",";
+  end func;
+
+const proc: addNull (inout jsonWriter: w) is func
+  begin
+    w.buf &:= "null";
+    w.buf &:= ",";
+  end func;
+
+const func string: finishJson (inout jsonWriter: w) is func
+  result
+    var string: out is "";
+  begin
+    trimComma(w.buf);
+    out := w.buf;
+  end func;
+
+const proc: raw (inout jsonWriter: w, in string: text) is func
+  begin
+    w.buf &:= text;
+    w.buf &:= ",";
+  end func;
