@@ -1,0 +1,32 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "diagnostics.sd7";
+
+const proc: main is func
+  local
+    var array lspDiag: raw is 0 times lspDiag.value;
+    var array lspDiag: mapped is 0 times lspDiag.value;
+    var lsDoc: doc is lsDoc.value;
+    var lspDiag: d is lspDiag.value;
+  begin
+    setVersion(doc, "abc\nä€ 日本\nx", 1);
+    d.line1 := 1; d.column1 := 3; d.message := "Expr expected"; d.atEof := FALSE;
+    raw &:= d;
+    raw &:= d;
+    d.line1 := 3; d.column1 := 0; d.message := "Match failed"; d.atEof := FALSE;
+    raw &:= d;
+    d.line1 := 3; d.column1 := 0; d.message := "\"end\" expected found \"END OF FILE\""; d.atEof := TRUE;
+    raw &:= d;
+    mapped := mapDiagnostics(raw, 100);
+    check("dedupe drops the repeat", str(length(mapped)), "3");
+    check("syntax error is Error", str(mapped[1].severity), "1");
+    check("EOF class is Information", str(mapped[3].severity), "3");
+    check("cap respected", str(length(mapDiagnostics(raw, 2))), "2");
+    check("empty list", str(length(mapDiagnostics(0 times lspDiag.value, 100))), "0");
+    check("json", diagnosticsJson("file:///a.sd7", doc, mapped),
+          "{\"uri\":\"file:///a.sd7\",\"diagnostics\":[" &
+          "{\"range\":{\"start\":{\"line\":0,\"character\":2},\"end\":{\"line\":0,\"character\":3}},\"severity\":1,\"source\":\"seed7\",\"message\":\"Expr expected\"}," &
+          "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":1,\"source\":\"seed7\",\"message\":\"Match failed\"}," &
+          "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"\\\"end\\\" expected found \\\"END OF FILE\\\"\"}]}");
+    report("diagnostics");
+  end func;

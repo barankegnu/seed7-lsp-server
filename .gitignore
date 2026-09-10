@@ -53,3 +53,9 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Local git worktrees
+.worktrees
+
+# SDD scratch (ledger, briefs, review packages)
+.superpowers

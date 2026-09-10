@@ -1,0 +1,23 @@
+$ include "seed7_05.s7i";
+  include "stdio.s7i";
+  include "lsp_tst.sd7";
+  include "jsonw.sd7";
+
+const proc: main is func
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "message"); addStr(w, "ä€ 日本 \" \\ \n \9; end");
+      field(w, "line");   addInt(w, 0);
+      field(w, "ok");     addBool(w, TRUE);
+      field(w, "ctrl");   addStr(w, "\1;\7;");
+      field(w, "arr");
+      openArray(w); addInt(w, 1); addInt(w, 2); closeArray(w);
+      field(w, "nul"); addNull(w);
+    closeObject(w);
+    check("emit", finishJson(w),
+          "{\"message\":\"ä€ 日本 \\\" \\\\ \\n \\t end\",\"line\":0,\"ok\":true," &
+          "\"ctrl\":\"\\u0001\\u0007\",\"arr\":[1,2],\"nul\":null}");
+    report("jsonw");
+  end func;

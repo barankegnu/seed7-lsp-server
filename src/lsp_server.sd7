@@ -1,0 +1,172 @@
+$ include "seed7_05.s7i";
+  include "stdio.s7i";
+  include "utf8.s7i";
+  include "transport.sd7";
+  include "rpc.sd7";
+  include "doc_store.sd7";
+  include "analysis.sd7";
+  include "diagnostics.sd7";
+  include "encoding.s7i";
+
+const integer: MAX_DIAGNOSTICS is 100;
+
+const type: docMap is hash [string] lsDoc;
+
+var docMap: openDocs is docMap.EMPTY_HASH;
+var array string: libraryDirs is 0 times "";
+var boolean: gotInitialize is FALSE;
+var boolean: gotShutdown is FALSE;
+
+const proc: note (in string: text) is func
+  begin
+    writeln(STD_UTF8_ERR, "seed7-lsp: " <& text);
+  end func;
+
+# A handler that raises must cost the request, never the server: log enough to
+# reproduce it, answer a JSON-RPC internal error, and keep reading.
+const proc: handlerFailed (in string: kind, in string: body) is func
+  begin
+    note("handler failed (" <& kind <& "): " <& body);
+    sendError(0, -32603, "internal error: " <& kind);
+  end func;
+
+const func string: capabilitiesJson is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "textDocumentSync");
+      openObject(w);
+        field(w, "openClose"); addBool(w, TRUE);
+        field(w, "change");    addInt(w, 1);
+      closeObject(w);
+      field(w, "diagnosticProvider");
+      openObject(w);
+        field(w, "interFileDependencies"); addBool(w, FALSE);
+        field(w, "workspaceDiagnostics");  addBool(w, FALSE);
+      closeObject(w);
+      field(w, "positionEncoding"); addStr(w, "utf-16");
+    closeObject(w);
+    out := finishJson(w);
+  end func;
+
+const func string: initializeResultJson is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "capabilities"); raw(w, capabilitiesJson);
+      field(w, "serverInfo");
+      openObject(w);
+        field(w, "name");    addStr(w, "seed7-lsp");
+        field(w, "version"); addStr(w, "0.1");
+      closeObject(w);
+    closeObject(w);
+    out := finishJson(w);
+  end func;
+
+const func string: pathOf (in string: uri) is func
+  result
+    var string: path is "";
+  begin
+    if startsWith(uri, "file://") then
+      path := fromPercentEncoded(uri[8 ..]);
+    else
+      path := uri;
+    end if;
+  end func;
+
+const func analysisResult: analyzeDocument (in string: uri) is func
+  result
+    var analysisResult: out is analysisResult.value;
+  local
+    var lsDoc: doc is lsDoc.value;
+    var string: text is "";
+  begin
+    if uri in openDocs then
+      doc := openDocs[uri];
+      if endsWith(uri, ".s7i") then
+        out := analyzeText(driverFor(pathOf(uri)), libraryDirs);
+      else
+        out := analyzeText(doc.text, libraryDirs);
+      end if;
+    end if;
+  end func;
+
+const proc: refresh (in string: uri) is func
+  local
+    var analysisResult: a is analysisResult.value;
+    var array lspDiag: mapped is 0 times lspDiag.value;
+  begin
+    a := analyzeDocument(uri);
+    mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
+    publish(uri, openDocs[uri], mapped);
+  end func;
+
+const proc: handleChange (in rpcMsg: msg) is func
+  local
+    var string: uri is "";
+    var jsonValue: changes is jsonValue.value;
+    var jsonValue: last is jsonValue.value;
+  begin
+    uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+    if uri <> "" and uri in openDocs then
+      # Full sync: the last change object holds the whole text (LSP 3.18).
+      changes := atKey(msg.params, "contentChanges");
+      if category(changes) = JSON_ARRAY then
+        last := itemAt(changes, length(changes));
+      end if;
+      if category(last) = JSON_OBJECT then
+        setVersion(openDocs[uri], strAt(last, "text", openDocs[uri].text),
+                   intAt(atKey(msg.params, "textDocument"), "version",
+                         openDocs[uri].version));
+      end if;
+      refresh(uri);
+    end if;
+  end func;
+
+const proc: handle (in rpcMsg: msg) is func
+  local
+    var string: uri is "";
+  begin
+    if msg.method = "initialize" then
+      gotInitialize := TRUE;
+      sendResult(msg.id, initializeResultJson);
+    elsif msg.method = "initialized" then
+    elsif msg.method = "$/setTrace" then
+    elsif msg.method = "$/cancelRequest" then
+    elsif msg.method = "shutdown" then
+      gotShutdown := TRUE;
+      sendResult(msg.id, "null");
+    elsif msg.method = "exit" then
+      if gotInitialize and gotShutdown then
+        exit(0);
+      else
+        exit(1);
+      end if;
+    elsif msg.method = "textDocument/didOpen" then
+      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      if uri <> "" then
+        openDocs @:= [uri] lsDoc.value;
+        setVersion(openDocs[uri], strAt(atKey(msg.params, "textDocument"), "text", ""),
+                   intAt(atKey(msg.params, "textDocument"), "version", 0));
+        refresh(uri);
+      end if;
+    elsif msg.method = "textDocument/didChange" then
+      handleChange(msg);
+    elsif msg.method = "textDocument/didClose" then
+      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      if uri in openDocs then
+        publish(uri, openDocs[uri], 0 times lspDiag.value);
+        excl(openDocs, uri);
+      end if;
+    else
+      if msg.isRequest then
+        sendError(msg.id, -32601, "Method not found: " <& msg.method);
+      end if;
+    end if;
+  end func;

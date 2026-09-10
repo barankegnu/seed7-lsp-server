@@ -1,0 +1,31 @@
+$ include "seed7_05.s7i";
+  include "stdio.s7i";
+
+var integer: checksRun is 0;
+var integer: checksFailed is 0;
+
+const proc: check (in string: title, in string: got, in string: expected) is func
+  begin
+    checksRun +:= 1;
+    if got = expected then
+      writeln("ok   " <& title);
+    else
+      checksFailed +:= 1;
+      writeln("FAIL " <& title);
+      writeln("     expected: " <& expected);
+      writeln("     got     : " <& got);
+    end if;
+  end func;
+
+const proc: checkTrue (in string: title, in boolean: value) is func
+  begin
+    check(title, str(value), "TRUE");
+  end func;
+
+const proc: report (in string: suite) is func
+  begin
+    writeln(suite & ": " <& checksRun <& " checks, " <& checksFailed <& " failed");
+    if checksFailed <> 0 then
+      exit(1);
+    end if;
+  end func;

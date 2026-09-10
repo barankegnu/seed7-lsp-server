@@ -1,0 +1,27 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "rpc.sd7";
+
+const proc: main is func
+  local
+    var rpcMsg: m is rpcMsg.value;
+    var jsonValue: p is jsonValue.value;
+  begin
+    m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"textDocument/hover\"," &
+                     "\"params\":{\"textDocument\":{\"uri\":\"file:///a.sd7\"}," &
+                     "\"position\":{\"line\":3,\"character\":12}}}");
+    check("method",   m.method, "textDocument/hover");
+    check("isRequest", str(m.isRequest), "TRUE");
+    check("id",       str(m.id), "7");
+    p := atKey(m.params, "textDocument");
+    check("nested uri", strAt(p, "uri", "MISSING"), "file:///a.sd7");
+    check("nested line", str(intAt(atKey(m.params, "position"), "line", -1)), "3");
+    check("absent key falls back", strAt(m.params, "nope", "FB"), "FB");
+    check("missing nested falls back", strAt(atKey(m.params, "nothere"), "uri", "FB"), "FB");
+    m := parseMessage("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}");
+    check("notification", str(m.isRequest), "FALSE");
+    check("params absent", str(category(atKey(m.params, "x"))), str(JSON_NULL));
+    check("number not string", strAt(m.params, "id", "FB"), "FB");
+    check("array item text", str(category(itemAt(readJson("[\"t\"]"), 1))), str(JSON_STRING));
+    report("rpc");
+  end func;
