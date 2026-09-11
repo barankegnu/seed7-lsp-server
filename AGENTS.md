@@ -61,6 +61,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 ## Protocol decisions that are easy to undo by accident
 
+- Position→token is **left-of-character**: a client hovering the identifier that starts at
+  column `n` sends `character: n`, so the token is the one *ending* at `n`, not starting at
+  it. `doc_store.wordAt` owns that rule; do not re-derive it in a feature.
 - Positions are 0-based line/character in **UTF-16 code units**; `utf8.s7i`'s
   `STD_UTF8_IN/OUT/ERR` are mandatory (plain `STD_OUT` raises `RANGE_ERROR` on
   non-ASCII), and `Content-Length` is the **byte** count while `length()` counts

@@ -6,6 +6,16 @@ const type: lsDoc is new struct
     var array integer: lineStart is 1 times 1;
   end struct;
 
+# The token under an LSP position. line1/column1 follow the analyzer's convention
+# (1-based line, 1-based column measured from the line start) so a feature can hand
+# them straight to lspRange/lspRangePair. An empty word means "no token here".
+const type: wordRef is new struct
+    var string: word is "";
+    var integer: line1 is 0;
+    var integer: column1 is 0;
+    var integer: width is 0;
+  end struct;
+
 const func array integer: lineStarts (in string: text) is func
   result
     var array integer: starts is 1 times 1;
@@ -93,4 +103,142 @@ const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: colum
     end if;
     out := "{\"line\":" <& lineIdx - 1 <& ",\"character\":" <&
            utf16Before(doc.text, start + ch) - utf16Before(doc.text, start) <& "}";
+  end func;
+
+const func boolean: isAlpha (in char: ch) is
+  return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z');
+
+const func boolean: isDigit (in char: ch) is
+  return ch >= '0' and ch <= '9';
+
+const func boolean: nameChar (in char: ch) is
+  return ch = '_' or isAlpha(ch) or isDigit(ch);
+
+const set of char: OP_CHARS is {'+', '-', '*', '/', '<', '>', '=', ',', ':', ';',
+                                '&', '%', '^', '|', '~', '!', '?', '@'};
+
+const func boolean: opChar (in char: ch) is
+  return ch in OP_CHARS;
+
+const func boolean: tokenChar (in char: ch) is
+  return nameChar(ch) or opChar(ch);
+
+# The character AT an LSP position -- positions sit between characters, so this is
+# the character to the RIGHT of the cursor. A position at or past the end of its
+# line yields the index of that line's terminator; an out-of-range line yields one
+# past the text, which callers treat as "no character here".
+const func integer: charIndexOf (in lsDoc: doc, in integer: line0,
+                                 in integer: character0) is func
+  result
+    var integer: idx is 0;
+  local
+    var integer: lineIdx is 0;
+    var integer: start is 1;
+    var integer: i is 1;
+    var integer: units is 0;
+  begin
+    idx := length(doc.text) + 1;
+    lineIdx := line0 + 1;
+    if lineIdx >= 1 and lineIdx <= lineCount(doc) then
+      start := doc.lineStart[lineIdx];
+      i := start;
+      units := 0;
+      while i <= length(doc.text) and units < character0 and
+            doc.text[i] <> '\n' and doc.text[i] <> '\r' do
+        if ord(doc.text[i]) >= 65536 then
+          units +:= 2;
+        else
+          units +:= 1;
+        end if;
+        i +:= 1;
+      end while;
+      idx := i;
+    end if;
+  end func;
+
+const func boolean: onLine (in lsDoc: doc, in integer: lineIdx,
+                            in integer: idx) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := idx >= doc.lineStart[lineIdx] and
+           idx < doc.lineStart[lineIdx] + lineWidth(doc.text, doc.lineStart[lineIdx]);
+  end func;
+
+const func boolean: tokenKindAt (in lsDoc: doc, in integer: idx,
+                                 in boolean: wantOp) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    if idx >= 1 and idx <= length(doc.text) then
+      if wantOp then
+        out := opChar(doc.text[idx]);
+      else
+        out := nameChar(doc.text[idx]);
+      end if;
+    end if;
+  end func;
+
+# ponytail: no lexer. A run of OP_CHARS inside (* ... *) or "...\"..." comes back as a
+# "word", and `a<b` reads as one operator run. scan.sd7 (M4) owns that; every consumer
+# here asks for the token under a cursor.
+const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
+                            in integer: character0) is func
+  result
+    var wordRef: out is wordRef.value;
+  local
+    var integer: lineIdx is 0;
+    var integer: start is 1;
+    var integer: right is 0;
+    var integer: at is 0;
+    var integer: first is 0;
+    var integer: lastIdx is 0;
+    var boolean: opRun is FALSE;
+  begin
+    lineIdx := line0 + 1;
+    if lineIdx >= 1 and lineIdx <= lineCount(doc) then
+      start := doc.lineStart[lineIdx];
+      right := charIndexOf(doc, line0, character0);
+      at := 0;
+      # right > start already keeps the character to the left on this line.
+      if right > start and right <= length(doc.text) and
+         tokenChar(doc.text[pred(right)]) then
+        at := pred(right);
+      elsif right >= start and onLine(doc, lineIdx, right) and
+            tokenChar(doc.text[right]) then
+        at := right;
+      end if;
+      if at <> 0 then
+        opRun := opChar(doc.text[at]);
+        first := at;
+        while pred(first) >= start and tokenKindAt(doc, pred(first), opRun) do
+          first := pred(first);
+        end while;
+        lastIdx := at;
+        while tokenKindAt(doc, succ(lastIdx), opRun) do
+          lastIdx := succ(lastIdx);
+        end while;
+        out.word := doc.text[first .. lastIdx];
+        out.line1 := lineIdx;
+        out.column1 := first - start + 1;
+        out.width := lastIdx - first + 1;
+      end if;
+    end if;
+  end func;
+
+const func string: lspRangePair (in lsDoc: doc, in integer: line1, in integer: column1,
+                                 in integer: width) is func
+  result
+    var string: out is "";
+  begin
+    out := "{\"start\":" <& lspRange(doc, line1, column1) <& ",\"end\":" &
+           lspRange(doc, line1, column1 + width) <& "}";
+  end func;
+
+const func string: lspWholeLine (in integer: line1) is func
+  result
+    var string: out is "";
+  begin
+    out := "{\"start\":{\"line\":" <& line1 - 1 <& ",\"character\":0}," <&
+           "\"end\":{\"line\":" <& line1 <& ",\"character\":0}}";
   end func;

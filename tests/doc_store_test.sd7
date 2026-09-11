@@ -6,6 +6,9 @@ const proc: main is func
   local
     var lsDoc: doc is lsDoc.value;
     var lsDoc: crlf is lsDoc.value;
+    var lsDoc: two is lsDoc.value;
+    var lsDoc: op is lsDoc.value;
+    var wordRef: w is wordRef.value;
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -21,5 +24,29 @@ const proc: main is func
     check("astral counts twice", str(utf16Before("a𐐀b", 3) - utf16Before("a𐐀b", 1)), "3");
     check("trailing b counted", str(utf16Before("a𐐀b", 4) - utf16Before("a𐐀b", 1)), "4");
     check("version stored", str(crlf.version), "1");
+    setVersion(two, "  const proc: main is func\n    writeln(x);\n", 1);
+    w := wordAt(two, 1, 6);
+    check("left-of-character wins", w.word, "writeln");
+    check("word line is 1-based", str(w.line1), "2");
+    check("word column is line-relative and 1-based", str(w.column1), "5");
+    check("word width", str(w.width), "7");
+    check("cursor just left of the token", wordAt(two, 1, 4).word, "writeln");
+    check("inside indentation there is no word", wordAt(two, 1, 1).word, "");
+    check("mid-line word", wordAt(two, 0, 10).word, "proc");
+    check("hover the end of const", wordAt(two, 0, 7).word, "const");
+    check("hover past the line end finds the last token", wordAt(two, 0, 99).word, "func");
+    check("a position past the line end stops at the terminator",
+          str(charIndexOf(two, 1, 99)),
+          str(two.lineStart[2] + lineWidth(two.text, two.lineStart[2])));
+    check("an out-of-range line is one past the text", str(charIndexOf(two, 400, 0)),
+          str(length(two.text) + 1));
+    check("absurd line has no word", wordAt(two, 400, 0).word, "");
+    setVersion(op, "a<&b\n", 1);
+    check("operator run is one word", wordAt(op, 0, 2).word, "<&");
+    check("name char before an operator", wordAt(op, 0, 1).word, "a");
+    check("range pair", lspRangePair(op, 1, 1, 1),
+          "{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}}");
+    check("whole line range needs no document", lspWholeLine(13),
+          "{\"start\":{\"line\":12,\"character\":0},\"end\":{\"line\":13,\"character\":0}}");
     report("doc_store");
   end func;

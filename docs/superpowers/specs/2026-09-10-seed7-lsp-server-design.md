@@ -65,6 +65,10 @@ Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(S
 - Negotiate `positionEncoding`; honour `utf-16` (mandatory in all clients, our default) and `utf-8` when offered. `doc_store.sd7` owns the three-way map: LSP (line, character) ↔ Seed7 character index ↔ byte offset, backed by a per-document line-start table rebuilt on `didChange`.
 - 0-based line/character in, 1-based `lineNumber`/`columnNumber` from `getError` out.
 - A character value past the line length clamps to the line length. `\r|\n` positions are never emitted.
+- Position→token is left-of-character. LSP 3.18 ("Hover Request"): *"the client typically
+  sends position n (the position before the character)"*. `doc_store.wordAt` resolves the
+  token **ending** at the position and falls back to the one starting there; completion uses
+  the same function and truncates its result at the cursor.
 
 ### 3.4 Lifecycle
 
