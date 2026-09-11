@@ -105,8 +105,13 @@ the ones that will say so.
 - **Trust gate** and **`.s7i` staleness (R-F10)**, which the spec also lists under M3. Both are
   orthogonal to these five features and each is its own plan; nothing here depends on them.
 - `scan.sd7`, and with it foldingRange/selectionRange/semanticTokens (M4). `wordAt` is a
-  line-local extractor, not a lexer; where it is knowingly wrong (inside a comment or a string
-  literal) the code says so with a `ponytail:` comment.
+  line-local extractor, not a lexer. **Revised during execution:** a smoke test on
+  `prg/calc7.sd7` showed a cursor inside a multi-line continuation string being answered with
+  the signature of a call that had closed lines earlier, so `doc_store.insideText` (string /
+  `(* *)` / `#` aware, no token model) was added and `wordAt` refuses inside any of them.
+  `signature_help` replaced its planned backward walk with one forward pass carrying the same
+  state plus paren depth. What `scan.sd7` still owns is token *spans*, extents and semantic
+  classes — not "is this position meaningful".
 - Struct-member completion after `.` — needs `structSymbols`, which is a different shape of
   problem. `references`/`rename` stay M6: the reflection API has no use sites.
 
@@ -1713,7 +1718,9 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
 - Consumes: `array symRec`, `nameChar` (Task 1), `jsonw`.
 - Produces:
   - `const func string: callContext (in string: text, in integer: offset,
-    inout integer: active)` → the callee name (or `""`), with the 0-based argument index in
+    inout integer: active)` — **superseded during execution by `callContextOf (in lsDoc: doc,
+    in integer: line0, in integer: character0, inout integer: active)`**: the walk was
+    character-local and crossed string literals. → the callee name (or `""`), with the 0-based argument index in
     `active`.
   - `const func string: signatureHelpResult (in array symRec: syms, in string: callee,
     in integer: active)` → `SignatureHelp | null`.
@@ -1795,7 +1802,7 @@ $ include "seed7_05.s7i";
 const integer: MAX_SIGNATURES is 10;
 
 # Walking back from the cursor to the '(' that still owns it, counting commas on the way.
-# ponytail: a comma inside a "..." or a (* *) counts, and a call split over lines works but
+# ponytail: a comma inside a "..." or a (* *) counts
 # is not nested-aware. scan.sd7 (M4) owns both; this is the difference between wrong in a
 # rare case and absent in every case.
 const func string: callContext (in string: text, in integer: offset,

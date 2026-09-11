@@ -120,6 +120,69 @@ const set of char: OP_CHARS is {'+', '-', '*', '/', '<', '>', '=', ',', ':', ';'
 const func boolean: opChar (in char: ch) is
   return ch in OP_CHARS;
 
+# Seed7's own escape character, spelled with chr() because the char literal 'backslash'
+# does not parse -- the escape consumes the closing quote.
+const char: BACKSLASH is chr(92);
+
+const func boolean: nextIs (in string: text, in integer: i, in char: c) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := succ(i) <= length(text) and text[succ(i)] = c;
+  end func;
+
+# True when idx sits inside a string literal, a (* ... *) comment (nesting aware) or a
+# # line comment. This is NOT a lexer -- it answers one question, "would a token here be
+# meaningless to the reader?" -- and it is what keeps hover from reporting a signature for
+# text the user typed inside "...", and keeps the comma walk in signature_help from
+# crossing a string. scan.sd7 (M4) may absorb it.
+const func boolean: insideText (in lsDoc: doc, in integer: idx) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+    var integer: depth is 0;
+    var integer: stop is 0;
+    var boolean: inStr is FALSE;
+    var boolean: inLine is FALSE;
+    var boolean: esc is FALSE;
+    var char: ch is ' ';
+  begin
+    stop := idx;
+    if stop > length(doc.text) then
+      stop := length(doc.text);
+    end if;
+    for i range 1 to stop do
+      ch := doc.text[i];
+      if inStr then
+        if esc then
+          esc := FALSE;
+        elsif ch = BACKSLASH then
+          esc := TRUE;
+        elsif ch = '"' then
+          inStr := FALSE;
+        end if;
+      elsif depth > 0 then
+        if ch = '(' and nextIs(doc.text, i, '*') then
+          depth +:= 1;
+        elsif ch = '*' and nextIs(doc.text, i, ')') then
+          depth := pred(depth);
+        end if;
+      elsif inLine then
+        if ch = '\n' or ch = '\r' then
+          inLine := FALSE;
+        end if;
+      elsif ch = '"' then
+        inStr := TRUE;
+      elsif ch = '(' and nextIs(doc.text, i, '*') then
+        depth +:= 1;
+      elsif ch = '#' then
+        inLine := TRUE;
+      end if;
+    end for;
+    out := inStr or inLine or depth > 0;
+  end func;
+
 const func boolean: tokenChar (in char: ch) is
   return nameChar(ch) or opChar(ch);
 
@@ -208,7 +271,7 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
             tokenChar(doc.text[right]) then
         at := right;
       end if;
-      if at <> 0 then
+      if at <> 0 and not insideText(doc, at) then
         opRun := opChar(doc.text[at]);
         first := at;
         while pred(first) >= start and tokenKindAt(doc, pred(first), opRun) do

@@ -120,15 +120,6 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
 
 # The only place that decides whether a document is analysed directly or through the
 # synthetic .s7i driver, so no feature has to ask the question.
-const func string: docTextOf (in string: uri) is func
-  result
-    var string: out is "";
-  begin
-    if uri in openDocs then
-      out := openDocs[uri].text;
-    end if;
-  end func;
-
 const func array symRec: symbolsOfDocument (in string: uri) is func
   result
     var array symRec: out is 0 times symRec.value;
@@ -181,8 +172,6 @@ const proc: handle (in rpcMsg: msg) is func
   local
     var string: uri is "";
     var string: callee is "";
-    var string: text is "";
-    var integer: offset is 0;
     var integer: activeArg is 0;
   begin
     if msg.method = "initialize" then
@@ -236,17 +225,16 @@ const proc: handle (in rpcMsg: msg) is func
       end if;
     elsif msg.method = "textDocument/signatureHelp" then
       uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
-      # callContext writes activeArg through an inout parameter, so it must not be
+      # callContextOf writes activeArg through an inout parameter, so it must not be
       # nested inside the call that reads it.
-      text := docTextOf(uri);
       if uri in openDocs then
-        offset := charIndexOf(openDocs[uri],
-                              intAt(atKey(msg.params, "position"), "line", 0),
-                              intAt(atKey(msg.params, "position"), "character", 0));
+        callee := callContextOf(openDocs[uri],
+                                intAt(atKey(msg.params, "position"), "line", 0),
+                                intAt(atKey(msg.params, "position"), "character", 0),
+                                activeArg);
       else
-        offset := 0;
+        callee := "";
       end if;
-      callee := callContext(text, offset, activeArg);
       sendResult(msg.id, signatureHelpResult(symbolsOfDocument(uri), callee, activeArg));
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);

@@ -27,7 +27,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   implicitly. Writing `res := x; return res;` does not match at analysis time, and a bare
   `return` in a `proc` raises `PROC_EXPECTED`. `is return expr;` is the other correct form.
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
-  Tab inside a literal is `\9;`.
+  Tab inside a literal is `\9;`. A char literal cannot hold the escape character
+  (`'\'` does not parse — the escape eats the closing quote): write `chr(92)` and name it.
+  `doc_store.BACKSLASH` is that name.
 - At statement level `<&` writes to the output stream; assignment is `&:=`. Worse,
   `A <& B < C` parses as a *comparison* and quietly yields `FALSE` — which is how a
   capabilities payload once shipped `{"capabilities":FALSE}`. Compose JSON with

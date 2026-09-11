@@ -6,6 +6,15 @@ $ include "seed7_05.s7i";
   include "features/completion.sd7";
   include "features/signature_help.sd7";
 
+const func string: calleeAt (inout lsDoc: d, in string: text, in integer: character0,
+                             inout integer: active) is func
+  result
+    var string: out is "";
+  begin
+    setVersion(d, text, 1);
+    out := callContextOf(d, 0, character0, active);
+  end func;
+
 const func wordRef: exact (in string: nm) is func
   result
     var wordRef: out is wordRef.value;
@@ -93,6 +102,8 @@ const proc: main is func
     var array symRec: hsyms is 0 times symRec.value;
     var string: probe is "";
     var integer: active is 0;
+    var lsDoc: sig is lsDoc.value;
+    var string: got is "";
     var lsDoc: hov is lsDoc.value;
     var integer: k is 0;
     var array symRec: syms is 0 times symRec.value;
@@ -224,28 +235,40 @@ const proc: main is func
               startsWith(completionResult(0 times symRec.value, exact(""), 1), "[{") and
               pos(completionResult(0 times symRec.value, exact(""), 1),
                   "\"label\":\"const\"") <> 0);
-    probe := "go(x";
-    active := 0;
-    check("callee is the name before the owning paren",
-          callContext(probe, length(probe) + 1, active), "go");
+    got := calleeAt(sig, "go(x", 5, active);
+    check("callee is the name before the owning paren", got, "go");
     check("no comma yet", str(active), "0");
-    probe := "reportWidget(x, hits";
-    active := 0;
-    check("a longer callee still resolves",
-          callContext(probe, length(probe) + 1, active), "reportWidget");
+    got := calleeAt(sig, "reportWidget(x, hits", 20, active);
+    check("a longer callee still resolves", got, "reportWidget");
     check("second argument is active", str(active), "1");
-    probe := "f(a, (b, c";
-    active := 0;
-    check("a bare paren has no callee", callContext(probe, length(probe) + 1, active), "");
-    check("commas before the inner paren do not count", str(active), "1");
-    probe := "writeln done";
-    active := 5;
-    check("no unclosed paren to the left", callContext(probe, 13, active), "");
+    got := calleeAt(sig, "f(a, (b, c", 12, active);
+    check("a grouping paren has no callee", got, "");
+    check("nothing counted for it", str(active), "0");
+    got := calleeAt(sig, "writeln done", 12, active);
+    check("no unclosed paren to the left", got, "");
     check("the counter starts over", str(active), "0");
-    probe := "go(\"a, b\", x";
-    active := 0;
-    check("a comma inside a string literal counts", callContext(probe, 13, active), "go");
-    check("the ceiling is pinned, not hoped away", str(active), "2");
+    got := calleeAt(sig, "go(\"a, b\", x", 13, active);
+    check("a comma inside a string literal is not an argument separator", got, "go");
+    check("one real comma", str(active), "1");
+    got := calleeAt(sig, "go(\"a, b", 8, active);
+    check("a cursor inside a string literal gets no signature help", got, "");
+    got := calleeAt(sig, "(*  go(a, b", 11, active);
+    check("a cursor inside a comment gets none either", got, "");
+    got := calleeAt(sig, "# go(a, b", 9, active);
+    check("nor one inside a line comment", got, "");
+    got := calleeAt(sig, "outer(inner(a, b), ", 19, active);
+    check("the innermost UNCLOSED call wins", got, "outer");
+    check("the outer argument index is counted", str(active), "1");
+    setVersion(sig, "go(\"multi\nline\", x", 1);
+    check("a call after a string that spans lines still resolves",
+          callContextOf(sig, 1, 7, active), "go");
+    check("and its comma counts once", str(active), "1");
+    got := calleeAt(sig, "go(x, y)  # tail", 9, active);
+    check("a closed call offers nothing", got, "");
+    setVersion(sig, "  const integer: q is 1;\nreportWidget(\"a\", ", 1);
+    check("the walk is not confined to one line",
+          callContextOf(sig, 1, 17, active), "reportWidget");
+    check("the argument index survives the line break", str(active), "1");
     h1.name := "writeln"; h1.cat := "BLOCKOBJECT"; h1.ty := "proc";
     h1.file := "/tmp/a.sd7"; h1.line1 := 3;
     h1.sign := "const proc: writeln (string: s)";
@@ -256,6 +279,8 @@ const proc: main is func
     h2.params := []("integer: n");
     hsyms &:= h1;
     hsyms &:= h2;
+    setVersion(sig, "go(\"a, b\", x);\nconst integer: q is 1;\n", 1);
+    active := 0;
     check("no callee means null", signatureHelpResult(hsyms, "", 0), "null");
     check("one signature per overload, active parameter reported",
           signatureHelpResult(hsyms, "writeln", 1),

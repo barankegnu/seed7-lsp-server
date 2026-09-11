@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 10 suites + transcript, 177 checks, no editor required
+    make test          # 10 suites + transcript, 196 checks, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -75,6 +75,11 @@ line for every library object — `hover`, which shows the reconstructed signatu
 overload plus the `(** … *)` comment the library author wrote, `completion` for
 declarations and the base keywords, and `signatureHelp` with the active parameter counted
 from the call site.
+
+Requests stay silent inside a string literal or a comment: `doc_store.insideText` tracks
+those states, so a position inside `"..."` reports nothing rather than the signature of some
+unrelated call — a real risk in files like `prg/calc7.sd7`, whose continuation strings span
+lines.
 
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's

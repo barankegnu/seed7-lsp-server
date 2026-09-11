@@ -5,50 +5,95 @@ $ include "seed7_05.s7i";
 
 const integer: MAX_SIGNATURES is 10;
 
-# Walking back from the cursor to the '(' that still owns it, counting the commas on the
-# way. `offset` comes from doc_store.charIndexOf, so this function never converts a
-# position itself.
+# The callee for a request position, plus the index of the argument the cursor sits in.
 #
-# ponytail: character-local, so a comma inside "..." or a (* ... *) counts as an argument
-# separator, and a grouping "(...)" has no callee at all. scan.sd7 (M4) owns both; the
-# alternative is no signature help until then.
-const func string: callContext (in string: text, in integer: offset,
-                                inout integer: active) is func
+# A single forward pass over the text up to the cursor, tracking the same three states
+# insideText does (string literal, (* *) comment, # line comment) so a comma inside "..."
+# is not an argument separator and a paren inside a comment is not a paren. The pass also
+# remembers where each still-open '(' began, which is what makes the answer the INNERMOST
+# unclosed call and not some unrelated earlier one -- the failure a backward walk produces
+# on a real file, where a cursor inside a multi-line string happily reports the signature
+# of a call that finished lines ago.
+#
+# Returns "" for an unopened document, a cursor inside text or a comment, a line with no
+# unclosed "(", and a grouping "(...)" that has no name in front of it.
+const func string: callContextOf (in lsDoc: doc, in integer: line0,
+                                  in integer: character0,
+                                  inout integer: active) is func
   result
     var string: out is "";
   local
+    var integer: offset is 0;
     var integer: i is 0;
     var integer: depth is 0;
-    var integer: stop is 0;
+    var integer: cdepth is 0;
     var integer: lastIdx is 0;
+    var boolean: inStr is FALSE;
+    var boolean: inLine is FALSE;
+    var boolean: esc is FALSE;
+    var char: ch is ' ';
+    var array integer: openAt is 1 times 0;
+    var array integer: commas is 1 times 0;
   begin
+    out := "";
     active := 0;
-    i := pred(offset);
-    while i >= 1 and stop = 0 do
-      if text[i] = ')' then
+    offset := charIndexOf(doc, line0, character0);
+    for i range 1 to pred(offset) do
+      ch := doc.text[i];
+      if inStr then
+        if esc then
+          esc := FALSE;
+        elsif ch = BACKSLASH then
+          esc := TRUE;
+        elsif ch = '"' then
+          inStr := FALSE;
+        end if;
+      elsif cdepth > 0 then
+        if ch = '(' and nextIs(doc.text, i, '*') then
+          cdepth +:= 1;
+        elsif ch = '*' and nextIs(doc.text, i, ')') then
+          cdepth := pred(cdepth);
+        end if;
+      elsif inLine then
+        if ch = '\n' or ch = '\r' then
+          inLine := FALSE;
+        end if;
+      elsif ch = '"' then
+        inStr := TRUE;
+      elsif ch = '(' and nextIs(doc.text, i, '*') then
+        cdepth +:= 1;
+      elsif ch = '#' then
+        inLine := TRUE;
+      elsif ch = '(' then
         depth +:= 1;
-      elsif text[i] = '(' then
-        if depth = 0 then
-          stop := i;
-        else
+        if depth > length(openAt) then
+          openAt &:= 0;
+          commas &:= 0;
+        end if;
+        openAt[depth] := i;
+        commas[depth] := 0;
+      elsif ch = ')' then
+        if depth > 0 then
           depth := pred(depth);
         end if;
-      elsif text[i] = ',' and depth = 0 then
-        active +:= 1;
+      elsif ch = ',' then
+        if depth > 0 then
+          commas[depth] +:= 1;
+        end if;
       end if;
-      i := pred(i);
-    end while;
-    if stop <> 0 then
-      i := pred(stop);
-      while i >= 1 and text[i] = ' ' do
+    end for;
+    if depth > 0 and not inStr and cdepth = 0 and not inLine then
+      i := pred(openAt[depth]);
+      while i >= 1 and doc.text[i] = ' ' do
         i := pred(i);
       end while;
-      if i >= 1 and nameChar(text[i]) then
+      if i >= 1 and nameChar(doc.text[i]) then
         lastIdx := i;
-        while pred(i) >= 1 and nameChar(text[pred(i)]) do
+        while pred(i) >= 1 and nameChar(doc.text[pred(i)]) do
           i := pred(i);
         end while;
-        out := text[i .. lastIdx];
+        out := doc.text[i .. lastIdx];
+        active := commas[depth];
       end if;
     end if;
   end func;
