@@ -1,0 +1,99 @@
+$ include "seed7_05.s7i";
+  include "osfiles.s7i";
+
+# The (** ... *) comment above a declaration, which is the only documentation Seed7
+# libraries carry. Hover asks for it by (file, declaration line) -- both come straight out
+# of reflection -- and gets "" when there is none.
+
+const func array string: readLinesOf (in string: path) is func
+  result
+    var array string: lines is 0 times "";
+  local
+    var file: f is STD_NULL;
+    var string: one is "";
+  begin
+    block
+      f := open(path, "r");
+      while not eof(f) do
+        readln(f, one);
+        lines &:= one;
+      end while;
+      close(f);
+    exception
+      catch FILE_ERROR:
+        lines := 0 times "";
+    end block;
+  end func;
+
+const func string: trimLeft (in string: lineText) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 1;
+  begin
+    out := lineText;
+    while i <= length(out) and (out[i] = ' ' or out[i] = '\9;') do
+      i +:= 1;
+    end while;
+    out := out[i ..];
+  end func;
+
+# The decoration is " *  " at the front of every body line; the closing " *)" line is
+# detected with trimLeft alone, because stripping its star is what would hide it.
+const func string: stripDoc (in string: lineText) is func
+  result
+    var string: out is "";
+  local
+    var string: trimmed is "";
+  begin
+    out := trimLeft(lineText);
+    if startsWith(out, "*") then
+      out := out[2 ..];
+    end if;
+    trimmed := out;
+    if length(trimmed) >= 1 and trimmed[1] = ' ' then
+      out := trimmed[2 ..];
+    end if;
+    out := trimLeft(out);
+  end func;
+
+const func boolean: blank (in string: lineText) is
+  return trimLeft(lineText) = "";
+
+const func string: proseFor (in string: path, in integer: line1) is func
+  result
+    var string: out is "";
+  local
+    var array string: lines is 0 times "";
+    var integer: idx is 0;
+    var integer: startIdx is 0;
+    var integer: stopIdx is 0;
+    var string: one is "";
+  begin
+    lines := readLinesOf(path);
+    idx := line1 - 1;
+    if idx > length(lines) then
+      idx := 0;
+    end if;
+    while idx >= 1 and blank(lines[idx]) do
+      idx := idx - 1;
+    end while;
+    if idx >= 1 and endsWith(trimLeft(lines[idx]), "*)") then
+      stopIdx := idx;
+      startIdx := idx;
+      while startIdx >= 1 and pos(lines[startIdx], "(**") = 0 do
+        startIdx := startIdx - 1;
+      end while;
+      if startIdx >= 1 then
+        for idx range startIdx + 1 to stopIdx - 1 do
+          one := stripDoc(lines[idx]);
+          if one <> "" and not startsWith(one, "@") then
+            if out <> "" then
+              out &:= "\n";
+            end if;
+            out &:= one;
+          end if;
+        end for;
+      end if;
+    end if;
+  end func;
