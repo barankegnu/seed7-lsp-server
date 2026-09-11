@@ -247,6 +247,37 @@ expect("totMarker" in labels and "totalSize" in labels,
 expect(not isinstance(comp, dict) or comp.get("isIncomplete") is not True,
        "a short completion list stays a plain array")
 
+# --- M3: signatureHelp inside a call, second argument ---
+SIG_TEXT = SYMS + "\nconst integer: totMarker is 1;\n"
+SIG_LINES = SIG_TEXT.split("\n")
+SIG_LINE = SIG_LINES.index('    reportWidget("proto", hits);')
+SIG_CHAR = SIG_LINES[SIG_LINE].index("hits")
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7", "languageId": "seed7",
+                             "version": 1, "text": SIG_TEXT}}}),
+    frame({"jsonrpc": "2.0", "id": 60, "method": "textDocument/signatureHelp", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": SIG_LINE, "character": SIG_CHAR}}}),
+    frame({"jsonrpc": "2.0", "id": 61, "method": "textDocument/signatureHelp", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": SIG_LINE, "character": SIG_CHAR - 15}}}),
+    frame({"jsonrpc": "2.0", "id": 62, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+sig = by_id.get(60, {}).get("result") or {}
+sigs = [x.get("label", "") for x in sig.get("signatures", [])]
+expect(len(sigs) == 1 and "reportWidget" in sigs[0],
+       "signatureHelp names the callee, got %s" % sigs)
+expect(sig.get("activeParameter") == 1,
+       "second argument is active, got %r" % sig.get("activeParameter"))
+expect([x.get("label") for x in sig.get("signatures", [{}])[0].get("parameters", [])] ==
+       ["string: label", "integer: counter"], "parameters listed in order")
+expect(by_id.get(61, {}).get("result") is None,
+       "signatureHelp outside a call is null")
+
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),

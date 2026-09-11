@@ -1,0 +1,109 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "jsonw.sd7";
+
+const integer: MAX_SIGNATURES is 10;
+
+# Walking back from the cursor to the '(' that still owns it, counting the commas on the
+# way. `offset` comes from doc_store.charIndexOf, so this function never converts a
+# position itself.
+#
+# ponytail: character-local, so a comma inside "..." or a (* ... *) counts as an argument
+# separator, and a grouping "(...)" has no callee at all. scan.sd7 (M4) owns both; the
+# alternative is no signature help until then.
+const func string: callContext (in string: text, in integer: offset,
+                                inout integer: active) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+    var integer: depth is 0;
+    var integer: stop is 0;
+    var integer: lastIdx is 0;
+  begin
+    active := 0;
+    i := pred(offset);
+    while i >= 1 and stop = 0 do
+      if text[i] = ')' then
+        depth +:= 1;
+      elsif text[i] = '(' then
+        if depth = 0 then
+          stop := i;
+        else
+          depth := pred(depth);
+        end if;
+      elsif text[i] = ',' and depth = 0 then
+        active +:= 1;
+      end if;
+      i := pred(i);
+    end while;
+    if stop <> 0 then
+      i := pred(stop);
+      while i >= 1 and text[i] = ' ' do
+        i := pred(i);
+      end while;
+      if i >= 1 and nameChar(text[i]) then
+        lastIdx := i;
+        while pred(i) >= 1 and nameChar(text[pred(i)]) do
+          i := pred(i);
+        end while;
+        out := text[i .. lastIdx];
+      end if;
+    end if;
+  end func;
+
+# SignatureHelp for one name: every overload, deduped by signature text. activeParameter
+# is clamped only at the bottom -- an argument index past the last parameter is reported as
+# typed, because that is the state the editor is in and dropping it would hide it.
+const func string: signatureHelpResult (in array symRec: syms, in string: callee,
+                                        in integer: active) is func
+  result
+    var string: out is "null";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var array string: shown is 0 times "";
+    var integer: emitted is 0;
+    var integer: i is 0;
+    var integer: p is 0;
+    var integer: activeIdx is 0;
+    var boolean: hasSigs is FALSE;
+  begin
+    if callee <> "" then
+      openObject(w);
+        field(w, "signatures");
+        openArray(w);
+          for i range 1 to length(syms) do
+            if syms[i].name = callee and not listed(shown, syms[i].sign) and
+               emitted < MAX_SIGNATURES then
+              shown &:= syms[i].sign;
+              emitted +:= 1;
+              openObject(w);
+                field(w, "label"); addStr(w, syms[i].sign);
+                field(w, "parameters");
+                openArray(w);
+                  for p range 1 to length(syms[i].params) do
+                    openObject(w);
+                      field(w, "label"); addStr(w, syms[i].params[p]);
+                    closeObject(w);
+                  end for;
+                closeArray(w);
+              closeObject(w);
+            end if;
+          end for;
+        closeArray(w);
+        if emitted <> 0 then
+          field(w, "activeSignature"); addInt(w, 0);
+          activeIdx := active;
+          if activeIdx < 0 then
+            activeIdx := 0;
+          end if;
+          field(w, "activeParameter"); addInt(w, activeIdx);
+          hasSigs := TRUE;
+        end if;
+      closeObject(w);
+      if hasSigs then
+        out := finishJson(w);
+      end if;
+    end if;
+  end func;
