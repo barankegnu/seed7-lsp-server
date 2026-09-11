@@ -51,7 +51,10 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 3. Only `src/transport.sd7` computes or consumes byte lengths.
 4. Only `src/*.sd7` feature code builds LSP response shapes; `analysis.sd7` returns
    Seed7-shaped data and knows nothing about LSP.
-5. Capabilities are static in `InitializeResult`. No dynamic registration.
+5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
+   capability is only advertised once its method is answered: `diagnosticProvider`
+   shipped ahead of `textDocument/diagnostic`, which told pull-capable clients to
+   ignore the push diagnostics we really did send.
 6. Outbound text goes through `jsonw.sd7`. `str()` on a `jsonValue` is the `literal()`
    path that emits `\8364;` for `€` — invalid JSON. `grep -n 'addStr(w, str(' src/*.sd7`
    must stay empty.
@@ -70,8 +73,14 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   request, and silence for an unknown notification.
 - Full text sync: the **last** `contentChanges` element holds the whole text.
 - A truncated buffer is the normal state while typing, so `END OF FILE`-class analyzer
-  messages publish as `DiagnosticSeverity.Information`. Match by substring: those
-  messages end in a quote character, so a suffix test never fires.
+  messages publish as `DiagnosticSeverity.Information`. Match that class by substring:
+  those messages end in a quote character, so a suffix test never fires — and
+  `errorType` cannot key it either, because EOF also appears *inside* the message of
+  `EXPECTED_SYMBOL` (`";" expected found "END OF FILE"`), not as its own member.
+- An empty buffer — the first state of a new file — reports `SYSTEM_MAIN_MISSING`, so
+  that one kind is downgraded to Information too, keyed on `parseError.error`. Do not
+  expect the member on a file that has its `$ include "seed7_05.s7i";` line: with the
+  essential include present, a main-less program analyses clean.
 - Semantic errors arrive with `columnNumber = 0`. Ask `lspRange` for an absurd column
   and let it clamp, rather than adding a second position function.
 

@@ -86,7 +86,9 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.
-5. Pull diagnostics (`textDocument/diagnostic`) is added behind the client capability in the same milestone; both paths call one function.
+5. Pull diagnostics (`textDocument/diagnostic`) is **not advertised and not handled**;
+the capability shipped in error during M2 and is removed until the handler exists. When
+it lands, it goes behind the client capability and both paths call one function.
 
 `.s7i` buffers: a library file is not analysable alone, so `analysis.sd7` parses the synthetic driver
 

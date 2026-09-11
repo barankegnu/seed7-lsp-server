@@ -29,7 +29,9 @@ const func array lspDiag: mapDiagnostics (in array lspDiag: raw,
       elsif length(out) >= maxPublish then
       else
         seen @:= [keyStr] 1;
-        if diag.atEof then
+        if diag.atEof or diag.errKind = SYSTEM_MAIN_MISSING then
+          # Truncated buffer, or a file whose main is not typed yet. Neither is a
+          # defect in the code the editor is holding.
           diag.severity := SEV_INFORMATION;
         else
           diag.severity := SEV_ERROR;

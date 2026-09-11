@@ -10,5 +10,10 @@ const proc: main is func
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
     checkTrue("caps are valid json wrapper", startsWith(capabilitiesJson, "{") and
               endsWith(capabilitiesJson, "}"));
+    # A advertised provider must have a handler. textDocument/diagnostic answers
+    # -32601, and a pull-capable client that believes the capability may ignore
+    # the push diagnostics we really do send.
+    checkTrue("no capability for an unhandled request",
+              pos(capabilitiesJson, "diagnosticProvider") = 0);
     report("lsp_server");
   end func;

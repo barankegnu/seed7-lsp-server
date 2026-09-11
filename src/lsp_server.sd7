@@ -42,11 +42,6 @@ const func string: capabilitiesJson is func
         field(w, "openClose"); addBool(w, TRUE);
         field(w, "change");    addInt(w, 1);
       closeObject(w);
-      field(w, "diagnosticProvider");
-      openObject(w);
-        field(w, "interFileDependencies"); addBool(w, FALSE);
-        field(w, "workspaceDiagnostics");  addBool(w, FALSE);
-      closeObject(w);
       field(w, "positionEncoding"); addStr(w, "utf-16");
     closeObject(w);
     out := finishJson(w);

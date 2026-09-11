@@ -17,16 +17,22 @@ const proc: main is func
     raw &:= d;
     d.line1 := 3; d.column1 := 0; d.message := "\"end\" expected found \"END OF FILE\""; d.atEof := TRUE;
     raw &:= d;
+    # A buffer typed so far has no main yet; that is not an Error in the code.
+    d.line1 := 3; d.column1 := 0; d.message := "System declaration for main missing";
+    d.atEof := FALSE; d.errKind := SYSTEM_MAIN_MISSING;
+    raw &:= d;
     mapped := mapDiagnostics(raw, 100);
-    check("dedupe drops the repeat", str(length(mapped)), "3");
+    check("dedupe drops the repeat", str(length(mapped)), "4");
     check("syntax error is Error", str(mapped[1].severity), "1");
     check("EOF class is Information", str(mapped[3].severity), "3");
+    check("main-missing is Information", str(mapped[4].severity), "3");
     check("cap respected", str(length(mapDiagnostics(raw, 2))), "2");
     check("empty list", str(length(mapDiagnostics(0 times lspDiag.value, 100))), "0");
     check("json", diagnosticsJson("file:///a.sd7", doc, mapped),
           "{\"uri\":\"file:///a.sd7\",\"diagnostics\":[" &
           "{\"range\":{\"start\":{\"line\":0,\"character\":2},\"end\":{\"line\":0,\"character\":3}},\"severity\":1,\"source\":\"seed7\",\"message\":\"Expr expected\"}," &
           "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":1,\"source\":\"seed7\",\"message\":\"Match failed\"}," &
-          "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"\\\"end\\\" expected found \\\"END OF FILE\\\"\"}]}");
+          "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"\\\"end\\\" expected found \\\"END OF FILE\\\"\"}," &
+          "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"System declaration for main missing\"}]}");
     report("diagnostics");
   end func;

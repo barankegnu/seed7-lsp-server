@@ -6,6 +6,7 @@ const type: lspDiag is new struct
     var integer: column1 is 0;
     var string: message is "";
     var boolean: atEof is FALSE;
+    var errorType: errKind is errorType.value;
     var integer: severity is 1;
   end struct;
 
@@ -34,6 +35,7 @@ const func analysisResult: analyzeText (in string: text,
       diag.line1 := err.lineNumber;
       diag.column1 := err.columnNumber;
       diag.message := err.message;
+      diag.errKind := err.error;
       diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
       out.diags &:= diag;
     end for;

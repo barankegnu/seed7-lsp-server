@@ -19,6 +19,13 @@ const proc: main is func
     check("not flagged as EOF", str(a.diags[1].atEof), "FALSE");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n", dirs);
     check("truncated file has EOF class", str(a.diags[length(a.diags)].atEof), "TRUE");
+    # The EOF class cannot be keyed on errorType: it also surfaces inside the
+    # message of EXPECTED_SYMBOL. "no main yet" does have its own member though,
+    # and an empty buffer -- the first state of a new file -- really reports it.
+    a := analyzeText("", dirs);
+    checkTrue("empty buffer is not silent", length(a.diags) <> 0);
+    check("main-missing kind survives into the result",
+          str(a.diags[length(a.diags)].errKind), "SYSTEM_MAIN_MISSING");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(\"ok\");\n  end func;\n", dirs);
     check("valid file is clean", str(length(a.diags)), "0");
     checkTrue("driver wraps a library", pos(driverFor(libPath), "include \"/tmp/seed7_lsp_probe.s7i\";") <> 0);
