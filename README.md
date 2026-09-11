@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 8 suites, 76 checks, no editor required
+    make test          # 10 suites + transcript, 177 checks, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -68,13 +68,29 @@ handling is spec-shaped: `-32002` before initialize, `-32600` after shutdown, `-
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
 a frame whose `Content-Length` cannot be trusted.
 
+On top of that, the symbol features, all read from the analyzer's own object table:
+`documentSymbol` for the declarations in the open file, `definition` — including jumps
+into the standard library, because reflection reports an absolute path and declaration
+line for every library object — `hover`, which shows the reconstructed signature of every
+overload plus the `(** … *)` comment the library author wrote, `completion` for
+declarations and the base keywords, and `signatureHelp` with the active parameter counted
+from the call site.
+
+Ranges are line-based. Reflection reports a declaration's line and never a column, so a
+definition range is the whole line and `selectionRange` equals `range`. A symbol's
+*extent* (where it ends) is not available from the analyzer at all.
+
 ## What does not work yet
 
-Definition, hover, completion, `signatureHelp`, `documentSymbol`, folding ranges,
-semantic tokens, `references`, rename, `workspace/symbol`, pull diagnostics,
-`utf-8` position negotiation, `workspace/configuration`, and Windows. Asking for any of
-these returns `-32601 Method not found`, which editors display as "no data" rather than
-as a failure.
+`references` and rename (the reflection API yields declarations only, never use sites),
+`workspace/symbol`, folding ranges, selection ranges, semantic tokens, `documentSymbol`
+hierarchy for nested and local declarations, completion of local variables, pull
+diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit
+reports stale diagnostics, because a library is analysed through a driver that reads it
+from disk), `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
+for an unimplemented method returns `-32601 Method not found`, which editors display as
+"no data" rather than as a failure — and a capability is advertised only once its method
+is answered.
 
 ## Layout and further reading
 

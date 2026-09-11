@@ -128,12 +128,12 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 
 | Feature | Source | Known gap |
 |---|---|---|
-| diagnostics | `errorCount` / `getError` | semantic errors carry no column (§4.4) |
-| documentSymbol | `globalObjects(prog)` filtered by `file(obj) = doc`, sorted by `line(obj)` | declarations only, no ranges → symbol extent is line-based |
-| definition | `syobject(prog, name)` → location file = `path(obj)` when non-empty else `file(obj)`, line = `line(obj)` | `line` is the declaration line, column unknown → range is that whole line |
-| hover | v1: `syobject` + reconstructed signature + `doc_index`. v2: `match(prog, expr)` for the overload the cursor is in | building `expr` as a `ref_list` from buffer text is the hardest part of v2, hence the split |
-| signatureHelp | candidates from `globalObjects` by name, disambiguated by `match` | as above |
-| completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`; locals from the enclosing function's `localConsts`/`localVars` | enclosing function found by line range, not by AST |
+| diagnostics | `errorCount` / `getError` | semantic errors carry no column (§4.4) — **realised** |
+| documentSymbol | `globalObjects(prog)` filtered by `file(obj)` | **realised, with two corrections:** a buffer's own declarations report `file = "STRING"` (so the filter is `path OR "STRING"`), and only globals are listed, so there is no hierarchy and `selectionRange == range` |
+| definition | **not `syobject`** — it returns a `SYMBOLOBJECT` whose `file` is `"?"`, so it can never name a file. Scans `globalObjects` by name instead | **realised:** `Location[]` over all overloads, deduped on `(file, line)`, capped at 20; range is the whole declaration line |
+| hover | v1 realised: every overload's reconstructed signature + `doc_index` prose (`proseForText` when the declaration is in the buffer) | v2 (`match(prog, expr)` for the exact overload the cursor is in) is still unbuilt — v1 turned out to be good enough without it |
+| signatureHelp | candidates by name from `globalObjects`; active parameter counted by walking back to the owning `(` | **realised** for the common case: the walk is character-local, so a comma inside `"..."` counts (pinned by a test); `match` disambiguation still unbuilt |
+| completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`, plus a copied keyword list | **locals still missing:** the spec's "enclosing function found by line range" was dropped rather than guessed at; it needs its own short plan |
 | folding / selectionRange / semanticTokens | `scan.sd7` only, no interpreter | ours to maintain |
 | references / rename | **no source in the reflection API** | needs an occurrence index over `scan.sd7` tokens; that is the "later" milestone |
 
@@ -174,7 +174,7 @@ No editor is required to test any of this, which is the point of the module spli
 | M0 | risk spikes | done — §3/§4/§5 above are measurements, not assumptions |
 | M1 | transport + rpc + lifecycle + doc store | transcript: `initialize` answers with our capabilities; unknown method → `-32601`; request before initialize → `-32002`; `shutdown`/`exit` codes correct |
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
-| M3 | documentSymbol + definition | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper |
+| M3 | documentSymbol + definition | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper. **Merged on `m3`, except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
 | M4 | hover + signatureHelp + completion | signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover |
 | M5 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
 | M6 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |

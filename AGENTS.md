@@ -51,18 +51,21 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 ## Invariants — a violation is a defect, not a style preference
 
 1. Only `src/analysis.sd7` imports `progs.s7i`. `grep -rn 'progs.s7i' src/` must show
-   one line.
+   one line. Feature files receive `symRec` records; the temptation to read a `reference`
+   directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
 3. Only `src/transport.sd7` computes or consumes byte lengths.
-4. Only `src/*.sd7` feature code builds LSP response shapes; `analysis.sd7` returns
-   Seed7-shaped data and knows nothing about LSP.
+4. Only `src/*.sd7` and `src/features/*.sd7` build LSP response shapes; `analysis.sd7`
+   returns Seed7-shaped data and knows nothing about LSP.
 5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
    capability is only advertised once its method is answered: `diagnosticProvider`
    shipped ahead of `textDocument/diagnostic`, which told pull-capable clients to
    ignore the push diagnostics we really did send.
 6. Outbound text goes through `jsonw.sd7`. `str()` on a `jsonValue` is the `literal()`
-   path that emits `\8364;` for `€` — invalid JSON. `grep -n 'addStr(w, str(' src/*.sd7`
-   must stay empty.
+   path that emits `\8364;` for `€` — invalid JSON.
+   `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty. The greps are
+   recursive (`src/`) rather than `src/*.sd7` since M3 put feature code in `src/features/`. The greps are recursive (`src/`, not `src/*.sd7`) since M3 put feature
+   code in `src/features/`.
 
 ## Protocol decisions that are easy to undo by accident
 
@@ -98,15 +101,22 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   parser, not a bug to route around — see the README's security section, which is the
   single source of truth for it. The M3 answer is a trust gate, not stderr scraping.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
-  so unsaved library edits report stale diagnostics. Known, recorded as R-F10, M3 work.
-- The `-32603` containment net in `main.sd7` is currently unreachable because every
-  accessor is total. Keep it. When you add a handler that can raise, add the check that
-  reaches it.
+  so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
+  scheduled for M3 and split into its own plan, so it is still open.
+- The `-32603` containment net in `main.sd7` is still unreachable, for a narrower reason
+  than before: the reflection accessors M3 reads (`getType`, `formalParams`, `resultVar`)
+  *do* raise `RANGE_ERROR` on real references, and `analysis.sd7` wraps each in a total
+  (`safeType`, `paramsOf`), so nothing is left for the net to catch. Keep it. When you add
+  a handler that can raise, add the check that reaches it — and never let the raise find
+  stdout.
 
 ## Milestones
 
-M1+M2 (base protocol, lifecycle, sync, diagnostics) are merged-ready on this branch.
-M3 is definition, hover, completion, signatureHelp, documentSymbol, plus the trust gate
-and the `.s7i` staleness fix. M4 folding/selectionRange/semanticTokens need `scan.sd7`,
-which does not exist yet — the reflection API yields declarations only, never use sites,
-and that is also why references and rename are M6.
+M1+M2 (base protocol, lifecycle, sync, diagnostics) are merged-ready. M3's five symbol
+features (documentSymbol, definition, hover, completion, signatureHelp) are in on this
+branch; the trust gate and the `.s7i` staleness fix were split out of M3 and remain open,
+as does local-variable completion. M4 folding/selectionRange/semanticTokens need
+`scan.sd7`, which does not exist yet — the reflection API yields declarations only, never
+use sites, and that is also why references and rename are M6. Two known ceilings wait for
+it: `doc_store.wordAt` has no idea what a comment or a string literal is, and
+`signature_help.callContext` counts a comma inside `"..."` as an argument separator.
