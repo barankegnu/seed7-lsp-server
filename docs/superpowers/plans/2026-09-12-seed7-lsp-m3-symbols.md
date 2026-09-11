@@ -92,7 +92,10 @@ the ones that will say so.
    Included libraries keep their absolute path. So a document's *own* declarations are found
    with `file = "STRING"`, not `file = pathOf(uri)` — `analysis.BUFFER_FILE` names the
    sentinel, and `documentSymbolResult` accepts either (the `.s7i` driver case yields real
-   paths). Anything filtering `symRec.file` must remember both halves.
+   paths). Anything filtering `symRec.file` must remember both halves, and anything turning
+   a `symRec.file` into a **uri** must substitute the document's own uri for `BUFFER_FILE` --
+   otherwise the most common jump, to a symbol defined in the file being edited, emits
+   `file://STRING`.
 11. `toPercentEncoded` (in `encoding.s7i`) encodes **everything including `/`** and raises
     `RANGE_ERROR` on non-ASCII. It is not usable for `file://` URIs; Task 3 writes a small
     encoder instead.

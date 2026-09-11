@@ -1,6 +1,27 @@
 $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "features/document_symbol.sd7";
+  include "features/definition.sd7";
+
+const func integer: uriCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, "{\"uri\":");
+    while at <> 0 do
+      out +:= 1;
+      if at + 7 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 7 ..];
+      end if;
+      at := pos(rest, "{\"uri\":");
+    end while;
+  end func;
 
 const proc: main is func
   local
@@ -8,6 +29,15 @@ const proc: main is func
     var symRec: two is symRec.value;
     var symRec: other is symRec.value;
     var symRec: buf is symRec.value;
+    var symRec: ea is symRec.value;
+    var symRec: eb is symRec.value;
+    var symRec: dup is symRec.value;
+    var symRec: own is symRec.value;
+    var array symRec: ownsyms is 0 times symRec.value;
+    var array symRec: wsyms is 0 times symRec.value;
+    var array symRec: many is 0 times symRec.value;
+    var wordRef: word is wordRef.value;
+    var integer: k is 0;
     var array symRec: syms is 0 times symRec.value;
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
@@ -45,5 +75,42 @@ const proc: main is func
               completionKindOf("TYPEOBJECT", "type") = 7 and
               completionKindOf("BLOCKOBJECT", "proc") = 3 and
               completionKindOf("STRUCTOBJECT", "Widget") = 21);
+    ea.name := "writeln"; ea.cat := "BLOCKOBJECT"; ea.ty := "proc";
+    ea.file := "/tmp/a.sd7"; ea.line1 := 13; ea.sign := "const proc: writeln";
+    eb.name := "writeln"; eb.cat := "ACTOBJECT"; eb.ty := "proc";
+    eb.file := "/tmp/b c.s7i"; eb.line1 := 1; eb.sign := "const proc: writeln (string: s)";
+    wsyms &:= ea;
+    wsyms &:= eb;
+    wsyms &:= dup;
+    check("no token means null", definitionResult(wsyms, wordRef.value, "file:///x.sd7"),
+          "null");
+    word.word := "nosuchname";
+    check("unknown token is the empty array", definitionResult(wsyms, word, "file:///x.sd7"),
+          "[]");
+    word.word := "writeln";
+    check("locations dedupe and percent-encode",
+          definitionResult(wsyms, word, "file:///x.sd7"),
+          "[{\"uri\":\"file:///tmp/a.sd7\",\"range\":" &
+          "{\"start\":{\"line\":12,\"character\":0},\"end\":{\"line\":13," &
+          "\"character\":0}}},{\"uri\":\"file:///tmp/b%20c.s7i\",\"range\":" &
+          "{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1," &
+          "\"character\":0}}}]");
+    own.name := "writeln"; own.cat := "BLOCKOBJECT"; own.ty := "proc";
+    own.file := BUFFER_FILE; own.line1 := 19; own.sign := "const proc: writeln";
+    ownsyms &:= own;
+    check("a declaration from the buffer itself resolves to the buffer's uri",
+          definitionResult(ownsyms, word, "file:///tmp/tt_syms.sd7"),
+          "[{\"uri\":\"file:///tmp/tt_syms.sd7\",\"range\":" &
+          "{\"start\":{\"line\":18,\"character\":0},\"end\":{\"line\":19," &
+          "\"character\":0}}}]");
+    dup.name := "writeln"; dup.cat := "BLOCKOBJECT"; dup.ty := "proc";
+    dup.sign := "const proc: writeln";
+    for k range 1 to 25 do
+      dup.file := "/tmp/c.sd7";
+      dup.line1 := k;
+      many &:= dup;
+    end for;
+    check("locations are capped at MAX_LOCATIONS",
+          str(uriCount(definitionResult(many, word, "file:///x.sd7"))), "20");
     report("features");
   end func;

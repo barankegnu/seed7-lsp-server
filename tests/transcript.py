@@ -162,6 +162,38 @@ expect(any(s.get("name") == "reportWidget" and
            for s in syms or []), "documentSymbol reports the 0-based declaration line")
 expect(by_id.get(21, {}).get("result") is None, "documentSymbol for an unopened uri is null")
 
+# --- M3: definition, both to the same buffer and into the installed library ---
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7", "languageId": "seed7",
+                             "version": 1, "text": SYMS}}}),
+    frame({"jsonrpc": "2.0", "id": 30, "method": "textDocument/definition", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": 30, "character": 8}}}),
+    # line 31 (0-based) is `    writeln(totalSize(prototype, 2));`; character 6 is
+    # inside "writeln", which the left-of-character rule resolves to the name.
+    frame({"jsonrpc": "2.0", "id": 31, "method": "textDocument/definition", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": 31, "character": 6}}}),
+    frame({"jsonrpc": "2.0", "id": 32, "method": "textDocument/definition", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": 0, "character": 0}}}),
+    frame({"jsonrpc": "2.0", "id": 33, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+own = by_id.get(30, {}).get("result", [])
+lib = by_id.get(31, {}).get("result", [])
+expect(isinstance(own, list) and any(
+       l["uri"] == "file:///tmp/tt_syms.sd7" and l["range"]["start"]["line"] == 18
+       for l in own or []),
+       "definition jumps to the declaration in the same buffer (%s)" % own[:1])
+expect(isinstance(lib, list) and bool(lib) and
+       all(l["uri"].startswith("file:///") and l["uri"].endswith(".s7i") for l in lib),
+       "definition into the library returns .s7i locations, got %d" % len(lib or []))
+expect(by_id.get(32, {}).get("result") is None, "definition on punctuation is null")
+
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),
