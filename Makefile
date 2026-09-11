@@ -1,6 +1,6 @@
 S7      ?= s7
 SRC     := src
-TESTS   := jsonw transport doc_store rpc analysis diagnostics lsp_server
+TESTS   := jsonw uris transport doc_store rpc analysis diagnostics lsp_server
 
 .PHONY: test server $(addprefix test-,$(TESTS)) transcript
 

@@ -4,8 +4,6 @@ $ include "seed7_05.s7i";
 
 const proc: main is func
   begin
-    check("space decoded",  pathOf("file:///tmp/my%20dir/a.sd7"), "/tmp/my dir/a.sd7");
-    check("plain uri kept", pathOf("/tmp/a.sd7"), "/tmp/a.sd7");
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
     checkTrue("caps are valid json wrapper", startsWith(capabilitiesJson, "{") and
@@ -15,5 +13,12 @@ const proc: main is func
     # the push diagnostics we really do send.
     checkTrue("no capability for an unhandled request",
               pos(capabilitiesJson, "diagnosticProvider") = 0);
+    openDocs @:= ["file:///tmp/seed7_lsp_syms.sd7"] lsDoc.value;
+    setVersion(openDocs["file:///tmp/seed7_lsp_syms.sd7"],
+               "$ include \"seed7_05.s7i\";\nconst proc: onlyHere is func\n  begin\n  end func;\n", 1);
+    checkTrue("an open document yields symbols",
+              length(symbolsOfDocument("file:///tmp/seed7_lsp_syms.sd7")) <> 0);
+    check("an unknown uri yields none",
+          str(length(symbolsOfDocument("file:///tmp/never/opened.sd7"))), "0");
     report("lsp_server");
   end func;

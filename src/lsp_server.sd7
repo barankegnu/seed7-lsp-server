@@ -6,7 +6,7 @@ $ include "seed7_05.s7i";
   include "doc_store.sd7";
   include "analysis.sd7";
   include "diagnostics.sd7";
-  include "encoding.s7i";
+  include "uris.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -64,17 +64,6 @@ const func string: initializeResultJson is func
     out := finishJson(w);
   end func;
 
-const func string: pathOf (in string: uri) is func
-  result
-    var string: path is "";
-  begin
-    if startsWith(uri, "file://") then
-      path := fromPercentEncoded(uri[8 ..]);
-    else
-      path := uri;
-    end if;
-  end func;
-
 const func analysisResult: analyzeDocument (in string: uri) is func
   result
     var analysisResult: out is analysisResult.value;
@@ -88,6 +77,24 @@ const func analysisResult: analyzeDocument (in string: uri) is func
         out := analyzeText(driverFor(pathOf(uri)), libraryDirs);
       else
         out := analyzeText(doc.text, libraryDirs);
+      end if;
+    end if;
+  end func;
+
+# The only place that decides whether a document is analysed directly or through the
+# synthetic .s7i driver, so no feature has to ask the question.
+const func array symRec: symbolsOfDocument (in string: uri) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var lsDoc: doc is lsDoc.value;
+  begin
+    if uri in openDocs then
+      doc := openDocs[uri];
+      if endsWith(uri, ".s7i") then
+        out := analyzeSymbols(driverFor(pathOf(uri)), libraryDirs);
+      else
+        out := analyzeSymbols(doc.text, libraryDirs);
       end if;
     end if;
   end func;
