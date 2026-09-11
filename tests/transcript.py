@@ -278,6 +278,57 @@ expect([x.get("label") for x in sig.get("signatures", [{}])[0].get("parameters",
 expect(by_id.get(61, {}).get("result") is None,
        "signatureHelp outside a call is null")
 
+# --- spec §8 M3 exit test: the features must also work on a .s7i buffer, which is
+# --- analysed through the synthetic driver because a library cannot be parsed alone ---
+LIB_PATH = "/tmp/seed7_lsp_transcript_lib.s7i"
+LIB_TEXT = ("const func integer: libDouble (in integer: n) is func\n"
+            "  result\n"
+            "    var integer: twice is 0;\n"
+            "  begin\n"
+            "    twice := n * 2;\n"
+            "  end func;\n\n"
+            "const proc: libTell (in string: msg) is func\n"
+            "  begin\n"
+            "    writeln(msg);\n"
+            "  end func;\n")
+with open(LIB_PATH, "w") as f:
+    f.write(LIB_TEXT)
+LIB_URI = "file://" + LIB_PATH
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": LIB_URI, "languageId": "seed7",
+                             "version": 1, "text": LIB_TEXT}}}),
+    frame({"jsonrpc": "2.0", "id": 70, "method": "textDocument/documentSymbol", "params":
+           {"textDocument": {"uri": LIB_URI}}}),
+    frame({"jsonrpc": "2.0", "id": 71, "method": "textDocument/definition", "params":
+           {"textDocument": {"uri": LIB_URI},
+            "position": {"line": 7, "character": 16}}}),
+    frame({"jsonrpc": "2.0", "id": 72, "method": "textDocument/hover", "params":
+           {"textDocument": {"uri": LIB_URI},
+            "position": {"line": 9, "character": 8}}}),
+    frame({"jsonrpc": "2.0", "id": 74, "method": "textDocument/hover", "params":
+           {"textDocument": {"uri": LIB_URI},
+            "position": {"line": 9, "character": 15}}}),
+    frame({"jsonrpc": "2.0", "id": 73, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+lib_syms = by_id.get(70, {}).get("result") or []
+expect([x["name"] for x in lib_syms] == ["libDouble", "libTell"],
+       "documentSymbol works on a .s7i buffer via the driver, got %s" % [x.get("name") for x in lib_syms])
+lib_def = by_id.get(71, {}).get("result") or []
+expect(any(d["uri"] == LIB_URI and d["range"]["start"]["line"] == 7 for d in lib_def),
+       "definition on a .s7i buffer points at its own declaration (%s)" % lib_def[:1])
+lib_hov = ((by_id.get(72, {}).get("result") or {}).get("contents") or {}).get("value", "")
+expect("proc: writeln" in lib_hov,
+       "hover from a .s7i buffer still reaches the stdlib (%r)" % lib_hov[:60])
+# The parameter "msg" on the same line is not a global, and reflection has no local
+# symbols for a declaration in another file -- this pins the gap the follow-up plan for
+# local-variable completion has to close.
+expect(by_id.get(74, {}).get("result") is None,
+       "hover of a parameter is null: locals are not in the reflection table")
+
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),
