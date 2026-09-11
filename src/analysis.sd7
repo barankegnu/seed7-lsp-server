@@ -1,5 +1,6 @@
 $ include "seed7_05.s7i";
   include "progs.s7i";
+  include "ref_list.s7i";
 
 const type: lspDiag is new struct
     var integer: line1 is 1;
@@ -39,4 +40,160 @@ const func analysisResult: analyzeText (in string: text,
       diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
       out.diags &:= diag;
     end for;
+  end func;
+
+# One global declaration the analyzer knows about, as plain data. `file` is the absolute
+# path reflection reports (never "?") and `line1` the 1-based declaration line; there is no
+# column anywhere in this API, which is why every range built from it is line-based.
+const type: symRec is new struct
+    var string: name is "";
+    var string: cat is "";
+    var string: ty is "";
+    var string: file is "";
+    var integer: line1 is 0;
+    var string: sign is "";
+    var array string: params is 0 times "";
+  end struct;
+
+# getType, formalParams and resultVar raise RANGE_ERROR on real references -- a
+# SYMBOLOBJECT has no type, and a proc has no result variable. Everything that reads a
+# reference goes through one of these totals, because an exception must never reach the
+# protocol channel on stdout.
+const func string: safeType (in reference: obj) is func
+  result
+    var string: out is "";
+  begin
+    block
+      out := str(getType(obj));
+    exception
+      catch RANGE_ERROR:
+        out := "";
+    end block;
+  end func;
+
+# formalParams lists the declared parameters AND a trailing self entry, which reflection
+# reports as a plain SYMBOLOBJECT. Only the *PARAMOBJECT categories are parameters.
+const func boolean: isParam (in reference: obj) is
+  return pos(str(category(obj)), "PARAMOBJECT") <> 0;
+
+const func string: paramText (in reference: obj) is func
+  result
+    var string: out is "";
+  local
+    var string: ty is "";
+  begin
+    ty := safeType(obj);
+    if ty = "" then
+      out := str(obj);
+    else
+      out := ty <& ": " <& str(obj);
+    end if;
+  end func;
+
+const func array string: paramsOf (in reference: obj) is func
+  result
+    var array string: out is 0 times "";
+  local
+    var ref_list: pl is ref_list.EMPTY;
+    var integer: i is 0;
+  begin
+    block
+      pl := formalParams(obj);
+      for i range 1 to length(pl) do
+        if isParam(pl[i]) then
+          out &:= paramText(pl[i]);
+        end if;
+      end for;
+    exception
+      catch RANGE_ERROR:
+        out := 0 times "";
+    end block;
+  end func;
+
+# The one place that knows what a Seed7 declaration looks like in prose. The parameter
+# specifiers (in/inout/ref/val) are not recoverable: `in string:` and `in Widget:` both
+# report REFPARAMOBJECT while `in integer:` reports VALUEPARAMOBJECT, so the honest form is
+# "type: name". ponytail: a scanner could read the specifiers off the source; scan.sd7 (M4).
+const func string: buildSign (in string: cat, in string: ty, in string: nm,
+                              in array string: params) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    if cat = "TYPEOBJECT" then
+      out := "const type: " <& nm;
+    elsif cat = "ENUMLITERALOBJECT" then
+      out := nm;
+    elsif startsWith(ty, "func ") then
+      out := "const func " <& ty[6 ..] <& ": " <& nm;
+    elsif startsWith(ty, "proc") then
+      out := "const proc: " <& nm;
+    elsif ty <> "" then
+      out := "const " <& ty <& ": " <& nm;
+    else
+      out := nm;
+    end if;
+    if length(params) <> 0 then
+      out := out <& " (";
+      for i range 1 to length(params) do
+        out &:= params[i];
+        if i < length(params) then
+          out &:= ", ";
+        end if;
+      end for;
+      out := out <& ")";
+    end if;
+  end func;
+
+const func string: signatureOf (in reference: obj) is func
+  result
+    var string: out is "";
+  begin
+    out := buildSign(str(category(obj)), safeType(obj), str(obj), paramsOf(obj));
+  end func;
+
+const type: symSeen is hash [string] integer;
+
+const func array symRec: analyzeSymbols (in string: text,
+                                         in array string: libraryDirs) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var program: prog is program.EMPTY;
+    var ref_list: objs is ref_list.EMPTY;
+    var reference: obj is NIL;
+    var symSeen: seen is symSeen.EMPTY_HASH;
+    var string: keyStr is "";
+    var symRec: rec is symRec.value;
+  begin
+    block
+      prog := parseStri(text, parseOptions.value, libraryDirs);
+      objs := globalObjects(prog);
+      for obj range objs do
+        rec.name := str(obj);
+        rec.file := file(obj);
+        if rec.file <> "?" and rec.file <> "" then
+          rec.cat := str(category(obj));
+          rec.ty := safeType(obj);
+          rec.line1 := line(obj);
+          rec.params := paramsOf(obj);
+          rec.sign := signatureOf(obj);
+          keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
+          if keyStr not in seen then
+            seen @:= [keyStr] 1;
+            out &:= rec;
+          end if;
+        end if;
+      end for;
+    exception
+      # Every accessor above is total, so reaching here means the walk itself is
+      # unreliable. Report nothing rather than a half-truth.
+      catch RANGE_ERROR:
+        out := 0 times symRec.value;
+      catch INDEX_ERROR:
+        out := 0 times symRec.value;
+      catch ILLEGAL_ACTION:
+        out := 0 times symRec.value;
+    end block;
   end func;

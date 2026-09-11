@@ -1,14 +1,99 @@
 $ include "seed7_05.s7i";
   include "stdio.s7i";
   include "filesys.s7i";
+  include "osfiles.s7i";
   include "lsp_tst.sd7";
   include "analysis.sd7";
+
+
+const type: lineSeen is hash [string] integer;
+
+const func string: readAll (in string: path) is func
+  result
+    var string: out is "";
+  local
+    var file: f is STD_NULL;
+    var string: one is "";
+  begin
+    block
+      f := open(path, "r");
+      while not eof(f) do
+        readln(f, one);
+        out &:= one <& "\n";
+      end while;
+      close(f);
+    exception
+      catch FILE_ERROR:
+        out := "";
+    end block;
+  end func;
+
+const func array symRec: symsNamed (in array symRec: syms, in string: nm) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if syms[i].name = nm then
+        out &:= syms[i];
+      end if;
+    end for;
+  end func;
+
+const func string: allFiles (in array symRec: syms) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      out &:= syms[i].file;
+    end for;
+  end func;
+
+const func integer: countNameFile (in array symRec: syms, in string: nm,
+                                   in string: fname) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if syms[i].name = nm and syms[i].file = fname then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
+const func integer: countDistinctLines (in array symRec: syms, in string: nm,
+                                        in string: fname) is func
+  result
+    var integer: out is 0;
+  local
+    var lineSeen: seen is lineSeen.EMPTY_HASH;
+    var string: keyStr is "";
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if syms[i].name = nm and syms[i].file = fname then
+        keyStr := str(syms[i].line1);
+        if keyStr not in seen then
+          seen @:= [keyStr] 1;
+          out +:= 1;
+        end if;
+      end if;
+    end for;
+  end func;
 
 const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
     var array string: dirs is 0 times "";
     var string: libPath is "/tmp/seed7_lsp_probe.s7i";
+    var array symRec: syms is 0 times symRec.value;
+    var array symRec: wlist is 0 times symRec.value;
+    var string: fixPath is "tests/programs/symbols.sd7";
     var file: out is STD_NULL;
   begin
     # Empty libraryDirs is enough: the interpreter resolves its own stdlib,
@@ -40,5 +125,24 @@ const proc: main is func
     check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
     a := analyzeText(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
     checkTrue("missing include is reported", length(a.diags) <> 0);
+    syms := analyzeSymbols(readAll(fixPath), dirs);
+    checkTrue("fixture yields symbols", length(syms) <> 0);
+    check("own struct is listed", symsNamed(syms, "Widget")[1].cat, "TYPEOBJECT");
+    check("declaration line is 1-based", str(symsNamed(syms, "reportWidget")[1].line1), "19");
+    checkTrue("signature shows a parameter type and name",
+              pos(symsNamed(syms, "reportWidget")[1].sign, "integer: counter") <> 0);
+    checkTrue("signature of a func names its result type",
+              pos(symsNamed(syms, "totalSize")[1].sign, "func integer") <> 0);
+    checkTrue("params are recorded without the self entry",
+              str(length(symsNamed(syms, "totalSize")[1].params)) = "2");
+    checkTrue("stdlib writeln is listed with an absolute path",
+              startsWith(symsNamed(syms, "writeln")[1].file, "/"));
+    checkTrue("nothing keeps the ? file", pos(allFiles(syms), "?") = 0);
+    wlist := symsNamed(syms, "writeln");
+    check("dedupe collapses identical (name,file,line) entries",
+          str(countNameFile(syms, "writeln", wlist[1].file)),
+          str(countDistinctLines(syms, "writeln", wlist[1].file)));
+    check("an unanalysable buffer yields nothing",
+          str(length(analyzeSymbols("", dirs))), "0");
     report("analysis");
   end func;

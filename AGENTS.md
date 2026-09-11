@@ -21,6 +21,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - A `local` variable cannot be initialised from a parameter of the same function.
   Declare with a constant, then assign in `begin`.
 - `key`, `len` and `line` are taken by the language and library. Choose other names.
+  So is `sum` — and a result variable that collides with a library function is worse than a
+  warning, the whole declaration silently fails (`DECL_FAILED` after a `NO_MATCH`).
+- A `func` with a `result` clause **assigns** its result variable; Seed7 returns it
+  implicitly. Writing `res := x; return res;` does not match at analysis time, and a bare
+  `return` in a `proc` raises `PROC_EXPECTED`. `is return expr;` is the other correct form.
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
   Tab inside a literal is `\9;`.
 - At statement level `<&` writes to the output stream; assignment is `&:=`. Worse,
