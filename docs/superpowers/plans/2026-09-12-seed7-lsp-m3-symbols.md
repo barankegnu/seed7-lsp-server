@@ -198,12 +198,14 @@ token). Completion needs the same rule: while typing `wri|` the prefix ends at t
   Declare `var lsDoc: doc2 is lsDoc.value;`, `var lsDoc: doc3 is lsDoc.value;` and
   `var wordRef: w is wordRef.value;` in the test's `local` block.
 
-  The expectations are arithmetic, not guesses. Line 1 of the two-line document starts at text
-  index 30, so `writeln` occupies 34–40: `wordAt(doc2, 1, 6)` resolves the character at index
-  35 (`r`, left of the cursor) and grows to the whole name; `wordAt(doc2, 1, 4)` has index 34
-  (`w`) to its right and gets the same answer by the fallback branch. Line 0 starts at index 1
-  with two spaces, so `const` is 3–7 and `wordAt(doc2, 0, 7)` lands on the `t`. If a check
-  disagrees with the code, re-derive the indices before editing either.
+  The expectations are arithmetic, not guesses. Line 0 is 26 characters, so its terminator is
+  at index 27 and line 1 starts at index 28. On line 1 the four spaces occupy 28–31 and
+  `writeln` occupies 32–38, which is why `column1` is 5 (32 − 28 + 1): `wordAt(doc2, 1, 6)`
+  resolves index 35 (`r`, left of the cursor) and grows to the whole name, while
+  `wordAt(doc2, 1, 4)` has index 32 (`w`) to its *right* and reaches the same answer through
+  the fallback branch. On line 0, `const` is 3–7 and `proc` is 9–12. If a check disagrees with
+  the code, re-derive the indices before editing either — `column1` is relative to the line
+  start, which is what makes the expectations independent of the fixture's exact length.
 
 - [ ] **Step 2: Run them and confirm they fail because the symbols do not exist**
 
@@ -1279,7 +1281,8 @@ const func string: documentSymbolResult (in array symRec: syms, in string: path)
 ```
 
   `uriCount` is test scaffolding: count `{"uri":` occurrences with a `pos` loop that moves
-  past each hit. `hundredSyms` returns 25 identical-`name`, distinct-`line` records.
+  past each hit. `hundredSyms` returns 25 records named `sym` on 25 distinct lines — define it
+  here; Task 8's cap check reuses it.
 
 - [ ] **Step 2: Run to verify failure** — `s7 -q -l src tests/features_test.sd7` fails naming
   `definitionResult`.
@@ -1408,11 +1411,13 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
           "{\"contents\":{\"kind\":\"markdown\",\"value\":" &
           "\"```seed7\\nconst func integer: totalSize (Widget: w, integer: times)\\n" &
           "const proc: totalSize (string: s)\\n```\"},\"range\":" &
-          "{\"start\":{\"line\":2,\"character\":4},\"end\":{\"line\":2,\"character\":11}}}");
+          "{\"start\":{\"line\":0,\"character\":6},\"end\":{\"line\":0,\"character\":12}}}");
 ```
 
-  `docH` is a document set to `"  x = writeln(y);\n"` so the word at line 3, column 5, width 7
-  gives `character` 4 and 11 in UTF-16 units. The prose branch gets its own check against a
+  `docH` is a document set to `"  x = writeln(y);\n"`, where `writeln` starts at 1-based
+  column 7 and is 7 wide — so `word.line1 = 1`, `word.column1 = 7`, `word.width = 7`, and
+  `lspRangePair` yields characters 6 and 12 (the end is the *last character* of the token as a
+  0-based column, not one past it; `lspRangePair`'s formula explains why). The prose branch gets its own check against a
   temporary file written by the test — `proseFor` is Task 4's and is already covered there, so
   pin only that prose appears after the fence when it exists:
 
@@ -1756,9 +1761,9 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
           "{\"label\":\"string: s\"}]},{\"label\":" &
           "\"const func integer: writeln (integer: n)\",\"parameters\":" &
           "[{\"label\":\"integer: n\"}]}],\"activeSignature\":0,\"activeParameter\":1}");
-    check("an out-of-range active parameter is clamped up, not dropped",
-          pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") <> 0,
-          "TRUE");
+    checkTrue("an active parameter past the last one is reported, not dropped",
+              pos(signatureHelpResult(hsyms, "writeln", 9),
+                  "\"activeParameter\":9") <> 0);
 ```
 
   `params := {"string: s"}` uses Seed7's array literal; if the parser rejects it in a struct
@@ -1890,9 +1895,9 @@ const func string: signatureHelpResult (in array symRec: syms, in string: callee
       sendResult(msg.id, signatureHelpResult(symbolsOfDocument(uri), callee, activeArg));
 ```
 
-  with `var integer: activeArg is 0;` and `var string: callee is "";` in `handle`'s `local`
-  block — `callContext` mutates `activeArg` through an `inout` parameter, so it must not be
-  nested inside the call that reads it. a one-line
+  with `var integer: activeArg is 0;`, `var integer: offset is 0;` and `var string: callee is
+  "";` added to `handle`'s `local` block — `callContext` mutates `activeArg` through an `inout`
+  parameter, so it must not be nested inside the call that reads it. a one-line
   `const func string: docTextOf (in string: uri)` next to `symbolsOfDocument`, and
   `field(w, "signatureHelpProvider"); openObject(w); field(w, "triggerCharacters");
   openArray(w); addStr(w, "("); addStr(w, ","); closeArray(w); closeObject(w);`.
