@@ -100,7 +100,6 @@ const proc: main is func
     var symRec: h1 is symRec.value;
     var symRec: h2 is symRec.value;
     var array symRec: hsyms is 0 times symRec.value;
-    var string: probe is "";
     var integer: active is 0;
     var lsDoc: sig is lsDoc.value;
     var string: got is "";

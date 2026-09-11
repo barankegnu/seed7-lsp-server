@@ -83,21 +83,39 @@ const func string: initializeResultJson is func
     out := finishJson(w);
   end func;
 
+# The only place that decides whether a document is analysed as typed or through the
+# synthetic .s7i driver. Everything downstream -- diagnostics and every symbol feature --
+# asks for text here, so the two cannot disagree about what "this document" is.
+const func string: textToAnalyze (in string: uri) is func
+  result
+    var string: out is "";
+  begin
+    if uri in openDocs then
+      if endsWith(uri, ".s7i") then
+        out := driverFor(pathOf(uri));
+      else
+        out := openDocs[uri].text;
+      end if;
+    end if;
+  end func;
+
 const func analysisResult: analyzeDocument (in string: uri) is func
   result
     var analysisResult: out is analysisResult.value;
-  local
-    var lsDoc: doc is lsDoc.value;
-    var string: text is "";
   begin
     if uri in openDocs then
-      doc := openDocs[uri];
-      if endsWith(uri, ".s7i") then
-        out := analyzeText(driverFor(pathOf(uri)), libraryDirs);
-      else
-        out := analyzeText(doc.text, libraryDirs);
-      end if;
+      out := analyzeText(textToAnalyze(uri), libraryDirs);
     end if;
+  end func;
+
+# The document half of every textDocument request. Read once because all five features
+# and the three sync handlers need it, and a variant that forgets the "" check or the
+# membership check is an exception on the protocol channel.
+const func string: uriOfRequest (in rpcMsg: msg) is func
+  result
+    var string: out is "";
+  begin
+    out := strAt(atKey(msg.params, "textDocument"), "uri", "");
   end func;
 
 # The position half of every TextDocumentPosition request: an unresolved uri or a
@@ -111,7 +129,7 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
     var string: uri is "";
     var jsonValue: at is jsonValue.value;
   begin
-    uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+    uri := uriOfRequest(msg);
     at := atKey(msg.params, "position");
     if uri <> "" and uri in openDocs then
       out := wordAt(openDocs[uri], intAt(at, "line", 0), intAt(at, "character", 0));
@@ -123,17 +141,8 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
 const func array symRec: symbolsOfDocument (in string: uri) is func
   result
     var array symRec: out is 0 times symRec.value;
-  local
-    var lsDoc: doc is lsDoc.value;
   begin
-    if uri in openDocs then
-      doc := openDocs[uri];
-      if endsWith(uri, ".s7i") then
-        out := analyzeSymbols(driverFor(pathOf(uri)), libraryDirs);
-      else
-        out := analyzeSymbols(doc.text, libraryDirs);
-      end if;
-    end if;
+    out := analyzeSymbols(textToAnalyze(uri), libraryDirs);
   end func;
 
 const proc: refresh (in string: uri) is func
@@ -152,7 +161,7 @@ const proc: handleChange (in rpcMsg: msg) is func
     var jsonValue: changes is jsonValue.value;
     var jsonValue: last is jsonValue.value;
   begin
-    uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+    uri := uriOfRequest(msg);
     if uri <> "" and uri in openDocs then
       # Full sync: the last change object holds the whole text (LSP 3.18).
       changes := atKey(msg.params, "contentChanges");
@@ -190,7 +199,7 @@ const proc: handle (in rpcMsg: msg) is func
         exit(1);
       end if;
     elsif msg.method = "textDocument/didOpen" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       if uri <> "" then
         openDocs @:= [uri] lsDoc.value;
         setVersion(openDocs[uri], strAt(atKey(msg.params, "textDocument"), "text", ""),
@@ -198,17 +207,17 @@ const proc: handle (in rpcMsg: msg) is func
         refresh(uri);
       end if;
     elsif msg.method = "textDocument/documentSymbol" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, documentSymbolResult(symbolsOfDocument(uri), pathOf(uri)));
       else
         sendResult(msg.id, "null");
       end if;
     elsif msg.method = "textDocument/definition" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       sendResult(msg.id, definitionResult(symbolsOfDocument(uri), wordOfRequest(msg), uri));
     elsif msg.method = "textDocument/hover" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, hoverResult(openDocs[uri], symbolsOfDocument(uri),
                      wordOfRequest(msg)));
@@ -216,7 +225,7 @@ const proc: handle (in rpcMsg: msg) is func
         sendResult(msg.id, "null");
       end if;
     elsif msg.method = "textDocument/completion" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, completionResult(symbolsOfDocument(uri), wordOfRequest(msg),
                      intAt(atKey(msg.params, "position"), "character", 0)));
@@ -224,7 +233,7 @@ const proc: handle (in rpcMsg: msg) is func
         sendResult(msg.id, "[]");
       end if;
     elsif msg.method = "textDocument/signatureHelp" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       # callContextOf writes activeArg through an inout parameter, so it must not be
       # nested inside the call that reads it.
       if uri in openDocs then
@@ -239,7 +248,7 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);
     elsif msg.method = "textDocument/didClose" then
-      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      uri := uriOfRequest(msg);
       if uri in openDocs then
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
