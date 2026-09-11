@@ -88,7 +88,13 @@ if len(notes) == 2:
     expect(first[0]["range"]["start"]["character"] == 0, "semantic error starts at char 0")
     expect(second == [], "fixed file clears diagnostics, got %s" % second)
     expect(notes[0]["params"]["uri"] == "file:///tmp/tt_a.sd7", "diagnostics carry the uri")
-expect(by_id.get(2, {}).get("error", {}).get("code") == -32601, "unimplemented hover -> -32601")
+hov = by_id.get(2, {}).get("result") or {}
+expect("writeln" in hov.get("contents", {}).get("value", ""),
+       "hover over writeln reports its signature, got %r" % hov)
+expect(hov.get("range") == {"start": {"line": 3, "character": 4},
+                            "end": {"line": 3, "character": 11}},
+       "hover range is the token, 0-based and end-exclusive (%r)" % hov.get("range"))
+expect(by_id.get(2, {}).get("error") is None, "hover is answered, not -32601")
 expect("result" in by_id.get(3, {}) and by_id[3]["result"] is None, "shutdown answers null")
 expect(code == 0, "exit after shutdown is status 0, got %d" % code)
 
@@ -193,6 +199,30 @@ expect(isinstance(lib, list) and bool(lib) and
        all(l["uri"].startswith("file:///") and l["uri"].endswith(".s7i") for l in lib),
        "definition into the library returns .s7i locations, got %d" % len(lib or []))
 expect(by_id.get(32, {}).get("result") is None, "definition on punctuation is null")
+
+# --- M3: hover on a symbol declared in the buffer, and an unimplemented method ---
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7", "languageId": "seed7",
+                             "version": 1, "text": SYMS}}}),
+    # line 31 is `    writeln(totalSize(prototype, 2));`; character 16 is inside
+    # "totalSize", so hover must report the func declared in this buffer.
+    frame({"jsonrpc": "2.0", "id": 40, "method": "textDocument/hover", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": 31, "character": 16}}}),
+    frame({"jsonrpc": "2.0", "id": 41, "method": "textDocument/references", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
+            "position": {"line": 31, "character": 24}}}),
+    frame({"jsonrpc": "2.0", "id": 42, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+hv = (by_id.get(40, {}).get("result") or {}).get("contents", {}).get("value", "")
+expect("func integer: totalSize" in hv, "hover on a buffer symbol shows its signature (%r)" % hv)
+expect(hv.startswith("```seed7"), "hover body is a seed7 fence (%r)" % hv[:12])
+expect(by_id.get(41, {}).get("error", {}).get("code") == -32601,
+       "references is still unimplemented -> -32601")
 
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),

@@ -30,6 +30,11 @@ const proc: main is func
     check("nothing above the first line", proseFor(path, 1), "");
     check("a statement, not a documented declaration", proseFor(path, 9), "");
     check("a line inside the comment is no declaration", proseFor(path, 4), "");
+    check("the same walk over text in memory",
+          proseForText("(**\n *  From the buffer.\n *)\nconst proc: own is func\n", 4),
+          "From the buffer.");
+    check("in-memory walk finds nothing above line 1",
+          proseForText("(**\n *  From the buffer.\n *)\nconst proc: own is func\n", 1), "");
     check("absent file is empty", proseFor("/tmp/seed7_lsp_absent_docindex.sd7", 3), "");
     check("a line past the end of the file is empty", proseFor(path, 99), "");
     report("doc_index");

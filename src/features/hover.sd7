@@ -1,0 +1,70 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "doc_index.sd7";
+  include "jsonw.sd7";
+
+const integer: MAX_HOVER_OVERLOADS is 5;
+
+# Up to MAX_HOVER_OVERLOADS distinct signatures for the token, then the prose above the
+# first declaration that has any. Deduped by signature because the analyzer repeats an
+# overload that reaches the program through two include paths.
+const func string: hoverText (in array symRec: syms, in wordRef: word,
+                              in lsDoc: doc) is func
+  result
+    var string: out is "";
+  local
+    var array string: shown is 0 times "";
+    var string: prose is "";
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if syms[i].name = word.word and not listed(shown, syms[i].sign) and
+         length(shown) < MAX_HOVER_OVERLOADS then
+        shown &:= syms[i].sign;
+        if prose = "" then
+          if syms[i].file = BUFFER_FILE then
+            prose := proseForText(doc.text, syms[i].line1);
+          else
+            prose := proseFor(syms[i].file, syms[i].line1);
+          end if;
+        end if;
+      end if;
+    end for;
+    if length(shown) <> 0 then
+      out := "```seed7\n";
+      for i range 1 to length(shown) do
+        out &:= shown[i];
+        if i < length(shown) then
+          out &:= "\n";
+        end if;
+      end for;
+      out := out <& "\n```";
+      if prose <> "" then
+        out := out <& "\n\n" <& prose;
+      end if;
+    end if;
+  end func;
+
+const func string: hoverResult (in lsDoc: doc, in array symRec: syms,
+                                in wordRef: word) is func
+  result
+    var string: out is "null";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var string: body is "";
+  begin
+    body := hoverText(syms, word, doc);
+    if body <> "" then
+      openObject(w);
+        field(w, "contents");
+        openObject(w);
+          field(w, "kind");  addStr(w, "markdown");
+          field(w, "value"); addStr(w, body);
+        closeObject(w);
+        field(w, "range");
+        raw(w, lspRangePair(doc, word.line1, word.column1, word.width));
+      closeObject(w);
+      out := finishJson(w);
+    end if;
+  end func;

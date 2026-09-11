@@ -2,6 +2,7 @@ $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "features/document_symbol.sd7";
   include "features/definition.sd7";
+  include "features/hover.sd7";
 
 const func integer: uriCount (in string: jsonText) is func
   result
@@ -37,6 +38,7 @@ const proc: main is func
     var array symRec: wsyms is 0 times symRec.value;
     var array symRec: many is 0 times symRec.value;
     var wordRef: word is wordRef.value;
+    var lsDoc: hov is lsDoc.value;
     var integer: k is 0;
     var array symRec: syms is 0 times symRec.value;
   begin
@@ -79,6 +81,8 @@ const proc: main is func
     ea.file := "/tmp/a.sd7"; ea.line1 := 13; ea.sign := "const proc: writeln";
     eb.name := "writeln"; eb.cat := "ACTOBJECT"; eb.ty := "proc";
     eb.file := "/tmp/b c.s7i"; eb.line1 := 1; eb.sign := "const proc: writeln (string: s)";
+    dup.name := "writeln"; dup.cat := "BLOCKOBJECT"; dup.ty := "proc";
+    dup.file := "/tmp/a.sd7"; dup.line1 := 13; dup.sign := "const proc: writeln";
     wsyms &:= ea;
     wsyms &:= eb;
     wsyms &:= dup;
@@ -110,7 +114,29 @@ const proc: main is func
       dup.line1 := k;
       many &:= dup;
     end for;
+    word.word := "own";
+    word.line1 := 5; word.column1 := 14; word.width := 3;
+    setVersion(hov, "  const integer: n is 1;\n(**\n *  From the buffer.\n *)\nconst proc: own is func\n  begin\n  end func;\n", 1);
+    own.name := "own"; own.cat := "BLOCKOBJECT"; own.ty := "proc";
+    own.file := BUFFER_FILE; own.line1 := 5; own.sign := "const proc: own";
+    ownsyms := 0 times symRec.value;
+    ownsyms &:= own;
+    check("hover of a buffer symbol carries its signature and its own prose",
+          hoverResult(hov, ownsyms, word),
+          "{\"contents\":{\"kind\":\"markdown\",\"value\":" &
+          "\"```seed7\\nconst proc: own\\n```\\n\\nFrom the buffer.\"}," &
+          "\"range\":{\"start\":{\"line\":4,\"character\":13}," &
+          "\"end\":{\"line\":4,\"character\":16}}}");
+    word.word := "nosuch";
+    check("hover of an unknown word is null", hoverResult(hov, ownsyms, word), "null");
+    word.word := "writeln";
+    check("hover lists each distinct signature once",
+          hoverText(wsyms, word, hov),
+          "```seed7\nconst proc: writeln\nconst proc: writeln (string: s)\n```");
+    check("an empty word has nothing to say",
+          hoverText(wsyms, wordRef.value, hov), "");
     check("locations are capped at MAX_LOCATIONS",
           str(uriCount(definitionResult(many, word, "file:///x.sd7"))), "20");
+    word.word := "writeln";
     report("features");
   end func;

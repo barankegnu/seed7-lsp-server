@@ -159,6 +159,21 @@ const func string: signatureOf (in reference: obj) is func
     out := buildSign(str(category(obj)), safeType(obj), str(obj), paramsOf(obj));
   end func;
 
+# `x not in arr` does not match when x is a struct field select, and the dedupe this
+# needs is the whole point of the helper, so the loop is written out once here.
+const func boolean: listed (in array string: texts, in string: one) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(texts) do
+      if texts[i] = one then
+        out := TRUE;
+      end if;
+    end for;
+  end func;
+
 const type: symSeen is hash [string] integer;
 
 const func array symRec: analyzeSymbols (in string: text,

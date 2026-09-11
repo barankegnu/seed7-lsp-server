@@ -60,17 +60,15 @@ const func string: stripDoc (in string: lineText) is func
 const func boolean: blank (in string: lineText) is
   return trimLeft(lineText) = "";
 
-const func string: proseFor (in string: path, in integer: line1) is func
+const func string: proseIn (in array string: lines, in integer: line1) is func
   result
     var string: out is "";
   local
-    var array string: lines is 0 times "";
     var integer: idx is 0;
     var integer: startIdx is 0;
     var integer: stopIdx is 0;
     var string: one is "";
   begin
-    lines := readLinesOf(path);
     idx := line1 - 1;
     if idx > length(lines) then
       idx := 0;
@@ -96,4 +94,24 @@ const func string: proseFor (in string: path, in integer: line1) is func
         end for;
       end if;
     end if;
+  end func;
+
+const func string: proseFor (in string: path, in integer: line1) is func
+  result
+    var string: out is "";
+  local
+    var array string: lines is 0 times "";
+  begin
+    lines := readLinesOf(path);
+    out := proseIn(lines, line1);
+  end func;
+
+# The same walk over text that never reached disk. Reflection reports a declaration made in
+# an editor buffer as BUFFER_FILE, so there is no path to open -- hover needs the prose out
+# of the document it is already holding.
+const func string: proseForText (in string: text, in integer: line1) is func
+  result
+    var string: out is "";
+  begin
+    out := proseIn(split(text, '\n'), line1);
   end func;

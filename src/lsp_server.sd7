@@ -9,6 +9,7 @@ $ include "seed7_05.s7i";
   include "uris.sd7";
   include "features/document_symbol.sd7";
   include "features/definition.sd7";
+  include "features/hover.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -44,6 +45,7 @@ const func string: capabilitiesJson is func
         field(w, "openClose"); addBool(w, TRUE);
         field(w, "change");    addInt(w, 1);
       closeObject(w);
+      field(w, "hoverProvider"); addBool(w, TRUE);
       field(w, "definitionProvider"); addBool(w, TRUE);
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
       field(w, "positionEncoding"); addStr(w, "utf-16");
@@ -190,6 +192,14 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/definition" then
       uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
       sendResult(msg.id, definitionResult(symbolsOfDocument(uri), wordOfRequest(msg), uri));
+    elsif msg.method = "textDocument/hover" then
+      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, hoverResult(openDocs[uri], symbolsOfDocument(uri),
+                     wordOfRequest(msg)));
+      else
+        sendResult(msg.id, "null");
+      end if;
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);
     elsif msg.method = "textDocument/didClose" then
