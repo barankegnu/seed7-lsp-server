@@ -1,0 +1,49 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "features/document_symbol.sd7";
+
+const proc: main is func
+  local
+    var symRec: one is symRec.value;
+    var symRec: two is symRec.value;
+    var symRec: other is symRec.value;
+    var symRec: buf is symRec.value;
+    var array symRec: syms is 0 times symRec.value;
+  begin
+    one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
+    one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
+    two.name := "go"; two.cat := "BLOCKOBJECT"; two.ty := "proc";
+    two.file := "/p/a.sd7"; two.line1 := 9; two.sign := "const proc: go (string: s)";
+    other.name := "far"; other.cat := "BLOCKOBJECT"; other.ty := "proc";
+    other.file := "/p/b.sd7"; other.line1 := 2; other.sign := "const proc: far";
+    syms &:= one;
+    syms &:= two;
+    syms &:= other;
+    check("documentSymbol json", documentSymbolResult(syms, "/p/a.sd7"),
+          "[{\"name\":\"Widget\",\"detail\":\"const type: Widget\",\"kind\":5,\"range\":" &
+          "{\"start\":{\"line\":3,\"character\":0},\"end\":{\"line\":4,\"character\":0}}," &
+          "\"selectionRange\":{\"start\":{\"line\":3,\"character\":0}," &
+          "\"end\":{\"line\":4,\"character\":0}}}," &
+          "{\"name\":\"go\",\"detail\":\"const proc: go (string: s)\",\"kind\":12,\"range\":" &
+          "{\"start\":{\"line\":8,\"character\":0},\"end\":{\"line\":9,\"character\":0}}," &
+          "\"selectionRange\":{\"start\":{\"line\":8,\"character\":0}," &
+          "\"end\":{\"line\":9,\"character\":0}}}]");
+    buf.name := "fromBuffer"; buf.cat := "BLOCKOBJECT"; buf.ty := "proc";
+    buf.file := "STRING"; buf.line1 := 2; buf.sign := "const proc: fromBuffer";
+    syms &:= buf;
+    checkTrue("a buffer's own declaration is listed under its real uri",
+              pos(documentSymbolResult(syms, "/p/a.sd7"),
+                  "\"name\":\"fromBuffer\"") <> 0);
+    check("a document with nothing in it is an empty array",
+          documentSymbolResult(0 times symRec.value, "/p/nowhere.sd7"), "[]");
+    check("no symbols at all is an empty array",
+          documentSymbolResult(0 times symRec.value, "/p/a.sd7"), "[]");
+    check("a var declaration is a Variable", str(symbolKindOf("REFOBJECT", "integer")), "13");
+    check("a stdlib action is a Function", str(symbolKindOf("ACTOBJECT", "proc")), "12");
+    check("an enum literal is an EnumMember", str(symbolKindOf("ENUMLITERALOBJECT", "color")), "22");
+    checkTrue("the same judgement drives completion kinds",
+              completionKindOf("TYPEOBJECT", "type") = 7 and
+              completionKindOf("BLOCKOBJECT", "proc") = 3 and
+              completionKindOf("STRUCTOBJECT", "Widget") = 21);
+    report("features");
+  end func;

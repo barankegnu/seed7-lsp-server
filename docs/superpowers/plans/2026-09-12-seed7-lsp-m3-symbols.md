@@ -88,7 +88,12 @@ the ones that will say so.
 9. `parseFile` on a `.s7i` fails; `parseStri` of the two-line synthetic driver
    (`$ include "seed7_05.s7i";` + `  include "<absolute path>";`) analyses a real library with
    0 errors — already relied on by `analysis.driverFor`.
-10. `toPercentEncoded` (in `encoding.s7i`) encodes **everything including `/`** and raises
+10b. **Anything declared in the text passed to `parseStri` reports `file(obj) = "STRING"`.**
+   Included libraries keep their absolute path. So a document's *own* declarations are found
+   with `file = "STRING"`, not `file = pathOf(uri)` — `analysis.BUFFER_FILE` names the
+   sentinel, and `documentSymbolResult` accepts either (the `.s7i` driver case yields real
+   paths). Anything filtering `symRec.file` must remember both halves.
+11. `toPercentEncoded` (in `encoding.s7i`) encodes **everything including `/`** and raises
     `RANGE_ERROR` on non-ASCII. It is not usable for `file://` URIs; Task 3 writes a small
     encoder instead.
 
@@ -1067,7 +1072,7 @@ const func string: proseFor (in string: path, in integer: line1) is func
     judgement and two copies of a mapping drift.
   - `const func string: documentSymbolResult (in array symRec: syms, in string: path)` →
     `DocumentSymbol[]`, flat, in declaration order. It takes a **path**, not a uri, because
-    `symRec.file` is a path.
+    `symRec.file` is a path — and it matches `path` **or** `BUFFER_FILE` (measured fact 10b).
 
 - [ ] **Step 1: Write the failing test** — create `tests/features_test.sd7` including
   `features/document_symbol.sd7`; feed it hand-built `symRec`s (no parsing here, Task 2 owns
@@ -1189,9 +1194,13 @@ const func string: documentSymbolResult (in array symRec: syms, in string: path)
         closeObject(w);
       end if;
     end for;
+      closeArray(w);
     out := finishJson(w);
   end func;
 ```
+
+  `closeArray` is not optional — `finishJson` on an unclosed array yields `"["`, which is how
+  the empty-list case fails first.
 
 - [ ] **Step 4: Wire it up** — `handle` gains
 

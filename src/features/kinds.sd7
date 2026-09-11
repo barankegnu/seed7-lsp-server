@@ -1,0 +1,44 @@
+$ include "seed7_05.s7i";
+
+# LSP SymbolKind, values from the 3.18 enumeration: Class=5, Function=12, Variable=13,
+# Constant=14, EnumMember=22. Seed7 has no methods or fields to map onto, so Class stands
+# for "declared type" and the mapping is deliberately lossy. Each branch is one comparison
+# because a long mixed and/or chain can fail to match at parse time.
+const func integer: symbolKindOf (in string: cat, in string: ty) is func
+  result
+    var integer: out is 13;
+  begin
+    if cat = "TYPEOBJECT" then
+      out := 5;
+    elsif cat = "ENUMLITERALOBJECT" then
+      out := 22;
+    elsif cat = "STRUCTOBJECT" then
+      out := 14;
+    elsif cat = "BLOCKOBJECT" or cat = "DECLAREDOBJECT" or cat = "ACTOBJECT" then
+      out := 12;
+    elsif startsWith(ty, "func ") or startsWith(ty, "proc") then
+      out := 12;
+    else
+      out := 13;
+    end if;
+  end func;
+
+# CompletionItemKind: Function=3, Class=7, EnumMember=20, Constant=21, Variable=6.
+const func integer: completionKindOf (in string: cat, in string: ty) is func
+  result
+    var integer: out is 6;
+  begin
+    if cat = "TYPEOBJECT" then
+      out := 7;
+    elsif cat = "ENUMLITERALOBJECT" then
+      out := 20;
+    elsif cat = "STRUCTOBJECT" then
+      out := 21;
+    elsif cat = "BLOCKOBJECT" or cat = "DECLAREDOBJECT" or cat = "ACTOBJECT" then
+      out := 3;
+    elsif startsWith(ty, "func ") or startsWith(ty, "proc") then
+      out := 3;
+    else
+      out := 6;
+    end if;
+  end func;

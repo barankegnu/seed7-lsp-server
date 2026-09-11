@@ -42,9 +42,15 @@ const func analysisResult: analyzeText (in string: text,
     end for;
   end func;
 
+# Reflection's file for anything declared in the text handed to parseStri -- every buffer
+# the editor owns. Included libraries keep their real absolute path, so this is what tells a
+# document's own declarations apart from the ones it merely pulls in. Measured, not assumed.
+const string: BUFFER_FILE is "STRING";
+
 # One global declaration the analyzer knows about, as plain data. `file` is the absolute
-# path reflection reports (never "?") and `line1` the 1-based declaration line; there is no
-# column anywhere in this API, which is why every range built from it is line-based.
+# path reflection reports, or BUFFER_FILE for the analysed text itself; never "?". `line1`
+# is the 1-based declaration line. There is no column anywhere in this API, which is why
+# every range built from it is line-based.
 const type: symRec is new struct
     var string: name is "";
     var string: cat is "";

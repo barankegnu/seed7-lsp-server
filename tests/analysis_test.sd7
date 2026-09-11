@@ -128,6 +128,8 @@ const proc: main is func
     syms := analyzeSymbols(readAll(fixPath), dirs);
     checkTrue("fixture yields symbols", length(syms) <> 0);
     check("own struct is listed", symsNamed(syms, "Widget")[1].cat, "TYPEOBJECT");
+    check("a buffer's own declarations carry the STRING file",
+          symsNamed(syms, "Widget")[1].file, BUFFER_FILE);
     check("declaration line is 1-based", str(symsNamed(syms, "reportWidget")[1].line1), "19");
     checkTrue("signature shows a parameter type and name",
               pos(symsNamed(syms, "reportWidget")[1].sign, "integer: counter") <> 0);

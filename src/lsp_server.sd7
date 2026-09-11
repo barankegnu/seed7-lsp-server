@@ -7,6 +7,7 @@ $ include "seed7_05.s7i";
   include "analysis.sd7";
   include "diagnostics.sd7";
   include "uris.sd7";
+  include "features/document_symbol.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -42,6 +43,7 @@ const func string: capabilitiesJson is func
         field(w, "openClose"); addBool(w, TRUE);
         field(w, "change");    addInt(w, 1);
       closeObject(w);
+      field(w, "documentSymbolProvider"); addBool(w, TRUE);
       field(w, "positionEncoding"); addStr(w, "utf-16");
     closeObject(w);
     out := finishJson(w);
@@ -157,6 +159,13 @@ const proc: handle (in rpcMsg: msg) is func
         setVersion(openDocs[uri], strAt(atKey(msg.params, "textDocument"), "text", ""),
                    intAt(atKey(msg.params, "textDocument"), "version", 0));
         refresh(uri);
+      end if;
+    elsif msg.method = "textDocument/documentSymbol" then
+      uri := strAt(atKey(msg.params, "textDocument"), "uri", "");
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, documentSymbolResult(symbolsOfDocument(uri), pathOf(uri)));
+      else
+        sendResult(msg.id, "null");
       end if;
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);

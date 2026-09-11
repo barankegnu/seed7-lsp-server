@@ -137,6 +137,31 @@ bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnost
 expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
        "last of several contentChanges wins")
 
+# --- M3: documentSymbol answers from the analyzer's own global objects ---
+with open(os.path.join(ROOT, "tests/programs/symbols.sd7")) as f:
+    SYMS = f.read()
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7", "languageId": "seed7",
+                             "version": 1, "text": SYMS}}}),
+    frame({"jsonrpc": "2.0", "id": 20, "method": "textDocument/documentSymbol", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"}}}),
+    frame({"jsonrpc": "2.0", "id": 21, "method": "textDocument/documentSymbol", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_not_open.sd7"}}}),
+    frame({"jsonrpc": "2.0", "id": 22, "method": "shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+syms = by_id.get(20, {}).get("result", [])
+expect(isinstance(syms, list) and bool(syms), "documentSymbol returns a non-empty array")
+expect(any(s.get("name") == "Widget" and s.get("kind") == 5 for s in syms or []),
+       "documentSymbol lists the fixture's struct as a Class")
+expect(any(s.get("name") == "reportWidget" and
+           s["selectionRange"]["start"]["line"] == s["range"]["start"]["line"] == 18
+           for s in syms or []), "documentSymbol reports the 0-based declaration line")
+expect(by_id.get(21, {}).get("result") is None, "documentSymbol for an unopened uri is null")
+
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),
