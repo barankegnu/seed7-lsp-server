@@ -3,6 +3,53 @@ $ include "seed7_05.s7i";
   include "features/document_symbol.sd7";
   include "features/definition.sd7";
   include "features/hover.sd7";
+  include "features/completion.sd7";
+
+const func wordRef: exact (in string: nm) is func
+  result
+    var wordRef: out is wordRef.value;
+  begin
+    out.word := nm;
+    out.line1 := 1;
+    out.column1 := 1;
+    out.width := length(nm);
+  end func;
+
+const func array symRec: capSyms is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+    var integer: k is 0;
+  begin
+    rec.cat := "BLOCKOBJECT"; rec.ty := "proc"; rec.file := "/p/big.sd7";
+    for k range 1 to 120 do
+      rec.name := "pf" <& str(k);
+      rec.line1 := k;
+      rec.sign := "const proc: " <& rec.name;
+      out &:= rec;
+    end for;
+  end func;
+
+const func integer: labelCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, chr(34) <& "label" <& chr(34) <& ":");
+    while at <> 0 do
+      out +:= 1;
+      if at + 8 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 8 ..];
+      end if;
+      at := pos(rest, chr(34) <& "label" <& chr(34) <& ":");
+    end while;
+  end func;
 
 const func integer: uriCount (in string: jsonText) is func
   result
@@ -38,6 +85,8 @@ const proc: main is func
     var array symRec: wsyms is 0 times symRec.value;
     var array symRec: many is 0 times symRec.value;
     var wordRef: word is wordRef.value;
+    var array symRec: apsyms is 0 times symRec.value;
+    var symRec: ap is symRec.value;
     var lsDoc: hov is lsDoc.value;
     var integer: k is 0;
     var array symRec: syms is 0 times symRec.value;
@@ -138,5 +187,36 @@ const proc: main is func
     check("locations are capped at MAX_LOCATIONS",
           str(uriCount(definitionResult(many, word, "file:///x.sd7"))), "20");
     word.word := "writeln";
+    word.word := "tot"; word.line1 := 5; word.column1 := 12; word.width := 3;
+    check("prefix is the part left of the cursor", prefixOf(word, 13), "to");
+    check("prefix at the end of the word is the whole word", prefixOf(word, 15), "tot");
+    check("cursor before the word gives an empty prefix", prefixOf(word, 10), "");
+    ap.name := "apple"; ap.cat := "BLOCKOBJECT"; ap.ty := "proc";
+    ap.file := "/p/a.sd7"; ap.line1 := 2; ap.sign := "const proc: apple";
+    apsyms &:= ap;
+    ap.name := "apply"; ap.line1 := 4; ap.sign := "const proc: apply";
+    apsyms &:= ap;
+    ap.name := "ape"; ap.line1 := 6; ap.sign := "const proc: ape";
+    apsyms &:= ap;
+    word.word := "ap"; word.line1 := 1; word.column1 := 1; word.width := 2;
+    check("completions are the prefix matches in order, exact word excluded",
+          completionResult(apsyms, word, 3),
+          "[{\"label\":\"apple\",\"kind\":3,\"detail\":\"const proc: apple\",\"sortText\":\"0apple\"}," &
+          "{\"label\":\"apply\",\"kind\":3,\"detail\":\"const proc: apply\",\"sortText\":\"0apply\"}," &
+          "{\"label\":\"ape\",\"kind\":3,\"detail\":\"const proc: ape\",\"sortText\":\"0ape\"}]");
+    checkTrue("the exact word is never offered back",
+              pos(completionResult(apsyms, exact("ape"), 6), "\"ape\"") = 0);
+    word.word := "co"; word.line1 := 1; word.column1 := 1; word.width := 2;
+    checkTrue("keywords complete too",
+              pos(completionResult(0 times symRec.value, word, 3),
+                  "\"label\":\"const\",\"kind\":14,\"sortText\":\"1const\"") <> 0);
+    checkTrue("a capped list becomes a CompletionList",
+              startsWith(completionResult(capSyms(), exact("pf"), 5),
+                         "{\"isIncomplete\":true,\"items\":[") and
+              labelCount(completionResult(capSyms(), exact("pf"), 5)) = 100);
+    checkTrue("an empty prefix still offers the keywords (ctrl-space)",
+              startsWith(completionResult(0 times symRec.value, exact(""), 1), "[{") and
+              pos(completionResult(0 times symRec.value, exact(""), 1),
+                  "\"label\":\"const\"") <> 0);
     report("features");
   end func;

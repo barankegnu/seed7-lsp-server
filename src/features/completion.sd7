@@ -1,0 +1,89 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "features/kinds.sd7";
+  include "jsonw.sd7";
+
+const integer: MAX_COMPLETIONS is 100;
+
+const type: nameSeen is hash [string] integer;
+
+# The base vocabulary, copied from the lists seed7-mode tests against
+# (~/seed7-mode/seed7-mode.el: seed7--statement-enclosing-keywords and
+# seed7--declaration-intro-keywords). Seed7 syntax is DECLARED by $-pragmas in
+# seed7_05.s7i, so no list of keywords can be complete -- this is what the base
+# language offers, not what a project may add.
+const array string: SEED7_KEYWORDS is
+  []("attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end",
+   "enum", "exception", "for", "func", "global", "if", "in", "inout", "interface",
+   "is", "local", "nested", "new", "otherwise", "out", "proc", "range", "ref",
+   "repeat", "result", "return", "struct", "then", "type", "until", "val", "var",
+   "varfunc", "while");
+
+# The part of the token that is left of the cursor. column1 is 1-based and
+# character0 counts UTF-16 units, but a token wordAt returns is by construction
+# ASCII (an identifier or an operator run), so the subtraction is exact here.
+# The day Seed7 allows a non-ASCII identifier this is the line to change.
+const func string: prefixOf (in wordRef: word, in integer: character0) is func
+  result
+    var string: out is "";
+  local
+    var integer: left is 0;
+  begin
+    left := character0 - word.column1 + 1;
+    if left > word.width then
+      left := word.width;
+    end if;
+    if left > 0 then
+      out := word.word[1 .. left];
+    end if;
+  end func;
+
+const func string: completionResult (in array symRec: syms, in wordRef: word,
+                                     in integer: character0) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var nameSeen: seen is nameSeen.EMPTY_HASH;
+    var string: prefix is "";
+    var string: nm is "";
+    var integer: i is 0;
+    var integer: emitted is 0;
+  begin
+    prefix := prefixOf(word, character0);
+    openArray(w);
+    for i range 1 to length(syms) do
+      nm := syms[i].name;
+      if startsWith(nm, prefix) and nm <> prefix and nm not in seen and
+         emitted < MAX_COMPLETIONS then
+        seen @:= [nm] 1;
+        emitted +:= 1;
+        openObject(w);
+          field(w, "label"); addStr(w, nm);
+          field(w, "kind"); addInt(w, completionKindOf(syms[i].cat, syms[i].ty));
+          field(w, "detail"); addStr(w, syms[i].sign);
+          field(w, "sortText"); addStr(w, "0" <& nm);
+        closeObject(w);
+      end if;
+    end for;
+    for i range 1 to length(SEED7_KEYWORDS) do
+      nm := SEED7_KEYWORDS[i];
+      if startsWith(nm, prefix) and nm <> prefix and nm not in seen and
+         emitted < MAX_COMPLETIONS then
+        seen @:= [nm] 1;
+        emitted +:= 1;
+        openObject(w);
+          field(w, "label"); addStr(w, nm);
+          field(w, "kind"); addInt(w, 14);
+          field(w, "sortText"); addStr(w, "1" <& nm);
+        closeObject(w);
+      end if;
+    end for;
+    closeArray(w);
+    out := finishJson(w);
+    if emitted = MAX_COMPLETIONS then
+      # isIncomplete lives on CompletionList only, so the shape changes at the cap.
+      out := "{\"isIncomplete\":true,\"items\":" <& out <& "}";
+    end if;
+  end func;

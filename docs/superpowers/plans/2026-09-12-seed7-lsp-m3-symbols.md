@@ -1577,7 +1577,8 @@ const func string: hoverResult (in lsDoc: doc, in array symRec: syms,
   hand-built fixture records renamed to `nm`.
 
 - [ ] **Step 2: Run to verify failure** — naming `prefixOf` / `completionResult`.
-- [ ] **Step 3: Implement** `src/features/completion.sd7`:
+- [ ] **Step 3: Implement** `src/features/completion.sd7` (array literal form per the note
+  above):
 
 ```sd7
 $ include "seed7_05.s7i";
@@ -1595,11 +1596,11 @@ const type: nameSeen is hash [string] integer;
 # (~/seed7-mode/seed7-mode.el, seed7--statement-enclosing-keywords and
 # seed7--declaration-intro-keywords) rather than invented here.
 const array string: SEED7_KEYWORDS is
-  {"attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end",
+  []("attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end",
    "enum", "exception", "for", "func", "global", "if", "in", "inout", "interface",
    "is", "key", "local", "nested", "new", "otherwise", "out", "proc", "range",
    "ref", "repeat", "result", "return", "struct", "then", "type", "until", "val",
-   "var", "varfunc", "while"};
+   "var", "varfunc", "while");
 
 const func string: prefixOf (in wordRef: word, in integer: character0) is func
   result
@@ -1760,10 +1761,10 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
     var array symRec: hsyms is 0 times symRec.value;
     h1.name := "writeln"; h1.cat := "BLOCKOBJECT"; h1.file := "/tmp/a.sd7";
     h1.line1 := 3; h1.sign := "const proc: writeln (string: s)";
-    h1.params := {"string: s"};
+    h1.params := []("string: s");
     h2.name := "writeln"; h2.cat := "DECLAREDOBJECT"; h2.file := "/tmp/a.sd7";
     h2.line1 := 7; h2.sign := "const func integer: writeln (integer: n)";
-    h2.params := {"integer: n"};
+    h2.params := []("integer: n");
     hsyms &:= h1;
     hsyms &:= h2;
     check("no callee means null", signatureHelpResult(hsyms, "", 0), "null");
@@ -1778,8 +1779,9 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
                   "\"activeParameter\":9") <> 0);
 ```
 
-  `params := {"string: s"}` uses Seed7's array literal; if the parser rejects it in a struct
-  field assignment, build the array with `&:=` on a local and assign that.
+  A Seed7 array literal is `[](elem, elem)` — braces are a *block*, so `{"string: s"}` fails
+  to match (measured while writing Task 8, where `const array string: X is ("a","b","c")`
+  also fails). Copy the list from `string.s7i`'s callers if in doubt.
 
 - [ ] **Step 2: Run to verify failure** — naming `callContext` / `signatureHelpResult`.
 - [ ] **Step 3: Implement** `src/features/signature_help.sd7`:
