@@ -11,7 +11,11 @@ changing behaviour, since the plan argues from it and conflicts resolve in its f
 Red first. Write the check, run it, confirm it fails for the reason you claim, then
 implement. `make test` before and after. A check that cannot fail is worse than no
 check: when a safety net becomes unreachable from real input, delete the assertion
-rather than inventing a synthetic trigger. When a review or a probe contradicts a
+rather than inventing a synthetic trigger. To prove an assertion can fail, mutate one
+production branch and require that named check to go FAIL; this found four assertions that
+passed for unrelated reasons and one branch no input could ever reach. Do it after
+committing, and revert per file — `git checkout -- .` restores from the index and will
+silently undo work you have not committed yet. When a review or a probe contradicts a
 commit message, correct the message in the next commit — the correction is the finding.
 
 ## Seed7 traps
@@ -48,7 +52,25 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
-  file repeats `$ include "seed7_05.s7i";` and the includes it uses.
+  file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
+  (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
+  stays out of the dispatcher's way.
+- There is no char-to-string conversion: `str(ch)`, `string(ch)` and `ch & ""` all fail to
+  match. Slice the source text instead — `stri[i .. i]` — which is what `jsonw.sd7` does.
+- A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
+  block, so a brace-form array declaration fails somewhere far away in the error tree.
+- `x not in arr` does not parse when `x` is a struct-field select (`syms[i].sign not in
+  shown`); `analysis.listed()` exists because of it.
+- Declare before use: a `func` cannot call a helper defined later in the file, so the small
+  total wrappers in `analysis.sd7` sit above the walker that uses them.
+- Seed7's `and`/`or` short-circuit, but a long `or`/`and` chain of parenthesised
+  comparisons can fail to *match* — split the predicate into small `const func boolean:`
+  one-liners (see `doc_store.isAlpha`/`isDigit`/`nameChar`).
+- A char literal cannot hold the escape character or a quote the way you expect: `'\'` does
+  not parse. Use `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  The quote character is written `'''` — open, the quote as content, close — and `''''` is
+  the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
+  before coding to it; two of this session's test fixtures were wrong because I guessed.
 
 ## Invariants — a violation is a defect, not a style preference
 
@@ -66,8 +88,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 6. Outbound text goes through `jsonw.sd7`. `str()` on a `jsonValue` is the `literal()`
    path that emits `\8364;` for `€` — invalid JSON.
    `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty. The greps are
-   recursive (`src/`) rather than `src/*.sd7` since M3 put feature code in `src/features/`. The greps are recursive (`src/`, not `src/*.sd7`) since M3 put feature
-   code in `src/features/`.
+   recursive (`src/`, not `src/*.sd7`) because M3 put feature code in `src/features/`.
 
 ## Protocol decisions that are easy to undo by accident
 
@@ -116,11 +137,13 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 M1+M2 (base protocol, lifecycle, sync, diagnostics) are merged-ready. M3's five symbol
 features (documentSymbol, definition, hover, completion, signatureHelp) are in on this
-branch; the trust gate and the `.s7i` staleness fix were split out of M3 and remain open,
-as does local-variable completion. M4 folding/selectionRange/semanticTokens need
-`scan.sd7`, which does not exist yet — the reflection API yields declarations only, never
-use sites, and that is also why references and rename are M6. both are gone: `doc_store.codeText` masks string
-literals, char literals, `(* *)` and `#` comments, `wordAt` answers nothing inside masked
-text, and `signature_help.callContextOf` counts commas over the masked text. What
-`scan.sd7` still owns is token spans, extents and semantic classes — not `is this position
-meaningful`.
+branch; the trust gate, the `.s7i` staleness fix (R-F10) and local-variable completion were
+split out of it and remain open.
+
+Masking already exists — `doc_store.codeText` blanks string literals, char literals,
+`(* *)` and `#` comments, `wordAt` answers nothing inside masked text, and
+`signature_help.callContextOf` counts arguments over it — so M4's `scan.sd7` is no longer
+"does this position mean anything" but token *spans*: foldingRange, selectionRange and
+semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
+reflection API yields declarations only, never use sites, which is why references and
+rename stay M6.
