@@ -151,7 +151,6 @@ const func string: codeText (in lsDoc: doc) is func
     var integer: i is 0;
     var integer: depth is 0;
     var boolean: inStr is FALSE;
-    var boolean: inChr is FALSE;
     var boolean: inLine is FALSE;
     var boolean: esc is FALSE;
     var integer: skipCount is 0;
@@ -177,15 +176,6 @@ const func string: codeText (in lsDoc: doc) is func
         elsif ch = '"' then
           inStr := FALSE;
         end if;
-      elsif inChr then
-        out &:= " ";
-        if esc then
-          esc := FALSE;
-        elsif ch = BACKSLASH then
-          esc := TRUE;
-        elsif ch = SINGLE_QUOTE then
-          inChr := FALSE;
-        end if;
       elsif depth > 0 then
         out &:= " ";
         if ch = '(' and nextIs(doc.text, i, '*') then
@@ -199,7 +189,9 @@ const func string: codeText (in lsDoc: doc) is func
         out &:= " ";
         inStr := TRUE;
       elsif ch = SINGLE_QUOTE then
-        out &:= " ";
+        # the only char-literal state: consume its content (an escape pair, or one
+        # character -- which is how Seed7 writes the quote as ''') and its closing quote.
+        out &:= " "; 
         if nextIs(doc.text, i, BACKSLASH) then
           skipCount := 3;
         else
