@@ -60,6 +60,35 @@ const func string: stripDoc (in string: lineText) is func
 const func boolean: blank (in string: lineText) is
   return trimLeft(lineText) = "";
 
+const func string: trimRight (in string: lineText) is func
+  result
+    var string: out is "";
+  local
+    var integer: lastIdx is 0;
+  begin
+    out := lineText;
+    lastIdx := length(out);
+    while lastIdx >= 1 and (out[lastIdx] = ' ' or out[lastIdx] = '\9;' or out[lastIdx] = '\r') do
+      lastIdx := pred(lastIdx);
+    end while;
+    out := out[1 .. lastIdx];
+  end func;
+
+# (** ... *) written on one line: the body is between the two markers.
+const func string: proseBody (in string: lineText) is func
+  result
+    var string: out is "";
+  local
+    var integer: openAt is 0;
+    var integer: closeAt is 0;
+  begin
+    openAt := pos(lineText, "(**");
+    closeAt := pos(lineText, "*)");
+    if openAt <> 0 and closeAt > openAt + 2 then
+      out := trimRight(stripDoc(lineText[openAt + 3 .. pred(closeAt)]));
+    end if;
+  end func;
+
 const func string: proseIn (in array string: lines, in integer: line1) is func
   result
     var string: out is "";
@@ -80,18 +109,22 @@ const func string: proseIn (in array string: lines, in integer: line1) is func
       stopIdx := idx;
       startIdx := idx;
       while startIdx >= 1 and pos(lines[startIdx], "(**") = 0 do
-        startIdx := startIdx - 1;
+        startIdx := pred(startIdx);
       end while;
       if startIdx >= 1 then
-        for idx range startIdx + 1 to stopIdx - 1 do
-          one := stripDoc(lines[idx]);
-          if one <> "" and not startsWith(one, "@") then
-            if out <> "" then
-              out &:= "\n";
+        if startIdx = stopIdx then
+          out := proseBody(lines[startIdx]);
+        else
+          for idx range succ(startIdx) to pred(stopIdx) do
+            one := stripDoc(trimRight(lines[idx]));
+            if one <> "" and not startsWith(one, "@") then
+              if out <> "" then
+                out &:= "\n";
+              end if;
+              out &:= one;
             end if;
-            out &:= one;
-          end if;
-        end for;
+          end for;
+        end if;
       end if;
     end if;
   end func;

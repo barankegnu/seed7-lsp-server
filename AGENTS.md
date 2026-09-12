@@ -106,11 +106,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
   scheduled for M3 and split into its own plan, so it is still open.
 - The `-32603` containment net in `main.sd7` is still unreachable, for a narrower reason
-  than before: the reflection accessors M3 reads (`getType`, `formalParams`, `resultVar`)
-  *do* raise `RANGE_ERROR` on real references, and `analysis.sd7` wraps each in a total
-  (`safeType`, `paramsOf`), so nothing is left for the net to catch. Keep it. When you add
-  a handler that can raise, add the check that reaches it — and never let the raise find
-  stdout.
+  than before: the two reflection accessors this server actually calls, `getType` and
+  `formalParams`, *do* raise `RANGE_ERROR` on real references (`resultVar` also raises but
+  is never called), and `analysis.sd7` wraps each in a total (`safeType`, `paramsOf`), so
+  nothing is left for the net to catch. Keep it. When you add a handler that can raise, add
+  the check that reaches it — and never let the raise find stdout.
 
 ## Milestones
 
@@ -119,6 +119,8 @@ features (documentSymbol, definition, hover, completion, signatureHelp) are in o
 branch; the trust gate and the `.s7i` staleness fix were split out of M3 and remain open,
 as does local-variable completion. M4 folding/selectionRange/semanticTokens need
 `scan.sd7`, which does not exist yet — the reflection API yields declarations only, never
-use sites, and that is also why references and rename are M6. Two known ceilings wait for
-it: `doc_store.wordAt` has no idea what a comment or a string literal is, and
-`signature_help.callContext` counts a comma inside `"..."` as an argument separator.
+use sites, and that is also why references and rename are M6. both are gone: `doc_store.codeText` masks string
+literals, char literals, `(* *)` and `#` comments, `wordAt` answers nothing inside masked
+text, and `signature_help.callContextOf` counts commas over the masked text. What
+`scan.sd7` still owns is token spans, extents and semantic classes — not `is this position
+meaningful`.

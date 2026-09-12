@@ -20,17 +20,17 @@ const array string: SEED7_KEYWORDS is
    "repeat", "result", "return", "struct", "then", "type", "until", "val", "var",
    "varfunc", "while");
 
-# The part of the token that is left of the cursor. column1 is 1-based and
-# character0 counts UTF-16 units, but a token wordAt returns is by construction
-# ASCII (an identifier or an operator run), so the subtraction is exact here.
-# The day Seed7 allows a non-ASCII identifier this is the line to change.
+# The part of the token left of the cursor. Both sides count UTF-16 units: word.character1
+# comes from doc_store, the only file allowed to convert positions, so a line with an astral
+# character before the token cannot skew the count the way subtracting a character column
+# from a unit column would.
 const func string: prefixOf (in wordRef: word, in integer: character0) is func
   result
     var string: out is "";
   local
     var integer: left is 0;
   begin
-    left := character0 - word.column1 + 1;
+    left := character0 - word.character1;
     if left > word.width then
       left := word.width;
     end if;
@@ -39,8 +39,63 @@ const func string: prefixOf (in wordRef: word, in integer: character0) is func
     end if;
   end func;
 
+# True when nm is something the user could actually type as an identifier. The analyzer's
+# table contains operator and synthetic names ("." alone accounts for dozens of entries), and
+# offering them puts text in the editor that cannot be parsed back.
+const func boolean: isTypable (in string: nm) is func
+  result
+    var boolean: out is TRUE;
+  local
+    var integer: i is 0;
+  begin
+    if length(nm) = 0 or not nameChar(nm[1]) then
+      out := FALSE;
+    else
+      for i range 1 to length(nm) do
+        if not nameChar(nm[i]) then
+          out := FALSE;
+        end if;
+      end for;
+    end if;
+  end func;
+
+# One candidate pass over syms. `ownFile` first because the cap has to fall on the names
+# from the file being edited, not on the first hundred of the standard library -- the
+# analyzer returns globals in include order, so a single pass would rank stdlib first.
+const func integer: emitSyms (inout jsonWriter: w, inout nameSeen: seen,
+                              in array symRec: syms, in string: prefix,
+                              in integer: emitted, in string: ownFile,
+                              in boolean: wantOwn) is func
+  result
+    var integer: out is 0;
+  local
+    var string: nm is "";
+    var integer: i is 0;
+    var boolean: own is FALSE;
+  begin
+    out := emitted;
+    for i range 1 to length(syms) do
+      own := syms[i].file = ownFile or syms[i].file = BUFFER_FILE;
+      if own = wantOwn then
+        nm := syms[i].name;
+        if isTypable(nm) and startsWith(nm, prefix) and nm <> prefix and
+           nm not in seen and out < MAX_COMPLETIONS then
+          seen @:= [nm] 1;
+          out +:= 1;
+          openObject(w);
+            field(w, "label"); addStr(w, nm);
+            field(w, "kind"); addInt(w, completionKindOf(syms[i].cat, syms[i].ty));
+            field(w, "detail"); addStr(w, syms[i].sign);
+            field(w, "sortText"); addStr(w, "0" <& nm);
+          closeObject(w);
+        end if;
+      end if;
+    end for;
+  end func;
+
 const func string: completionResult (in array symRec: syms, in wordRef: word,
-                                     in integer: character0) is func
+                                     in integer: character0,
+                                     in string: ownFile) is func
   result
     var string: out is "";
   local
@@ -53,20 +108,8 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
   begin
     prefix := prefixOf(word, character0);
     openArray(w);
-    for i range 1 to length(syms) do
-      nm := syms[i].name;
-      if startsWith(nm, prefix) and nm <> prefix and nm not in seen and
-         emitted < MAX_COMPLETIONS then
-        seen @:= [nm] 1;
-        emitted +:= 1;
-        openObject(w);
-          field(w, "label"); addStr(w, nm);
-          field(w, "kind"); addInt(w, completionKindOf(syms[i].cat, syms[i].ty));
-          field(w, "detail"); addStr(w, syms[i].sign);
-          field(w, "sortText"); addStr(w, "0" <& nm);
-        closeObject(w);
-      end if;
-    end for;
+    emitted := emitSyms(w, seen, syms, prefix, emitted, ownFile, TRUE);
+    emitted := emitSyms(w, seen, syms, prefix, emitted, ownFile, FALSE);
     for i range 1 to length(SEED7_KEYWORDS) do
       nm := SEED7_KEYWORDS[i];
       if startsWith(nm, prefix) and nm <> prefix and nm not in seen and

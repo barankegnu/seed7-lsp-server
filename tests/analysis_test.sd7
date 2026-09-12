@@ -8,6 +8,10 @@ $ include "seed7_05.s7i";
 
 const type: lineSeen is hash [string] integer;
 
+# the sign of a symbol, for assertions that a marker never reaches it
+const func string: signatureOfText (in string: sign) is
+  return sign;
+
 const func string: readAll (in string: path) is func
   result
     var string: out is "";
@@ -140,6 +144,19 @@ const proc: main is func
     checkTrue("stdlib writeln is listed with an absolute path",
               startsWith(symsNamed(syms, "writeln")[1].file, "/"));
     checkTrue("nothing keeps the ? file", pos(allFiles(syms), "?") = 0);
+    # Every `set of char' in the stdlib reports its type as a compiler marker rather than
+    # a name; buildSign must not paste that marker into text the user reads.
+    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\n" <&
+                             "const set of char: letters is {'a'};" <& chr(10), dirs);
+    checkTrue("a marker type is not printed as a signature",
+              pos(symsNamed(syms, "letters")[1].sign, "*") = 0);
+    check("and the name still stands alone", symsNamed(syms, "letters")[1].sign, "letters");
+    # the guard has to reach parameters too: `pos' takes a generic whose type reports a
+    # marker rather than "set of char", and that text lands in every hover of it.
+    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\nconst proc: usePos (in string: s) is func\n" &
+                           "  begin\n  end func;\n", dirs);
+    checkTrue("a marker type inside a signature is not printed either",
+              pos(signatureOfText(symsNamed(syms, "usePos")[1].sign), "*") = 0);
     wlist := symsNamed(syms, "writeln");
     check("dedupe collapses identical (name,file,line) entries",
           str(countNameFile(syms, "writeln", wlist[1].file)),

@@ -89,7 +89,10 @@ const func string: paramText (in reference: obj) is func
     var string: ty is "";
   begin
     ty := safeType(obj);
-    if ty = "" then
+    if ty = "" or pos(ty, "*") <> 0 then
+      # "" when the type raises; a marker when the type is anonymous -- a generic
+      # parameter such as `pos's chSet reports " *ANONYM_TYPE* " instead of a name, and
+      # printing that into a signature the user reads is worse than printing no type.
       out := str(obj);
     else
       out := ty <& ": " <& str(obj);
@@ -135,6 +138,11 @@ const func string: buildSign (in string: cat, in string: ty, in string: nm,
       out := "const func " <& ty[6 ..] <& ": " <& nm;
     elsif startsWith(ty, "proc") then
       out := "const proc: " <& nm;
+    elsif pos(ty, "*") <> 0 then
+      # Anonymous and generated types report a compiler marker (" *ANONYM_TYPE* ",
+      # " *NULL_ENTITY_OBJECT* ") instead of a name -- every `set of char' in the
+      # stdlib does. A marker in a hover is worse than no type, so the name stands alone.
+      out := nm;
     elsif ty <> "" then
       out := "const " <& ty <& ": " <& nm;
     else

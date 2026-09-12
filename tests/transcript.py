@@ -225,9 +225,14 @@ expect(by_id.get(41, {}).get("error", {}).get("code") == -32601,
        "references is still unimplemented -> -32601")
 
 # --- M3: completion after a typed prefix ---
-COMP_TEXT = SYMS + "\nconst integer: totMarker is 1;\n"
-COMP_LINE = COMP_TEXT.split("\n").index("const integer: totMarker is 1;")
-COMP_CHAR = COMP_TEXT.split("\n")[COMP_LINE].index("totMarker") + 3   # "tot" typed
+# Type "tot" on a line the fixture does not have. The position is derived from the text
+# so editing the fixture cannot silently move it -- and one attempt at this check had
+# landed on "prototype" instead, which is why it is computed twice over.
+COMP_TYPED = "const integer: tot"
+COMP_TEXT = SYMS + "\n" + COMP_TYPED + "Marker is 1;\n"
+COMP_LINES = COMP_TEXT.split("\n")
+COMP_LINE = COMP_LINES.index(COMP_TYPED + "Marker is 1;")
+COMP_CHAR = len(COMP_TYPED)          # cursor right after the typed "tot"
 replies, code, err, junk = run([
     frame(msgs[0]), frame(msgs[1]),
     frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
@@ -242,8 +247,8 @@ replies, code, err, junk = run([
 by_id = {r.get("id"): r for r in replies if "id" in r}
 comp = by_id.get(50, {}).get("result") or {}
 labels = [i.get("label") for i in (comp.get("items", comp) if isinstance(comp, dict) else comp)]
-expect("totMarker" in labels and "totalSize" in labels,
-       "completion offers the prefix matches, got %s" % labels[:6])
+expect(set(labels[:2]) == {"totalSize", "totMarker"},
+       "completion offers the prefix matches from this file first, got %s" % labels[:6])
 expect(not isinstance(comp, dict) or comp.get("isIncomplete") is not True,
        "a short completion list stays a plain array")
 

@@ -76,10 +76,11 @@ overload plus the `(** … *)` comment the library author wrote, `completion` fo
 declarations and the base keywords, and `signatureHelp` with the active parameter counted
 from the call site.
 
-Requests stay silent inside a string literal or a comment: `doc_store.insideText` tracks
-those states, so a position inside `"..."` reports nothing rather than the signature of some
-unrelated call — a real risk in files like `prg/calc7.sd7`, whose continuation strings span
-lines.
+Requests stay silent inside a string literal, a char literal or a comment:
+`doc_store.codeText` masks those regions, so a position inside `"..."` reports nothing rather
+than the signature of some unrelated call — a real risk in files like `prg/calc7.sd7`, whose
+continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
+string in any rule that does not know char literals exist.
 
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's
@@ -90,9 +91,9 @@ definition range is the whole line and `selectionRange` equals `range`. A symbol
 `references` and rename (the reflection API yields declarations only, never use sites),
 `workspace/symbol`, folding ranges, selection ranges, semantic tokens, `documentSymbol`
 hierarchy for nested and local declarations, completion of local variables, pull
-diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit
-reports stale diagnostics, because a library is analysed through a driver that reads it
-from disk), `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
+diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
+and completion as well as stale diagnostics, because a library is analysed through a driver
+that reads the file back from disk, not from the editor buffer), `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
 for an unimplemented method returns `-32601 Method not found`, which editors display as
 "no data" rather than as a failure — and a capability is advertised only once its method
 is answered.

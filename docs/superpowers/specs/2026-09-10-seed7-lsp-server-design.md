@@ -132,12 +132,12 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 | documentSymbol | `globalObjects(prog)` filtered by `file(obj)` | **realised, with two corrections:** a buffer's own declarations report `file = "STRING"` (so the filter is `path OR "STRING"`), and only globals are listed, so there is no hierarchy and `selectionRange == range` |
 | definition | **not `syobject`** — it returns a `SYMBOLOBJECT` whose `file` is `"?"`, so it can never name a file. Scans `globalObjects` by name instead | **realised:** `Location[]` over all overloads, deduped on `(file, line)`, capped at 20; range is the whole declaration line |
 | hover | v1 realised: every overload's reconstructed signature + `doc_index` prose (`proseForText` when the declaration is in the buffer) | v2 (`match(prog, expr)` for the exact overload the cursor is in) is still unbuilt — v1 turned out to be good enough without it |
-| signatureHelp | candidates by name from `globalObjects`; active parameter counted by walking back to the owning `(` | **realised** for the common case: the walk is character-local, so a comma inside `"..."` counts (pinned by a test); `match` disambiguation still unbuilt |
+| signatureHelp | candidates by name from `globalObjects`; callee and argument index from one walk over `doc_store.codeText`, so strings and comments contribute no parens or commas | **realised**; `match`-based overload disambiguation still unbuilt (v1 lists every overload, which reads well) |
 | completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`, plus a copied keyword list | **locals still missing:** the spec's "enclosing function found by line range" was dropped rather than guessed at; it needs its own short plan |
 | folding / selectionRange / semanticTokens | `scan.sd7` only, no interpreter | ours to maintain |
 | references / rename | **no source in the reflection API** | needs an occurrence index over `scan.sd7` tokens; that is the "later" milestone |
 
-`str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` + `resultVar` (~50 lines) and are the single source for hover, completion detail, and signatureHelp.
+`str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. and are the single source for hover, completion detail, and signatureHelp.
 
 Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. `Seed7Home/libraries/*.htm` has the same text but no per-function anchors, so it is not a usable data source; linking to `seed7.net` in hover is acceptable alongside prose.
 

@@ -14,9 +14,9 @@ const func integer: symbolKindOf (in string: cat, in string: ty) is func
       out := 22;
     elsif cat = "STRUCTOBJECT" then
       out := 14;
-    elsif cat = "BLOCKOBJECT" or cat = "DECLAREDOBJECT" or cat = "ACTOBJECT" then
-      out := 12;
     elsif startsWith(ty, "func ") or startsWith(ty, "proc") then
+      out := 12;
+    elsif cat = "BLOCKOBJECT" or cat = "ACTOBJECT" then
       out := 12;
     else
       out := 13;
@@ -34,9 +34,9 @@ const func integer: completionKindOf (in string: cat, in string: ty) is func
       out := 20;
     elsif cat = "STRUCTOBJECT" then
       out := 21;
-    elsif cat = "BLOCKOBJECT" or cat = "DECLAREDOBJECT" or cat = "ACTOBJECT" then
-      out := 3;
     elsif startsWith(ty, "func ") or startsWith(ty, "proc") then
+      out := 3;
+    elsif cat = "BLOCKOBJECT" or cat = "ACTOBJECT" then
       out := 3;
     else
       out := 6;

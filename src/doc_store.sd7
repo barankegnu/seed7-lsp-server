@@ -13,6 +13,7 @@ const type: wordRef is new struct
     var string: word is "";
     var integer: line1 is 0;
     var integer: column1 is 0;
+    var integer: character1 is 0;      # 0-based column in UTF-16 units, like every LSP one
     var integer: width is 0;
   end struct;
 
@@ -124,6 +125,9 @@ const func boolean: opChar (in char: ch) is
 # does not parse -- the escape consumes the closing quote.
 const char: BACKSLASH is chr(92);
 
+# Same problem as the escape character: the char literal for a single quote does not parse.
+const char: SINGLE_QUOTE is chr(39);
+
 const func boolean: nextIs (in string: text, in integer: i, in char: c) is func
   result
     var boolean: out is FALSE;
@@ -131,30 +135,41 @@ const func boolean: nextIs (in string: text, in integer: i, in char: c) is func
     out := succ(i) <= length(text) and text[succ(i)] = c;
   end func;
 
-# True when idx sits inside a string literal, a (* ... *) comment (nesting aware) or a
-# # line comment. This is NOT a lexer -- it answers one question, "would a token here be
-# meaningless to the reader?" -- and it is what keeps hover from reporting a signature for
-# text the user typed inside "...", and keeps the comma walk in signature_help from
-# crossing a string. scan.sd7 (M4) may absorb it.
-const func boolean: insideText (in lsDoc: doc, in integer: idx) is func
+# Every non-code character replaced by a space: string literals, char literals,
+# (* *) comments (nesting aware) and # line comments. Newlines are kept and the length is
+# unchanged, so an offset into the result is the same offset into the document.
+#
+# This is the server's ONLY lexical state machine. It is not a lexer -- no token model, that
+# is scan.sd7's job (M4) -- and it answers one question: is this character code? wordAt and
+# signature_help both need it, and a second copy is how the two drift apart. Char literals
+# are in it because `{'"'}` silently opens a string in any machine that does not know the
+# form, which masks every declaration after it -- measured on lib/chartype.s7i.
+const func string: codeText (in lsDoc: doc) is func
   result
-    var boolean: out is FALSE;
+    var string: out is "";
   local
     var integer: i is 0;
     var integer: depth is 0;
-    var integer: stop is 0;
     var boolean: inStr is FALSE;
+    var boolean: inChr is FALSE;
     var boolean: inLine is FALSE;
     var boolean: esc is FALSE;
+    var integer: skipCount is 0;
     var char: ch is ' ';
   begin
-    stop := idx;
-    if stop > length(doc.text) then
-      stop := length(doc.text);
-    end if;
-    for i range 1 to stop do
+    for i range 1 to length(doc.text) do
       ch := doc.text[i];
-      if inStr then
+      if skipCount > 0 then
+        # the rest of a char literal after its opening quote: one content item (an escape
+        # pair or a single character, which is how Seed7 spells the quote character) and the
+        # closing quote. A char literal never spans a line, so nothing carries over.
+        out &:= " ";
+        skipCount := pred(skipCount);
+      elsif ch = '\n' or ch = '\r' then
+        inLine := FALSE;
+        out &:= ch;
+      elsif inStr then
+        out &:= " ";
         if esc then
           esc := FALSE;
         elsif ch = BACKSLASH then
@@ -162,25 +177,44 @@ const func boolean: insideText (in lsDoc: doc, in integer: idx) is func
         elsif ch = '"' then
           inStr := FALSE;
         end if;
+      elsif inChr then
+        out &:= " ";
+        if esc then
+          esc := FALSE;
+        elsif ch = BACKSLASH then
+          esc := TRUE;
+        elsif ch = SINGLE_QUOTE then
+          inChr := FALSE;
+        end if;
       elsif depth > 0 then
+        out &:= " ";
         if ch = '(' and nextIs(doc.text, i, '*') then
           depth +:= 1;
         elsif ch = '*' and nextIs(doc.text, i, ')') then
           depth := pred(depth);
         end if;
       elsif inLine then
-        if ch = '\n' or ch = '\r' then
-          inLine := FALSE;
-        end if;
+        out &:= " ";
       elsif ch = '"' then
+        out &:= " ";
         inStr := TRUE;
+      elsif ch = SINGLE_QUOTE then
+        out &:= " ";
+        if nextIs(doc.text, i, BACKSLASH) then
+          skipCount := 3;
+        else
+          skipCount := 2;
+        end if;
       elsif ch = '(' and nextIs(doc.text, i, '*') then
+        out &:= " ";
         depth +:= 1;
       elsif ch = '#' then
+        out &:= " ";
         inLine := TRUE;
+      else
+        out &:= doc.text[i .. i];
       end if;
     end for;
-    out := inStr or inLine or depth > 0;
   end func;
 
 const func boolean: tokenChar (in char: ch) is
@@ -228,23 +262,23 @@ const func boolean: onLine (in lsDoc: doc, in integer: lineIdx,
            idx < doc.lineStart[lineIdx] + lineWidth(doc.text, doc.lineStart[lineIdx]);
   end func;
 
-const func boolean: tokenKindAt (in lsDoc: doc, in integer: idx,
-                                 in boolean: wantOp) is func
+const func boolean: codeKindAt (in string: code, in integer: idx,
+                                in boolean: wantOp) is func
   result
     var boolean: out is FALSE;
   begin
-    if idx >= 1 and idx <= length(doc.text) then
+    if idx >= 1 and idx <= length(code) then
       if wantOp then
-        out := opChar(doc.text[idx]);
+        out := opChar(code[idx]);
       else
-        out := nameChar(doc.text[idx]);
+        out := nameChar(code[idx]);
       end if;
     end if;
   end func;
 
-# ponytail: no lexer. A run of OP_CHARS inside (* ... *) or "...\"..." comes back as a
-# "word", and `a<b` reads as one operator run. scan.sd7 (M4) owns that; every consumer
-# here asks for the token under a cursor.
+# The token under a cursor, taken from masked text: nothing inside a string, a char literal
+# or a comment can be answered with. What is still unsolved is the shape of a token --
+# `a<b' reads as one operator run -- which is scan.sd7's job (M4).
 const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
                             in integer: character0) is func
   result
@@ -257,33 +291,36 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
     var integer: first is 0;
     var integer: lastIdx is 0;
     var boolean: opRun is FALSE;
+    var string: code is "";
   begin
     lineIdx := line0 + 1;
     if lineIdx >= 1 and lineIdx <= lineCount(doc) then
       start := doc.lineStart[lineIdx];
+      code := codeText(doc);
       right := charIndexOf(doc, line0, character0);
       at := 0;
-      # right > start already keeps the character to the left on this line.
-      if right > start and right <= length(doc.text) and
-         tokenChar(doc.text[pred(right)]) then
+      # right > start already keeps the character to the left on this line; the bound is
+      # on pred(right) because a document whose last line has no terminator reports one
+      # past its end, and that is exactly where a truncated buffer leaves the cursor.
+      if right > start and pred(right) <= length(code) and tokenChar(code[pred(right)]) then
         at := pred(right);
-      elsif right >= start and onLine(doc, lineIdx, right) and
-            tokenChar(doc.text[right]) then
+      elsif right >= start and onLine(doc, lineIdx, right) and tokenChar(code[right]) then
         at := right;
       end if;
-      if at <> 0 and not insideText(doc, at) then
-        opRun := opChar(doc.text[at]);
+      if at <> 0 then
+        opRun := opChar(code[at]);
         first := at;
-        while pred(first) >= start and tokenKindAt(doc, pred(first), opRun) do
+        while pred(first) >= start and codeKindAt(code, pred(first), opRun) do
           first := pred(first);
         end while;
         lastIdx := at;
-        while tokenKindAt(doc, succ(lastIdx), opRun) do
+        while codeKindAt(code, succ(lastIdx), opRun) do
           lastIdx := succ(lastIdx);
         end while;
-        out.word := doc.text[first .. lastIdx];
+        out.word := code[first .. lastIdx];
         out.line1 := lineIdx;
         out.column1 := first - start + 1;
+        out.character1 := utf16Before(code, first) - utf16Before(code, start);
         out.width := lastIdx - first + 1;
       end if;
     end if;

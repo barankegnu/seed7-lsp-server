@@ -23,12 +23,16 @@ const proc: main is func
     write(out, " *  Second line.\n");
     write(out, " *)\n");
     write(out, "const proc: three is func\n");
+    write(out, "(** *  Single line. *)\n");
+    write(out, "const proc: four is func\n");
     close(out);
     check("prose of the doc comment", proseFor(path, 8), "Adds two numbers.");
     check("multi-line prose keeps both lines in order", proseFor(path, 15),
           "First line.\nSecond line.");
     check("nothing above the first line", proseFor(path, 1), "");
     check("a statement, not a documented declaration", proseFor(path, 9), "");
+    check("a one-line comment documents the line below it", proseFor(path, 17),
+          "Single line.");
     check("a line inside the comment is no declaration", proseFor(path, 4), "");
     check("the same walk over text in memory",
           proseForText("(**\n *  From the buffer.\n *)\nconst proc: own is func\n", 4),

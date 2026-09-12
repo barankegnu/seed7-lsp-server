@@ -2,6 +2,34 @@ $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "doc_store.sd7";
 
+
+# A document whose first line is a char literal written one of Seed7's ways, followed by a
+# declaration that must still be findable. `content` is the literal's inner text as real file
+# bytes: chr(39) is a quote, chr(92) a backslash -- assembled with chr() so no
+const proc: charForm (in string: title, in string: content) is func
+  local
+    var lsDoc: d is lsDoc.value;
+    var string: text is "";
+  begin
+    text := "const set of char: c is {" <& chr(39) <& content <& chr(39) <& "};" <&
+            chr(10) <& "const integer: afterIt is 1;" <& chr(10);
+    setVersion(d, text, 1);
+    check(title, wordAt(d, 1, 20).word, "afterIt");
+  end func;
+
+const func integer: countChars (in string: text, in char: ch) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(text) do
+      if text[i] = ch then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
 const proc: main is func
   local
     var lsDoc: doc is lsDoc.value;
@@ -60,8 +88,24 @@ const proc: main is func
     check("a real declaration after the comment resolves", wordAt(masked, 2, 12).word, "integer");
     check("word inside a string literal is not offered", wordAt(masked, 3, 17).word, "");
     check("the call before the string still resolves", wordAt(masked, 3, 7).word, "writeln");
-    check("insideText flags a comment", str(insideText(masked, 40)), "TRUE");
-    check("insideText flags a string", str(insideText(masked, length(masked.text) - 12)), "TRUE");
-    check("insideText clears after the comment closes", str(insideText(masked, 78)), "FALSE");
+    # Asserted as properties, not offsets: what a consumer depends on is that the code
+    # survives, the text inside the regions does not, and the lengths still line up --
+    # codeText is used to answer questions about positions in the ORIGINAL text.
+    checkTrue("masking does not change the length",
+              length(codeText(masked)) = length(masked.text));
+    checkTrue("masking keeps every line break where it was",
+              countChars(codeText(masked), chr(10)) = countChars(masked.text, chr(10)));
+    checkTrue("the comment body is gone", pos(codeText(masked), "comment word") = 0);
+    checkTrue("the string body is gone", pos(codeText(masked), "quoted word") = 0);
+    checkTrue("the code after them is intact",
+              pos(codeText(masked), "const integer: b") <> 0 and
+              pos(codeText(masked), "writeln") <> 0);
+    charForm("char literal: plain letter", "a");
+    # a bare three-quote spelling is not a Seed7 char literal; the quote
+    # character is written with an escape, which the escaped-quote case covers
+    charForm("char literal: escaped backslash", "" <& chr(92) <& chr(92));
+    charForm("char literal: escaped quote", "" <& chr(92) <& chr(39));
+    charForm("char literal: a double quote", "" <& chr(34));
+    charForm("char literal: a hash", "#");
     report("doc_store");
   end func;

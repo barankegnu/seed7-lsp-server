@@ -15,6 +15,31 @@ const func string: calleeAt (inout lsDoc: d, in string: text, in integer: charac
     out := callContextOf(d, 0, character0, active);
   end func;
 
+const func array symRec: ownLastSyms is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+    var integer: k is 0;
+  begin
+    # 200 library symbols first (globalObjects order), the document's own last:
+    # a cap of 100 must not decide that the user's names are invisible.
+    rec.cat := "TYPEOBJECT"; rec.ty := "type";
+    for k range 1 to 200 do
+      rec.name := "lib" <& str(k);
+      rec.file := "/home/user/seed7/lib/stdlib.s7i";
+      rec.line1 := k;
+      rec.sign := "const type: " <& rec.name;
+      out &:= rec;
+    end for;
+    rec.name := "myOwnName"; rec.cat := "STRUCTOBJECT"; rec.ty := "Widget";
+    rec.file := BUFFER_FILE; rec.line1 := 3; rec.sign := "const Widget: myOwnName";
+    out &:= rec;
+    rec.name := "."; rec.file := "/home/user/seed7/lib/syntax.s7i";
+    rec.line1 := 4; rec.sign := ".";
+    out &:= rec;
+  end func;
+
 const func wordRef: exact (in string: nm) is func
   result
     var wordRef: out is wordRef.value;
@@ -102,6 +127,8 @@ const proc: main is func
     var array symRec: hsyms is 0 times symRec.value;
     var integer: active is 0;
     var lsDoc: sig is lsDoc.value;
+    var lsDoc: astral is lsDoc.value;
+    var wordRef: aw is wordRef.value;
     var string: got is "";
     var lsDoc: hov is lsDoc.value;
     var integer: k is 0;
@@ -203,10 +230,21 @@ const proc: main is func
     check("locations are capped at MAX_LOCATIONS",
           str(uriCount(definitionResult(many, word, "file:///x.sd7"))), "20");
     word.word := "writeln";
-    word.word := "tot"; word.line1 := 5; word.column1 := 12; word.width := 3;
+    word.word := "tot"; word.line1 := 5; word.column1 := 12; word.character1 := 11;
+    word.width := 3;
     check("prefix is the part left of the cursor", prefixOf(word, 13), "to");
     check("prefix at the end of the word is the whole word", prefixOf(word, 15), "tot");
     check("cursor before the word gives an empty prefix", prefixOf(word, 10), "");
+    # Same token, same cursor, but the line holds two BMP characters and two astral ones
+    # (four UTF-16 units in six characters) before it. Seed7 has no \u escapes, so the text
+    # is built with chr(): counting characters against units would make the prefix wrong
+    # by two here, which is what wordRef.character1 exists to prevent.
+    setVersion(astral, "" <& chr(26085) <& chr(26412) <& chr(66688) <& chr(66688) <&
+                      " tot", 1);
+    aw := wordAt(astral, 0, 19);
+    check("the token after astral text is still found", aw.word, "tot");
+    check("its UTF-16 column counts units, not characters", str(aw.character1), "7");
+    check("and the prefix is still the two typed units", prefixOf(aw, 9), "to");
     ap.name := "apple"; ap.cat := "BLOCKOBJECT"; ap.ty := "proc";
     ap.file := "/p/a.sd7"; ap.line1 := 2; ap.sign := "const proc: apple";
     apsyms &:= ap;
@@ -214,25 +252,33 @@ const proc: main is func
     apsyms &:= ap;
     ap.name := "ape"; ap.line1 := 6; ap.sign := "const proc: ape";
     apsyms &:= ap;
-    word.word := "ap"; word.line1 := 1; word.column1 := 1; word.width := 2;
+    word.word := "ap"; word.line1 := 1; word.column1 := 1; word.character1 := 0;
+    word.width := 2;
     check("completions are the prefix matches in order, exact word excluded",
-          completionResult(apsyms, word, 3),
+          completionResult(apsyms, word, 3, "/p/a.sd7"),
           "[{\"label\":\"apple\",\"kind\":3,\"detail\":\"const proc: apple\",\"sortText\":\"0apple\"}," &
           "{\"label\":\"apply\",\"kind\":3,\"detail\":\"const proc: apply\",\"sortText\":\"0apply\"}," &
           "{\"label\":\"ape\",\"kind\":3,\"detail\":\"const proc: ape\",\"sortText\":\"0ape\"}]");
     checkTrue("the exact word is never offered back",
-              pos(completionResult(apsyms, exact("ape"), 6), "\"ape\"") = 0);
-    word.word := "co"; word.line1 := 1; word.column1 := 1; word.width := 2;
+              pos(completionResult(apsyms, exact("ape"), 6, "/p/a.sd7"), "\"ape\"") = 0);
+    word.word := "co"; word.line1 := 1; word.column1 := 1; word.character1 := 0;
+    word.width := 2;
     checkTrue("keywords complete too",
-              pos(completionResult(0 times symRec.value, word, 3),
+              pos(completionResult(0 times symRec.value, word, 3, "/p/a.sd7"),
                   "\"label\":\"const\",\"kind\":14,\"sortText\":\"1const\"") <> 0);
     checkTrue("a capped list becomes a CompletionList",
-              startsWith(completionResult(capSyms(), exact("pf"), 5),
+              startsWith(completionResult(capSyms(), exact("pf"), 5, "/p/a.sd7"),
                          "{\"isIncomplete\":true,\"items\":[") and
-              labelCount(completionResult(capSyms(), exact("pf"), 5)) = 100);
+              labelCount(completionResult(capSyms(), exact("pf"), 5, "/p/a.sd7")) = 100);
+    checkTrue("own-file symbols win the cap",
+              pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
+                  "\"label\":\"myOwnName\"") <> 0);
+    checkTrue("a name that cannot be typed is never offered",
+              pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
+                  "\"label\":\".\"") = 0);
     checkTrue("an empty prefix still offers the keywords (ctrl-space)",
-              startsWith(completionResult(0 times symRec.value, exact(""), 1), "[{") and
-              pos(completionResult(0 times symRec.value, exact(""), 1),
+              startsWith(completionResult(0 times symRec.value, exact(""), 1, "/p/a.sd7"), "[{") and
+              pos(completionResult(0 times symRec.value, exact(""), 1, "/p/a.sd7"),
                   "\"label\":\"const\"") <> 0);
     got := calleeAt(sig, "go(x", 5, active);
     check("callee is the name before the owning paren", got, "go");
@@ -242,15 +288,17 @@ const proc: main is func
     check("second argument is active", str(active), "1");
     got := calleeAt(sig, "f(a, (b, c", 12, active);
     check("a grouping paren has no callee", got, "");
-    check("nothing counted for it", str(active), "0");
+    check("so signatureHelp reports nothing at all", signatureHelpResult(hsyms, got, active),
+          "null");
     got := calleeAt(sig, "writeln done", 12, active);
     check("no unclosed paren to the left", got, "");
-    check("the counter starts over", str(active), "0");
+    check("and no stale count leaks out", str(active), "0");
     got := calleeAt(sig, "go(\"a, b\", x", 13, active);
     check("a comma inside a string literal is not an argument separator", got, "go");
     check("one real comma", str(active), "1");
     got := calleeAt(sig, "go(\"a, b", 8, active);
-    check("a cursor inside a string literal gets no signature help", got, "");
+    check("a cursor inside a string argument still names the enclosing call", got, "go");
+    check("and it is the first argument", str(active), "0");
     got := calleeAt(sig, "(*  go(a, b", 11, active);
     check("a cursor inside a comment gets none either", got, "");
     got := calleeAt(sig, "# go(a, b", 9, active);

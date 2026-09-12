@@ -215,7 +215,12 @@ const proc: handle (in rpcMsg: msg) is func
       end if;
     elsif msg.method = "textDocument/definition" then
       uri := uriOfRequest(msg);
-      sendResult(msg.id, definitionResult(symbolsOfDocument(uri), wordOfRequest(msg), uri));
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, definitionResult(symbolsOfDocument(uri),
+                     wordOfRequest(msg), uri));
+      else
+        sendResult(msg.id, "null");
+      end if;
     elsif msg.method = "textDocument/hover" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
@@ -228,7 +233,7 @@ const proc: handle (in rpcMsg: msg) is func
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, completionResult(symbolsOfDocument(uri), wordOfRequest(msg),
-                     intAt(atKey(msg.params, "position"), "character", 0)));
+                     intAt(atKey(msg.params, "position"), "character", 0), pathOf(uri)));
       else
         sendResult(msg.id, "[]");
       end if;
