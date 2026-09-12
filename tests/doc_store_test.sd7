@@ -70,6 +70,12 @@ const proc: main is func
     check("an out-of-range line is one past the text", str(charIndexOf(two, 400, 0)),
           str(length(two.text) + 1));
     check("absurd line has no word", wordAt(two, 400, 0).word, "");
+    # a truncated buffer -- the normal state while typing -- has no trailing newline, and
+    # the cursor sits one past the last character: the guard in wordAt is on the character
+    # it looks at, not on the position to its right, and this is the case that proves it.
+    setVersion(two, "  const proc: main is func\n    writeln(x);", 2);
+    check("last token of a buffer with no trailing newline", wordAt(two, 1, 15).word, ";");
+    check("one past the end of that line", wordAt(two, 1, 16).word, ";");
     setVersion(op, "a<&b\n", 1);
     check("operator run is one word", wordAt(op, 0, 2).word, "<&");
     check("name char before an operator", wordAt(op, 0, 1).word, "a");
@@ -100,6 +106,14 @@ const proc: main is func
     checkTrue("the code after them is intact",
               pos(codeText(masked), "const integer: b") <> 0 and
               pos(codeText(masked), "writeln") <> 0);
+    # the delimiting punctuation around a literal has to survive the mask; a machine that
+    # consumes the wrong number of characters eats the "}" and ";" as well and the check
+    # below is what notices.
+    setVersion(masked, "const set of char: c is {'" <& chr(92) <& chr(39) <&
+                      "'};\nwriteln(1);" <& chr(10), 1);
+    checkTrue("the literal delimiters do not leak past the closing quote",
+              pos(codeText(masked), "};") <> 0 and pos(codeText(masked), "writeln(1)") <> 0);
+    checkTrue("the literal itself is gone", pos(codeText(masked), chr(92)) = 0);
     charForm("char literal: plain letter", "a");
     # a bare three-quote spelling is not a Seed7 char literal; the quote
     # character is written with an escape, which the escaped-quote case covers

@@ -35,8 +35,8 @@ const func array symRec: ownLastSyms is func
     rec.name := "myOwnName"; rec.cat := "STRUCTOBJECT"; rec.ty := "Widget";
     rec.file := BUFFER_FILE; rec.line1 := 3; rec.sign := "const Widget: myOwnName";
     out &:= rec;
-    rec.name := "."; rec.file := "/home/user/seed7/lib/syntax.s7i";
-    rec.line1 := 4; rec.sign := ".";
+    rec.name := "."; rec.cat := "TYPEOBJECT"; rec.ty := "type";
+    rec.file := BUFFER_FILE; rec.line1 := 4; rec.sign := ".";
     out &:= rec;
   end func;
 
@@ -164,6 +164,10 @@ const proc: main is func
           documentSymbolResult(0 times symRec.value, "/p/a.sd7"), "[]");
     check("a var declaration is a Variable", str(symbolKindOf("REFOBJECT", "integer")), "13");
     check("a stdlib action is a Function", str(symbolKindOf("ACTOBJECT", "proc")), "12");
+    # the type-based branch is tried first, so this is what keeps the category branch
+    # load-bearing: a callable whose type raises or reports a marker is still a Function.
+    check("a callable with no usable type is still a Function",
+          str(symbolKindOf("ACTOBJECT", "")), "12");
     check("an enum literal is an EnumMember", str(symbolKindOf("ENUMLITERALOBJECT", "color")), "22");
     checkTrue("the same judgement drives completion kinds",
               completionKindOf("TYPEOBJECT", "type") = 7 and
@@ -273,6 +277,8 @@ const proc: main is func
     checkTrue("own-file symbols win the cap",
               pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
                   "\"label\":\"myOwnName\"") <> 0);
+    # "." is declared in the file itself, so it is in the first pass and well inside the
+    # cap: the filter is what removes it here, not the cut-off.
     checkTrue("a name that cannot be typed is never offered",
               pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
                   "\"label\":\".\"") = 0);

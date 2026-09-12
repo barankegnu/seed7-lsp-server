@@ -153,10 +153,16 @@ const proc: main is func
     check("and the name still stands alone", symsNamed(syms, "letters")[1].sign, "letters");
     # the guard has to reach parameters too: `pos' takes a generic whose type reports a
     # marker rather than "set of char", and that text lands in every hover of it.
-    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\nconst proc: usePos (in string: s) is func\n" &
-                           "  begin\n  end func;\n", dirs);
-    checkTrue("a marker type inside a signature is not printed either",
-              pos(signatureOfText(symsNamed(syms, "usePos")[1].sign), "*") = 0);
+    # a generic parameter is what reports the marker -- `pos' takes a set whose type is
+    # anonymous -- so the parameter has to be a set for this to reach the guard at all.
+    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\n" &
+                           "const func integer: countSet (in set of char: chSet) is func\n" &
+                           "  result\n    var integer: n is 0;\n  begin\n" &
+                           "  end func;\n", dirs);
+    checkTrue("a marker type on a parameter is not printed either",
+              pos(symsNamed(syms, "countSet")[1].sign, "*") = 0);
+    checkTrue("and the parameter is still named",
+              pos(symsNamed(syms, "countSet")[1].sign, "chSet") <> 0);
     wlist := symsNamed(syms, "writeln");
     check("dedupe collapses identical (name,file,line) entries",
           str(countNameFile(syms, "writeln", wlist[1].file)),
