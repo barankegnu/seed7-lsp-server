@@ -2,13 +2,74 @@ $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "lsp_server.sd7";
 
+const array string: HANDLED is
+  []("textDocumentSync", "positionEncoding", "completionProvider",
+     "hoverProvider", "signatureHelpProvider", "definitionProvider",
+     "documentSymbolProvider");
+
+const array string: UNHANDLED is
+  []("diagnosticProvider", "referencesProvider", "renameProvider",
+     "implementationProvider", "typeDefinitionProvider", "declarationProvider",
+     "foldingRangeProvider", "selectionRangeProvider", "semanticTokensProvider",
+     "workspaceSymbolProvider", "documentFormattingProvider",
+     "documentHighlightProvider", "codeActionProvider", "colorProvider",
+     "linkedEditingRangeProvider", "callHierarchyProvider",
+     "typeHierarchyProvider", "inlayHintProvider", "inlineValueProvider",
+     "monikerProvider");
+
+# Every rule is one comparison: a longer mixed chain can fail to match at parse time.
+const func boolean: advertised (in string: name) is
+  return pos(capabilitiesJson, "\"" <& name <& "\":") <> 0;
+
+const func string: firstUnhandled is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(UNHANDLED) do
+      if advertised(UNHANDLED[i]) then
+        if out = "" then
+          out := UNHANDLED[i];
+        end if;
+      end if;
+    end for;
+  end func;
+
+const func string: firstMissing is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(HANDLED) do
+      if not advertised(HANDLED[i]) then
+        if out = "" then
+          out := HANDLED[i];
+        end if;
+      end if;
+    end for;
+  end func;
+
 const proc: main is func
   begin
-    check("space decoded",  pathOf("file:///tmp/my%20dir/a.sd7"), "/tmp/my dir/a.sd7");
-    check("plain uri kept", pathOf("/tmp/a.sd7"), "/tmp/a.sd7");
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
     checkTrue("caps are valid json wrapper", startsWith(capabilitiesJson, "{") and
               endsWith(capabilitiesJson, "}"));
+    # A advertised provider must have a handler. textDocument/diagnostic answers
+    # -32601, and a pull-capable client that believes the capability may ignore
+    # the push diagnostics we really do send.
+    checkTrue("no capability for an unhandled request",
+              pos(capabilitiesJson, "diagnosticProvider") = 0);
+    openDocs @:= ["file:///tmp/seed7_lsp_syms.sd7"] lsDoc.value;
+    setVersion(openDocs["file:///tmp/seed7_lsp_syms.sd7"],
+               "$ include \"seed7_05.s7i\";\nconst proc: onlyHere is func\n  begin\n  end func;\n", 1);
+    checkTrue("an open document yields symbols",
+              length(symbolsOfDocument("file:///tmp/seed7_lsp_syms.sd7")) <> 0);
+    check("an unknown uri yields none",
+          str(length(symbolsOfDocument("file:///tmp/never/opened.sd7"))), "0");
+    check("every advertised capability has a handler", firstMissing(), "");
+    check("no capability is advertised for an unhandled method", firstUnhandled(), "");
     report("lsp_server");
   end func;

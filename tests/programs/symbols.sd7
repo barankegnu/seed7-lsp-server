@@ -1,0 +1,33 @@
+$ include "seed7_05.s7i";
+  include "console.s7i";
+
+const type: Widget is new struct
+    var string: name is "";
+    var integer: pix is 0;
+  end struct;
+
+const func integer: totalSize (in Widget: w, in integer: factor) is func
+  result
+    var integer: total is 0;
+  begin
+    # No "return" statement: a func with a result clause ASSIGNS its result variable
+    # and Seed7 returns it implicitly. Writing "total := ...; return total;" does not
+    # match at analysis time, which is a trap this fixture existed to catch.
+    total := w.pix * factor;
+  end func;
+
+const proc: reportWidget (in string: label, inout integer: counter) is func
+  begin
+    writeln(label);
+    counter +:= 1;
+  end func;
+
+const Widget: prototype is Widget.value;
+
+const proc: main is func
+  local
+    var integer: hits is 0;
+  begin
+    reportWidget("proto", hits);
+    writeln(totalSize(prototype, 2));
+  end func;

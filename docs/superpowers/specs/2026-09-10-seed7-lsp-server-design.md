@@ -65,6 +65,10 @@ Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(S
 - Negotiate `positionEncoding`; honour `utf-16` (mandatory in all clients, our default) and `utf-8` when offered. `doc_store.sd7` owns the three-way map: LSP (line, character) ↔ Seed7 character index ↔ byte offset, backed by a per-document line-start table rebuilt on `didChange`.
 - 0-based line/character in, 1-based `lineNumber`/`columnNumber` from `getError` out.
 - A character value past the line length clamps to the line length. `\r|\n` positions are never emitted.
+- Position→token is left-of-character. LSP 3.18 ("Hover Request"): *"the client typically
+  sends position n (the position before the character)"*. `doc_store.wordAt` resolves the
+  token **ending** at the position and falls back to the one starting there; completion uses
+  the same function and truncates its result at the cursor.
 
 ### 3.4 Lifecycle
 
@@ -86,7 +90,9 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.
-5. Pull diagnostics (`textDocument/diagnostic`) is added behind the client capability in the same milestone; both paths call one function.
+5. Pull diagnostics (`textDocument/diagnostic`) is **not advertised and not handled**;
+the capability shipped in error during M2 and is removed until the handler exists. When
+it lands, it goes behind the client capability and both paths call one function.
 
 `.s7i` buffers: a library file is not analysable alone, so `analysis.sd7` parses the synthetic driver
 
@@ -122,16 +128,16 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 
 | Feature | Source | Known gap |
 |---|---|---|
-| diagnostics | `errorCount` / `getError` | semantic errors carry no column (§4.4) |
-| documentSymbol | `globalObjects(prog)` filtered by `file(obj) = doc`, sorted by `line(obj)` | declarations only, no ranges → symbol extent is line-based |
-| definition | `syobject(prog, name)` → location file = `path(obj)` when non-empty else `file(obj)`, line = `line(obj)` | `line` is the declaration line, column unknown → range is that whole line |
-| hover | v1: `syobject` + reconstructed signature + `doc_index`. v2: `match(prog, expr)` for the overload the cursor is in | building `expr` as a `ref_list` from buffer text is the hardest part of v2, hence the split |
-| signatureHelp | candidates from `globalObjects` by name, disambiguated by `match` | as above |
-| completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`; locals from the enclosing function's `localConsts`/`localVars` | enclosing function found by line range, not by AST |
+| diagnostics | `errorCount` / `getError` | semantic errors carry no column (§4.4) — **realised** |
+| documentSymbol | `globalObjects(prog)` filtered by `file(obj)` | **realised, with two corrections:** a buffer's own declarations report `file = "STRING"` (so the filter is `path OR "STRING"`), and only globals are listed, so there is no hierarchy and `selectionRange == range` |
+| definition | **not `syobject`** — it returns a `SYMBOLOBJECT` whose `file` is `"?"`, so it can never name a file. Scans `globalObjects` by name instead | **realised:** `Location[]` over all overloads, deduped on `(file, line)`, capped at 20; range is the whole declaration line |
+| hover | v1 realised: every overload's reconstructed signature + `doc_index` prose (`proseForText` when the declaration is in the buffer) | v2 (`match(prog, expr)` for the exact overload the cursor is in) is still unbuilt — v1 turned out to be good enough without it |
+| signatureHelp | candidates by name from `globalObjects`; callee and argument index from one walk over `doc_store.codeText`, so strings and comments contribute no parens or commas | **realised**; `match`-based overload disambiguation still unbuilt (v1 lists every overload, which reads well) |
+| completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`, plus a copied keyword list | **locals still missing:** the spec's "enclosing function found by line range" was dropped rather than guessed at; it needs its own short plan |
 | folding / selectionRange / semanticTokens | `scan.sd7` only, no interpreter | ours to maintain |
 | references / rename | **no source in the reflection API** | needs an occurrence index over `scan.sd7` tokens; that is the "later" milestone |
 
-`str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` + `resultVar` (~50 lines) and are the single source for hover, completion detail, and signatureHelp.
+`str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. and are the single source for hover, completion detail, and signatureHelp.
 
 Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. `Seed7Home/libraries/*.htm` has the same text but no per-function anchors, so it is not a usable data source; linking to `seed7.net` in hover is acceptable alongside prose.
 
@@ -168,7 +174,7 @@ No editor is required to test any of this, which is the point of the module spli
 | M0 | risk spikes | done — §3/§4/§5 above are measurements, not assumptions |
 | M1 | transport + rpc + lifecycle + doc store | transcript: `initialize` answers with our capabilities; unknown method → `-32601`; request before initialize → `-32002`; `shutdown`/`exit` codes correct |
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
-| M3 | documentSymbol + definition | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper |
+| M3 | documentSymbol + definition | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper. **Merged on `m3`, except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
 | M4 | hover + signatureHelp + completion | signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover |
 | M5 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
 | M6 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |

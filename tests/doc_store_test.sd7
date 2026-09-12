@@ -2,10 +2,42 @@ $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "doc_store.sd7";
 
+
+# A document whose first line is a char literal written one of Seed7's ways, followed by a
+# declaration that must still be findable. `content` is the literal's inner text as real file
+# bytes: chr(39) is a quote, chr(92) a backslash -- assembled with chr() so no
+const proc: charForm (in string: title, in string: content) is func
+  local
+    var lsDoc: d is lsDoc.value;
+    var string: text is "";
+  begin
+    text := "const set of char: c is {" <& chr(39) <& content <& chr(39) <& "};" <&
+            chr(10) <& "const integer: afterIt is 1;" <& chr(10);
+    setVersion(d, text, 1);
+    check(title, wordAt(d, 1, 20).word, "afterIt");
+  end func;
+
+const func integer: countChars (in string: text, in char: ch) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(text) do
+      if text[i] = ch then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
 const proc: main is func
   local
     var lsDoc: doc is lsDoc.value;
     var lsDoc: crlf is lsDoc.value;
+    var lsDoc: two is lsDoc.value;
+    var lsDoc: op is lsDoc.value;
+    var lsDoc: masked is lsDoc.value;
+    var wordRef: w is wordRef.value;
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -21,5 +53,73 @@ const proc: main is func
     check("astral counts twice", str(utf16Before("a𐐀b", 3) - utf16Before("a𐐀b", 1)), "3");
     check("trailing b counted", str(utf16Before("a𐐀b", 4) - utf16Before("a𐐀b", 1)), "4");
     check("version stored", str(crlf.version), "1");
+    setVersion(two, "  const proc: main is func\n    writeln(x);\n", 1);
+    w := wordAt(two, 1, 6);
+    check("left-of-character wins", w.word, "writeln");
+    check("word line is 1-based", str(w.line1), "2");
+    check("word column is line-relative and 1-based", str(w.column1), "5");
+    check("word width", str(w.width), "7");
+    check("cursor just left of the token", wordAt(two, 1, 4).word, "writeln");
+    check("inside indentation there is no word", wordAt(two, 1, 1).word, "");
+    check("mid-line word", wordAt(two, 0, 10).word, "proc");
+    check("hover the end of const", wordAt(two, 0, 7).word, "const");
+    check("hover past the line end finds the last token", wordAt(two, 0, 99).word, "func");
+    check("a position past the line end stops at the terminator",
+          str(charIndexOf(two, 1, 99)),
+          str(two.lineStart[2] + lineWidth(two.text, two.lineStart[2])));
+    check("an out-of-range line is one past the text", str(charIndexOf(two, 400, 0)),
+          str(length(two.text) + 1));
+    check("absurd line has no word", wordAt(two, 400, 0).word, "");
+    # a truncated buffer -- the normal state while typing -- has no trailing newline, and
+    # the cursor sits one past the last character: the guard in wordAt is on the character
+    # it looks at, not on the position to its right, and this is the case that proves it.
+    setVersion(two, "  const proc: main is func\n    writeln(x);", 2);
+    check("last token of a buffer with no trailing newline", wordAt(two, 1, 15).word, ";");
+    check("one past the end of that line", wordAt(two, 1, 16).word, ";");
+    setVersion(op, "a<&b\n", 1);
+    check("operator run is one word", wordAt(op, 0, 2).word, "<&");
+    check("name char before an operator", wordAt(op, 0, 1).word, "a");
+    check("range pair", lspRangePair(op, 1, 1, 1),
+          "{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}}");
+    check("whole line range needs no document", lspWholeLine(13),
+          "{\"start\":{\"line\":12,\"character\":0},\"end\":{\"line\":13,\"character\":0}}");
+    setVersion(masked,
+      "const integer: a is 1;  # a comment word\n" &
+      "(* outer (* inner *) still comment *)\n" &
+      "const integer: b is 2;\n" &
+      "writeln(\"quoted word\");\n", 1);
+    check("word inside a line comment is not offered", wordAt(masked, 0, 33).word, "");
+    check("word before a line comment still resolves", wordAt(masked, 0, 8).word, "integer");
+    check("word inside a nested comment is not offered", wordAt(masked, 1, 34).word, "");
+    check("a real declaration after the comment resolves", wordAt(masked, 2, 12).word, "integer");
+    check("word inside a string literal is not offered", wordAt(masked, 3, 17).word, "");
+    check("the call before the string still resolves", wordAt(masked, 3, 7).word, "writeln");
+    # Asserted as properties, not offsets: what a consumer depends on is that the code
+    # survives, the text inside the regions does not, and the lengths still line up --
+    # codeText is used to answer questions about positions in the ORIGINAL text.
+    checkTrue("masking does not change the length",
+              length(codeText(masked)) = length(masked.text));
+    checkTrue("masking keeps every line break where it was",
+              countChars(codeText(masked), chr(10)) = countChars(masked.text, chr(10)));
+    checkTrue("the comment body is gone", pos(codeText(masked), "comment word") = 0);
+    checkTrue("the string body is gone", pos(codeText(masked), "quoted word") = 0);
+    checkTrue("the code after them is intact",
+              pos(codeText(masked), "const integer: b") <> 0 and
+              pos(codeText(masked), "writeln") <> 0);
+    # the delimiting punctuation around a literal has to survive the mask; a machine that
+    # consumes the wrong number of characters eats the "}" and ";" as well and the check
+    # below is what notices.
+    setVersion(masked, "const set of char: c is {'" <& chr(92) <& chr(39) <&
+                      "'};\nwriteln(1);" <& chr(10), 1);
+    checkTrue("the literal delimiters do not leak past the closing quote",
+              pos(codeText(masked), "};") <> 0 and pos(codeText(masked), "writeln(1)") <> 0);
+    checkTrue("the literal itself is gone", pos(codeText(masked), chr(92)) = 0);
+    charForm("char literal: plain letter", "a");
+    # a bare three-quote spelling is not a Seed7 char literal; the quote
+    # character is written with an escape, which the escaped-quote case covers
+    charForm("char literal: escaped backslash", "" <& chr(92) <& chr(92));
+    charForm("char literal: escaped quote", "" <& chr(92) <& chr(39));
+    charForm("char literal: a double quote", "" <& chr(34));
+    charForm("char literal: a hash", "#");
     report("doc_store");
   end func;

@@ -1,0 +1,34 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "features/kinds.sd7";
+  include "jsonw.sd7";
+
+# DocumentSymbol[], flat. Hierarchy is not offered because globalObjects lists globals
+# only -- a children array would be invented rather than read, and the spec records the
+# same gap (design §5). Range and selectionRange are the same whole declaration line
+# because reflection reports no column.
+const func string: documentSymbolResult (in array symRec: syms, in string: path) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var integer: i is 0;
+  begin
+    openArray(w);
+    for i range 1 to length(syms) do
+      # Own declarations come back as BUFFER_FILE (the document is parsed from the
+      # editor's text); a .s7i buffer analysed through the driver keeps its real path.
+      if syms[i].file = path or syms[i].file = BUFFER_FILE then
+        openObject(w);
+          field(w, "name");   addStr(w, syms[i].name);
+          field(w, "detail"); addStr(w, syms[i].sign);
+          field(w, "kind");   addInt(w, symbolKindOf(syms[i].cat, syms[i].ty));
+          field(w, "range");            raw(w, lspWholeLine(syms[i].line1));
+          field(w, "selectionRange");   raw(w, lspWholeLine(syms[i].line1));
+        closeObject(w);
+      end if;
+    end for;
+      closeArray(w);
+    out := finishJson(w);
+  end func;

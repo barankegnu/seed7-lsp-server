@@ -1,0 +1,47 @@
+$ include "seed7_05.s7i";
+  include "encoding.s7i";
+
+# URIs in, paths out. Every file the server touches arrives as a "file:" uri and leaves as
+# one, so this pair is the only place the scheme is understood. It lives apart from
+# lsp_server.sd7 because the feature modules need uriFor and must not import the dispatcher
+# that imports them.
+
+const func string: pathOf (in string: uri) is func
+  result
+    var string: path is "";
+  begin
+    if startsWith(uri, "file://") then
+      path := fromPercentEncoded(uri[8 ..]);
+    else
+      path := uri;
+    end if;
+  end func;
+
+const string: URI_SAFE is
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~/";
+
+const func string: hexEscape (in integer: cp) is
+  return "%" <& str(cp radix 16 lpad0 2);
+
+# ponytail: ASCII specials only. A non-ASCII code point passes through raw -- not spec-clean
+# inside a uri, but it round-trips with pathOf and with the clients this repo documents. Full
+# UTF-8 percent-encoding needs the byte counting that lives in transport.sd7, which is a
+# deliberate cross-module change rather than a line here.
+const func string: uriFor (in string: path) is func
+  result
+    var string: out is "file://";
+  local
+    var integer: i is 0;
+    var integer: cp is 0;
+  begin
+    for i range 1 to length(path) do
+      cp := ord(path[i]);
+      if pos(URI_SAFE, path[i .. i]) <> 0 then
+        out &:= path[i .. i];
+      elsif cp < 32 or cp > 126 then
+        out &:= path[i .. i];
+      else
+        out &:= hexEscape(cp);
+      end if;
+    end for;
+  end func;

@@ -1,0 +1,114 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "jsonw.sd7";
+
+const integer: MAX_SIGNATURES is 10;
+
+# The callee for a request position, plus the index of the argument the cursor sits in.
+#
+# Walks back over doc_store's masked text, so a string, a char literal or a comment cannot
+# contribute a parenthesis or a comma, and the first "(" found is the innermost unclosed
+# call. Answers "" for an unopened document, a cursor inside masked text, a line with no
+# unclosed "(", and a grouping "(...)" with no name in front of it.
+const func string: callContextOf (in lsDoc: doc, in integer: line0,
+                                  in integer: character0,
+                                  inout integer: active) is func
+  result
+    var string: out is "";
+  local
+    var string: code is "";
+    var integer: offset is 0;
+    var integer: i is 0;
+    var integer: depth is 0;
+    var integer: stop is 0;
+    var integer: lastIdx is 0;
+  begin
+    out := "";
+    active := 0;
+    code := codeText(doc);
+    offset := charIndexOf(doc, line0, character0);
+    i := pred(offset);
+    while i >= 1 and stop = 0 do
+      if code[i] = ')' then
+        depth +:= 1;
+      elsif code[i] = '(' then
+        if depth = 0 then
+          stop := i;
+        else
+          depth := pred(depth);
+        end if;
+      elsif code[i] = ',' and depth = 0 then
+        active +:= 1;
+      end if;
+      i := pred(i);
+    end while;
+    if stop <> 0 then
+      i := pred(stop);
+      while i >= 1 and code[i] = ' ' do
+        i := pred(i);
+      end while;
+      if i >= 1 and nameChar(code[i]) then
+        lastIdx := i;
+        while pred(i) >= 1 and nameChar(code[pred(i)]) do
+          i := pred(i);
+        end while;
+        out := code[i .. lastIdx];
+      end if;
+    end if;
+  end func;
+
+# SignatureHelp for one name: every overload, deduped by signature text. activeParameter
+# is clamped only at the bottom -- an argument index past the last parameter is reported as
+# typed, because that is the state the editor is in and dropping it would hide it.
+const func string: signatureHelpResult (in array symRec: syms, in string: callee,
+                                        in integer: active) is func
+  result
+    var string: out is "null";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var array string: shown is 0 times "";
+    var integer: emitted is 0;
+    var integer: i is 0;
+    var integer: p is 0;
+    var integer: activeIdx is 0;
+    var boolean: hasSigs is FALSE;
+  begin
+    if callee <> "" then
+      openObject(w);
+        field(w, "signatures");
+        openArray(w);
+          for i range 1 to length(syms) do
+            if syms[i].name = callee and not listed(shown, syms[i].sign) and
+               emitted < MAX_SIGNATURES then
+              shown &:= syms[i].sign;
+              emitted +:= 1;
+              openObject(w);
+                field(w, "label"); addStr(w, syms[i].sign);
+                field(w, "parameters");
+                openArray(w);
+                  for p range 1 to length(syms[i].params) do
+                    openObject(w);
+                      field(w, "label"); addStr(w, syms[i].params[p]);
+                    closeObject(w);
+                  end for;
+                closeArray(w);
+              closeObject(w);
+            end if;
+          end for;
+        closeArray(w);
+        if emitted <> 0 then
+          field(w, "activeSignature"); addInt(w, 0);
+          activeIdx := active;
+          if activeIdx < 0 then
+            activeIdx := 0;
+          end if;
+          field(w, "activeParameter"); addInt(w, activeIdx);
+          hasSigs := TRUE;
+        end if;
+      closeObject(w);
+      if hasSigs then
+        out := finishJson(w);
+      end if;
+    end if;
+  end func;

@@ -1,0 +1,350 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "features/document_symbol.sd7";
+  include "features/definition.sd7";
+  include "features/hover.sd7";
+  include "features/completion.sd7";
+  include "features/signature_help.sd7";
+
+const func string: calleeAt (inout lsDoc: d, in string: text, in integer: character0,
+                             inout integer: active) is func
+  result
+    var string: out is "";
+  begin
+    setVersion(d, text, 1);
+    out := callContextOf(d, 0, character0, active);
+  end func;
+
+const func array symRec: ownLastSyms is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+    var integer: k is 0;
+  begin
+    # 200 library symbols first (globalObjects order), the document's own last:
+    # a cap of 100 must not decide that the user's names are invisible.
+    rec.cat := "TYPEOBJECT"; rec.ty := "type";
+    for k range 1 to 200 do
+      rec.name := "lib" <& str(k);
+      rec.file := "/home/user/seed7/lib/stdlib.s7i";
+      rec.line1 := k;
+      rec.sign := "const type: " <& rec.name;
+      out &:= rec;
+    end for;
+    rec.name := "myOwnName"; rec.cat := "STRUCTOBJECT"; rec.ty := "Widget";
+    rec.file := BUFFER_FILE; rec.line1 := 3; rec.sign := "const Widget: myOwnName";
+    out &:= rec;
+    rec.name := "."; rec.cat := "TYPEOBJECT"; rec.ty := "type";
+    rec.file := BUFFER_FILE; rec.line1 := 4; rec.sign := ".";
+    out &:= rec;
+  end func;
+
+const func wordRef: exact (in string: nm) is func
+  result
+    var wordRef: out is wordRef.value;
+  begin
+    out.word := nm;
+    out.line1 := 1;
+    out.column1 := 1;
+    out.width := length(nm);
+  end func;
+
+const func array symRec: capSyms is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+    var integer: k is 0;
+  begin
+    rec.cat := "BLOCKOBJECT"; rec.ty := "proc"; rec.file := "/p/big.sd7";
+    for k range 1 to 120 do
+      rec.name := "pf" <& str(k);
+      rec.line1 := k;
+      rec.sign := "const proc: " <& rec.name;
+      out &:= rec;
+    end for;
+  end func;
+
+const func integer: labelCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, chr(34) <& "label" <& chr(34) <& ":");
+    while at <> 0 do
+      out +:= 1;
+      if at + 8 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 8 ..];
+      end if;
+      at := pos(rest, chr(34) <& "label" <& chr(34) <& ":");
+    end while;
+  end func;
+
+const func integer: uriCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, "{\"uri\":");
+    while at <> 0 do
+      out +:= 1;
+      if at + 7 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 7 ..];
+      end if;
+      at := pos(rest, "{\"uri\":");
+    end while;
+  end func;
+
+const proc: main is func
+  local
+    var symRec: one is symRec.value;
+    var symRec: two is symRec.value;
+    var symRec: other is symRec.value;
+    var symRec: buf is symRec.value;
+    var symRec: ea is symRec.value;
+    var symRec: eb is symRec.value;
+    var symRec: dup is symRec.value;
+    var symRec: own is symRec.value;
+    var array symRec: ownsyms is 0 times symRec.value;
+    var array symRec: wsyms is 0 times symRec.value;
+    var array symRec: many is 0 times symRec.value;
+    var wordRef: word is wordRef.value;
+    var array symRec: apsyms is 0 times symRec.value;
+    var symRec: ap is symRec.value;
+    var symRec: h1 is symRec.value;
+    var symRec: h2 is symRec.value;
+    var array symRec: hsyms is 0 times symRec.value;
+    var integer: active is 0;
+    var lsDoc: sig is lsDoc.value;
+    var lsDoc: astral is lsDoc.value;
+    var wordRef: aw is wordRef.value;
+    var string: got is "";
+    var lsDoc: hov is lsDoc.value;
+    var integer: k is 0;
+    var array symRec: syms is 0 times symRec.value;
+  begin
+    one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
+    one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
+    two.name := "go"; two.cat := "BLOCKOBJECT"; two.ty := "proc";
+    two.file := "/p/a.sd7"; two.line1 := 9; two.sign := "const proc: go (string: s)";
+    other.name := "far"; other.cat := "BLOCKOBJECT"; other.ty := "proc";
+    other.file := "/p/b.sd7"; other.line1 := 2; other.sign := "const proc: far";
+    syms &:= one;
+    syms &:= two;
+    syms &:= other;
+    check("documentSymbol json", documentSymbolResult(syms, "/p/a.sd7"),
+          "[{\"name\":\"Widget\",\"detail\":\"const type: Widget\",\"kind\":5,\"range\":" &
+          "{\"start\":{\"line\":3,\"character\":0},\"end\":{\"line\":4,\"character\":0}}," &
+          "\"selectionRange\":{\"start\":{\"line\":3,\"character\":0}," &
+          "\"end\":{\"line\":4,\"character\":0}}}," &
+          "{\"name\":\"go\",\"detail\":\"const proc: go (string: s)\",\"kind\":12,\"range\":" &
+          "{\"start\":{\"line\":8,\"character\":0},\"end\":{\"line\":9,\"character\":0}}," &
+          "\"selectionRange\":{\"start\":{\"line\":8,\"character\":0}," &
+          "\"end\":{\"line\":9,\"character\":0}}}]");
+    buf.name := "fromBuffer"; buf.cat := "BLOCKOBJECT"; buf.ty := "proc";
+    buf.file := "STRING"; buf.line1 := 2; buf.sign := "const proc: fromBuffer";
+    syms &:= buf;
+    checkTrue("a buffer's own declaration is listed under its real uri",
+              pos(documentSymbolResult(syms, "/p/a.sd7"),
+                  "\"name\":\"fromBuffer\"") <> 0);
+    check("a document with nothing in it is an empty array",
+          documentSymbolResult(0 times symRec.value, "/p/nowhere.sd7"), "[]");
+    check("no symbols at all is an empty array",
+          documentSymbolResult(0 times symRec.value, "/p/a.sd7"), "[]");
+    check("a var declaration is a Variable", str(symbolKindOf("REFOBJECT", "integer")), "13");
+    check("a stdlib action is a Function", str(symbolKindOf("ACTOBJECT", "proc")), "12");
+    # the type-based branch is tried first, so this is what keeps the category branch
+    # load-bearing: a callable whose type raises or reports a marker is still a Function.
+    check("a callable with no usable type is still a Function",
+          str(symbolKindOf("ACTOBJECT", "")), "12");
+    check("an enum literal is an EnumMember", str(symbolKindOf("ENUMLITERALOBJECT", "color")), "22");
+    checkTrue("the same judgement drives completion kinds",
+              completionKindOf("TYPEOBJECT", "type") = 7 and
+              completionKindOf("BLOCKOBJECT", "proc") = 3 and
+              completionKindOf("STRUCTOBJECT", "Widget") = 21);
+    ea.name := "writeln"; ea.cat := "BLOCKOBJECT"; ea.ty := "proc";
+    ea.file := "/tmp/a.sd7"; ea.line1 := 13; ea.sign := "const proc: writeln";
+    eb.name := "writeln"; eb.cat := "ACTOBJECT"; eb.ty := "proc";
+    eb.file := "/tmp/b c.s7i"; eb.line1 := 1; eb.sign := "const proc: writeln (string: s)";
+    dup.name := "writeln"; dup.cat := "BLOCKOBJECT"; dup.ty := "proc";
+    dup.file := "/tmp/a.sd7"; dup.line1 := 13; dup.sign := "const proc: writeln";
+    wsyms &:= ea;
+    wsyms &:= eb;
+    wsyms &:= dup;
+    check("no token means null", definitionResult(wsyms, wordRef.value, "file:///x.sd7"),
+          "null");
+    word.word := "nosuchname";
+    check("unknown token is the empty array", definitionResult(wsyms, word, "file:///x.sd7"),
+          "[]");
+    word.word := "writeln";
+    check("locations dedupe and percent-encode",
+          definitionResult(wsyms, word, "file:///x.sd7"),
+          "[{\"uri\":\"file:///tmp/a.sd7\",\"range\":" &
+          "{\"start\":{\"line\":12,\"character\":0},\"end\":{\"line\":13," &
+          "\"character\":0}}},{\"uri\":\"file:///tmp/b%20c.s7i\",\"range\":" &
+          "{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1," &
+          "\"character\":0}}}]");
+    own.name := "writeln"; own.cat := "BLOCKOBJECT"; own.ty := "proc";
+    own.file := BUFFER_FILE; own.line1 := 19; own.sign := "const proc: writeln";
+    ownsyms &:= own;
+    check("a declaration from the buffer itself resolves to the buffer's uri",
+          definitionResult(ownsyms, word, "file:///tmp/tt_syms.sd7"),
+          "[{\"uri\":\"file:///tmp/tt_syms.sd7\",\"range\":" &
+          "{\"start\":{\"line\":18,\"character\":0},\"end\":{\"line\":19," &
+          "\"character\":0}}}]");
+    dup.name := "writeln"; dup.cat := "BLOCKOBJECT"; dup.ty := "proc";
+    dup.sign := "const proc: writeln";
+    for k range 1 to 25 do
+      dup.file := "/tmp/c.sd7";
+      dup.line1 := k;
+      many &:= dup;
+    end for;
+    word.word := "own";
+    word.line1 := 5; word.column1 := 14; word.width := 3;
+    setVersion(hov, "  const integer: n is 1;\n(**\n *  From the buffer.\n *)\nconst proc: own is func\n  begin\n  end func;\n", 1);
+    own.name := "own"; own.cat := "BLOCKOBJECT"; own.ty := "proc";
+    own.file := BUFFER_FILE; own.line1 := 5; own.sign := "const proc: own";
+    ownsyms := 0 times symRec.value;
+    ownsyms &:= own;
+    check("hover of a buffer symbol carries its signature and its own prose",
+          hoverResult(hov, ownsyms, word),
+          "{\"contents\":{\"kind\":\"markdown\",\"value\":" &
+          "\"```seed7\\nconst proc: own\\n```\\n\\nFrom the buffer.\"}," &
+          "\"range\":{\"start\":{\"line\":4,\"character\":13}," &
+          "\"end\":{\"line\":4,\"character\":16}}}");
+    word.word := "nosuch";
+    check("hover of an unknown word is null", hoverResult(hov, ownsyms, word), "null");
+    word.word := "writeln";
+    check("hover lists each distinct signature once",
+          hoverText(wsyms, word, hov),
+          "```seed7\nconst proc: writeln\nconst proc: writeln (string: s)\n```");
+    check("an empty word has nothing to say",
+          hoverText(wsyms, wordRef.value, hov), "");
+    check("locations are capped at MAX_LOCATIONS",
+          str(uriCount(definitionResult(many, word, "file:///x.sd7"))), "20");
+    word.word := "writeln";
+    word.word := "tot"; word.line1 := 5; word.column1 := 12; word.character1 := 11;
+    word.width := 3;
+    check("prefix is the part left of the cursor", prefixOf(word, 13), "to");
+    check("prefix at the end of the word is the whole word", prefixOf(word, 15), "tot");
+    check("cursor before the word gives an empty prefix", prefixOf(word, 10), "");
+    # Same token, same cursor, but the line holds two BMP characters and two astral ones
+    # (four UTF-16 units in six characters) before it. Seed7 has no \u escapes, so the text
+    # is built with chr(): counting characters against units would make the prefix wrong
+    # by two here, which is what wordRef.character1 exists to prevent.
+    setVersion(astral, "" <& chr(26085) <& chr(26412) <& chr(66688) <& chr(66688) <&
+                      " tot", 1);
+    aw := wordAt(astral, 0, 19);
+    check("the token after astral text is still found", aw.word, "tot");
+    check("its UTF-16 column counts units, not characters", str(aw.character1), "7");
+    check("and the prefix is still the two typed units", prefixOf(aw, 9), "to");
+    ap.name := "apple"; ap.cat := "BLOCKOBJECT"; ap.ty := "proc";
+    ap.file := "/p/a.sd7"; ap.line1 := 2; ap.sign := "const proc: apple";
+    apsyms &:= ap;
+    ap.name := "apply"; ap.line1 := 4; ap.sign := "const proc: apply";
+    apsyms &:= ap;
+    ap.name := "ape"; ap.line1 := 6; ap.sign := "const proc: ape";
+    apsyms &:= ap;
+    word.word := "ap"; word.line1 := 1; word.column1 := 1; word.character1 := 0;
+    word.width := 2;
+    check("completions are the prefix matches in order, exact word excluded",
+          completionResult(apsyms, word, 3, "/p/a.sd7"),
+          "[{\"label\":\"apple\",\"kind\":3,\"detail\":\"const proc: apple\",\"sortText\":\"0apple\"}," &
+          "{\"label\":\"apply\",\"kind\":3,\"detail\":\"const proc: apply\",\"sortText\":\"0apply\"}," &
+          "{\"label\":\"ape\",\"kind\":3,\"detail\":\"const proc: ape\",\"sortText\":\"0ape\"}]");
+    checkTrue("the exact word is never offered back",
+              pos(completionResult(apsyms, exact("ape"), 6, "/p/a.sd7"), "\"ape\"") = 0);
+    word.word := "co"; word.line1 := 1; word.column1 := 1; word.character1 := 0;
+    word.width := 2;
+    checkTrue("keywords complete too",
+              pos(completionResult(0 times symRec.value, word, 3, "/p/a.sd7"),
+                  "\"label\":\"const\",\"kind\":14,\"sortText\":\"1const\"") <> 0);
+    checkTrue("a capped list becomes a CompletionList",
+              startsWith(completionResult(capSyms(), exact("pf"), 5, "/p/a.sd7"),
+                         "{\"isIncomplete\":true,\"items\":[") and
+              labelCount(completionResult(capSyms(), exact("pf"), 5, "/p/a.sd7")) = 100);
+    checkTrue("own-file symbols win the cap",
+              pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
+                  "\"label\":\"myOwnName\"") <> 0);
+    # "." is declared in the file itself, so it is in the first pass and well inside the
+    # cap: the filter is what removes it here, not the cut-off.
+    checkTrue("a name that cannot be typed is never offered",
+              pos(completionResult(ownLastSyms(), exact(""), 1, "/p/a.sd7"),
+                  "\"label\":\".\"") = 0);
+    checkTrue("an empty prefix still offers the keywords (ctrl-space)",
+              startsWith(completionResult(0 times symRec.value, exact(""), 1, "/p/a.sd7"), "[{") and
+              pos(completionResult(0 times symRec.value, exact(""), 1, "/p/a.sd7"),
+                  "\"label\":\"const\"") <> 0);
+    got := calleeAt(sig, "go(x", 5, active);
+    check("callee is the name before the owning paren", got, "go");
+    check("no comma yet", str(active), "0");
+    got := calleeAt(sig, "reportWidget(x, hits", 20, active);
+    check("a longer callee still resolves", got, "reportWidget");
+    check("second argument is active", str(active), "1");
+    got := calleeAt(sig, "f(a, (b, c", 12, active);
+    check("a grouping paren has no callee", got, "");
+    check("so signatureHelp reports nothing at all", signatureHelpResult(hsyms, got, active),
+          "null");
+    got := calleeAt(sig, "writeln done", 12, active);
+    check("no unclosed paren to the left", got, "");
+    check("and no stale count leaks out", str(active), "0");
+    got := calleeAt(sig, "go(\"a, b\", x", 13, active);
+    check("a comma inside a string literal is not an argument separator", got, "go");
+    check("one real comma", str(active), "1");
+    got := calleeAt(sig, "go(\"a, b", 8, active);
+    check("a cursor inside a string argument still names the enclosing call", got, "go");
+    check("and it is the first argument", str(active), "0");
+    got := calleeAt(sig, "(*  go(a, b", 11, active);
+    check("a cursor inside a comment gets none either", got, "");
+    got := calleeAt(sig, "# go(a, b", 9, active);
+    check("nor one inside a line comment", got, "");
+    got := calleeAt(sig, "outer(inner(a, b), ", 19, active);
+    check("the innermost UNCLOSED call wins", got, "outer");
+    check("the outer argument index is counted", str(active), "1");
+    setVersion(sig, "go(\"multi\nline\", x", 1);
+    check("a call after a string that spans lines still resolves",
+          callContextOf(sig, 1, 7, active), "go");
+    check("and its comma counts once", str(active), "1");
+    got := calleeAt(sig, "go(x, y)  # tail", 9, active);
+    check("a closed call offers nothing", got, "");
+    setVersion(sig, "  const integer: q is 1;\nreportWidget(\"a\", ", 1);
+    check("the walk is not confined to one line",
+          callContextOf(sig, 1, 17, active), "reportWidget");
+    check("the argument index survives the line break", str(active), "1");
+    h1.name := "writeln"; h1.cat := "BLOCKOBJECT"; h1.ty := "proc";
+    h1.file := "/tmp/a.sd7"; h1.line1 := 3;
+    h1.sign := "const proc: writeln (string: s)";
+    h1.params := []("string: s");
+    h2.name := "writeln"; h2.cat := "DECLAREDOBJECT"; h2.ty := "func integer";
+    h2.file := "/tmp/a.sd7"; h2.line1 := 7;
+    h2.sign := "const func integer: writeln (integer: n)";
+    h2.params := []("integer: n");
+    hsyms &:= h1;
+    hsyms &:= h2;
+    setVersion(sig, "go(\"a, b\", x);\nconst integer: q is 1;\n", 1);
+    active := 0;
+    check("no callee means null", signatureHelpResult(hsyms, "", 0), "null");
+    check("one signature per overload, active parameter reported",
+          signatureHelpResult(hsyms, "writeln", 1),
+          "{\"signatures\":[{\"label\":\"const proc: writeln (string: s)\"," &
+          "\"parameters\":[{\"label\":\"string: s\"}]}," &
+          "{\"label\":\"const func integer: writeln (integer: n)\"," &
+          "\"parameters\":[{\"label\":\"integer: n\"}]}]," &
+          "\"activeSignature\":0,\"activeParameter\":1}");
+    checkTrue("an active parameter past the last one is reported, not dropped",
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") <> 0);
+    check("a callee with no declarations is null",
+          signatureHelpResult(hsyms, "nosuch", 0), "null");
+    report("features");
+  end func;

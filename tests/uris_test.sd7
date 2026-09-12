@@ -1,0 +1,19 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "uris.sd7";
+
+const proc: main is func
+  begin
+    check("space decoded",  pathOf("file:///tmp/my%20dir/a.sd7"), "/tmp/my dir/a.sd7");
+    check("plain uri kept", pathOf("/tmp/a.sd7"), "/tmp/a.sd7");
+    check("uriFor escapes what would break a uri",
+          uriFor("/tmp/a b/c#d.sd7"), "file:///tmp/a%20b/c%23d.sd7");
+    check("uriFor leaves an ordinary path verbatim",
+          uriFor("/home/user/seed7/lib/console.s7i"),
+          "file:///home/user/seed7/lib/console.s7i");
+    check("uriFor round-trips through pathOf",
+          pathOf(uriFor("/tmp/a b/x.sd7")), "/tmp/a b/x.sd7");
+    check("uriFor round-trips non-ascii",
+          pathOf(uriFor("/tmp/日本/x.sd7")), "/tmp/日本/x.sd7");
+    report("uris");
+  end func;
