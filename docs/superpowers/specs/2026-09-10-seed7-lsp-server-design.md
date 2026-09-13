@@ -139,7 +139,7 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 
 `str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. and are the single source for hover, completion detail, and signatureHelp.
 
-Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. The earlier claim that `Seed7Home/libraries/*.htm` has no per-function anchors is refuted by the reading pass: it **does** carry per-declaration anchors (2992 of them, one per overload signature), and `subject_index.htm` is a 512 KB declaration catalogue with 3165 library declaration entries (measured here: `grep -c '<li><a href="libraries/' subject_index.htm` → 3165; all 3484 `<li><a` links include 319 manual- and screenshot-topic entries) — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work; linking to `seed7.net` in hover remains acceptable alongside prose.
+Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. The earlier claim that `Seed7Home/libraries/*.htm` has no per-function anchors is refuted by the reading pass: it **does** carry per-declaration anchors (2992 of them, one per overload signature), and `subject_index.htm` is a 512 KB declaration catalogue with 3165 `libraries/…` entries — 2980 of them declaration anchors, the other 185 plain library-page links with no fragment (measured here: `grep -c '<li><a href="libraries/' subject_index.htm` → 3165; the file's 3484 `<li><a` links also cover 319 manual- and screenshot topics) — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work; linking to `seed7.net` in hover remains acceptable alongside prose.
 
 ## 6. Errors, config, logging
 
@@ -176,7 +176,7 @@ No editor is required to test any of this, which is the point of the module spli
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
 | M3 | documentSymbol + definition + hover + signatureHelp + completion | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper; signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover. **Merged on `m3` — the hover/signatureHelp/completion deliverable landed with it — except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
 | M4 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
-| M6 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |
+| M5 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |
 
 ## 9. Risks
 

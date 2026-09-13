@@ -172,4 +172,4 @@ Masking already exists — `doc_store.codeText` blanks string literals, char lit
 "does this position mean anything" but token *spans*: foldingRange, selectionRange and
 semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
 reflection API yields declarations only, never use sites, which is why references and
-rename stay M6.
+rename stay M5.
