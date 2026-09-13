@@ -39,7 +39,6 @@ const proc: main is func
     var lsDoc: masked is lsDoc.value;
     var wordRef: w is wordRef.value;
     var string: bLine is "";
-    var string: radixMask is "";
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -158,9 +157,6 @@ const proc: main is func
           str(pos(codeText(doc), "hiddenWord")), "0");
     check("the code before that comment survives", codeText(doc)[1 .. 28],
           "const integer: y is 16#beef;");
-    radixMask := codeText(doc);
-    check("and the mask is still the length of the text", str(length(radixMask)),
-          str(length(doc.text)));
     setVersion(doc, "const integer: w is 16#ff + 8#77; # tail\n", 1);
     check("two based literals on one line", codeText(doc)[1 .. 33],
           "const integer: w is 16#ff + 8#77;");
@@ -172,5 +168,16 @@ const proc: main is func
     check("a hash that opens the line is still a comment",
           str(pos(codeText(doc), "hashFirst")), "0");
     check("and the next line is still code", wordAt(doc, 1, 21).word, "keepMe");
+    # Two guards inside isRadixHash that no fixture above reaches. The first is the one
+    # standing between this rule and a comment leak: '#' after a non-digit must comment,
+    # and only the left-neighbour test says so. The second is the truncated buffer a
+    # typist actually has -- '#' as the last character of the document -- where reading
+    # text[succ(i)] would raise and cost the client a request.
+    setVersion(doc, "const integer: n is 2;#tightNote\n", 1);
+    check("a comment tight against code is still a comment",
+          str(pos(codeText(doc), "tightNote")), "0");
+    setVersion(doc, "const integer: q is 16#", 1);
+    check("a document ending in a lone hash answers without raising",
+          str(length(codeText(doc))), str(length(doc.text)));
     report("doc_store");
   end func;

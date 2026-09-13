@@ -165,7 +165,7 @@ const func boolean: isAlpha (in char: ch) is
 const func boolean: isDigit (in char: ch) is
   return ch >= '0' and ch <= '9';
 
-# TRUE when the '#' at index `i` of a line is the radix separator of a based literal.
+# TRUE when the '#' at index `i` of the document is the radix separator of a based literal.
 # Seed7's '#'-terminated line comment and its `16#beef` share a character, and the
 # grammar decides by what surrounds it: a digit before, an extended digit (0-9, A-Z,
 # a-z) after. Its own function because a mixed and/or chain of these comparisons can
