@@ -132,6 +132,14 @@ const proc: main is func
     bLine := lspRangeBytes(doc, 1, 2147483647);
     check("an absurd byte column clamps to the line length", bLine,
           "{\"line\":0,\"character\":26}");
+    # lspRangeBytes indexes the line-start table itself, so the clamp has to be proven
+    # from both sides: a line below the buffer and a line past it must map, not raise.
+    bLine := lspRangeBytes(doc, 0, 26);
+    check("a line below range still maps its byte", bLine,
+          "{\"line\":0,\"character\":23}");
+    bLine := lspRangeBytes(doc, 99, 26);
+    check("a line past the buffer still answers, clamped", bLine,
+          "{\"line\":1,\"character\":0}");
     setVersion(doc, "const string: s is \"\128169;\\z\";\n", 1);
     bLine := lspRangeBytes(doc, 1, 26);
     check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
