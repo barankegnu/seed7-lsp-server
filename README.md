@@ -82,6 +82,12 @@ than the signature of some unrelated call — a real risk in files like `prg/cal
 continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
 string in any rule that does not know char literals exist.
 
+One hole in that mask: a char literal whose content is a numeric escape (`'\9;`, `'\16#ff;`)
+is counted as two characters, so the mask loses the two that follow its closing quote. There a
+request may answer nothing, or answer a name spelled out of the escape's tail (`ff`). The
+fixed-count state predates this branch and `scan.sd7` replaces the machine; `lib/jpeg.s7i` is
+where the based form clusters.
+
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's
 *extent* (where it ends) is not available from the analyzer at all. Where the analyzer
