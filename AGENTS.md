@@ -129,10 +129,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   inside the token. `lspRange` takes a character column, so analyzer columns go through
   `lspRangeBytes` and nothing else does. Consequence: `[col, col+1]` marks the character
   *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the
-  escape for `ILLEGAL_STRING_ESCAPE`. Measured: the same token reports column 29 with
-  `"x"`, 30 with `"π"`, 32 with `"ππ"` or an astral character; and a `";" expected
-  found "writeln"` on `    writeln(1) writeln(2);` reports 23 for a token spanning
-  bytes 16-22.
+  escape for `ILLEGAL_STRING_ESCAPE`. Pinned by `tests/analysis_test.sd7`:
+  `Illegal string escape "\z"` reports column 26 both after `"ππ"` (the `z` there is the
+  24th character) and after one astral character (there it is the 23rd), and a
+  `";" expected found "writeln"` on `writeln(1) writeln(2);` reports 23 for a token
+  spanning bytes 16-22. Change the interpreter's convention and those checks go red.
 - Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
   semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
   and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the

@@ -167,6 +167,19 @@ const proc: main is func
     check("dedupe collapses identical (name,file,line) entries",
           str(countNameFile(syms, "writeln", wlist[1].file)),
           str(countDistinctLines(syms, "writeln", wlist[1].file)));
+    # The reproduction for the rule AGENTS.md and spec §4.4 state. Two documents whose
+    # character positions differ report the SAME column, because both escape sequences end
+    # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"ππ\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
+    check("escape after two 2-byte chars reports byte column 26",
+          str(a.diags[1].column1), "26");
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"\128169;\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
+    check("escape after one 4-byte char reports that same column at a different character",
+          str(a.diags[1].column1), "26");
+    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n" &
+                     "  begin\n    writeln(1) writeln(2);\n  end func;\n", dirs);
+    check("a token-level error names the byte after its token, not a character",
+          str(a.diags[1].column1) <& "@line" <& str(a.diags[1].line1), "23@line4");
     check("an unanalysable buffer yields nothing",
           str(length(analyzeSymbols("", dirs))), "0");
     report("analysis");
