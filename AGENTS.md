@@ -130,7 +130,8 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `lspRangeBytes` and nothing else does. Consequence: `[col, col+1]` marks the character
   *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the
   escape for `ILLEGAL_STRING_ESCAPE`. Pinned by three checks in
-  `tests/analysis_test.sd7`, each carrying the diagnostic count, kind, line and message: `Illegal string escape "\z"` reports column 26 both after
+  `tests/analysis_test.sd7`, each carrying the raw error count, the kind, the line
+  and the message beside the column: `Illegal string escape "\z"` reports column 26 both after
   `"ππ"` (the `z` there is the 24th character) and after one astral character (there it is
   the 23rd); and the first diagnostic on `    writeln(1) writeln(2);` — **with its
   four-space indent**, the byte arithmetic is not the same without it — is

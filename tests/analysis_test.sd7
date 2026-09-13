@@ -91,13 +91,14 @@ const func integer: countDistinctLines (in array symRec: syms, in string: nm,
   end func;
 
 # Test-only. The analyzer’s error records are a third-party shape these checks characterise,
-# so a release that stops reporting them must read as a FAIL, not as an uncaught index. The
-# string carries the count, column, kind, line and message together: one assertion per fixture.
+# so a release that stops reporting them reads as a FAIL, not an uncaught index. The
+# string carries the raw error count, column, kind, line and message together, so one
+# assertion covers a fixture and every dimension of it is visible in the diff.
 const func string: diagPin (in analysisResult: a, in integer: i) is func
   result
     var string: out is "";
   begin
-    if length(a.diags) >= i then
+    if i >= 1 and length(a.diags) >= i then
       out := str(length(a.diags)) <& "|" <& str(a.diags[i].column1) <& "@" <&
              str(a.diags[i].errKind) <& "@line" <& str(a.diags[i].line1) <& "|" <&
              a.diags[i].message;

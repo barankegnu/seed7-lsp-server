@@ -20,11 +20,12 @@ Why the interpreter is not optional: Seed7's syntax is *declared*, not hard-code
 ## 2. Architecture
 
 One long-lived process: `s7 -q -l src src/main.sd7`. stdin/stdout is LSP; stderr is logs. `main.sd7` is the entry point and holds the read loop;
-`lsp_server.sd7` holds the dispatcher. The layout below is the intended one, and two entries differ from it: `server.sd7`
-was split into those two files, and `diagnostics.sd7` sits directly in `src/` rather than under `features/`.
+`lsp_server.sd7` holds the dispatcher. The layout below is the intended one, and it differs from the tree in three ways: `server.sd7`
+was split into `main.sd7` and `lsp_server.sd7`; `diagnostics.sd7` sits directly in `src/` rather
+than under `features/`; and `jsonw.sd7`, `uris.sd7` and `lsp_tst.sd7` are not listed at all. Its
+remaining unbuilt entries — `scan.sd7`, `lsp_types.sd7` and the three token-backed feature files
+— belong to the M4 milestone.
 
-Its remaining unbuilt entries — `scan.sd7`, `lsp_types.sd7` and the three token-backed feature
-files — belong to the M4 milestone.
 ```
 server.sd7        initialize, capability negotiation, dispatch, shutdown/exit
 transport.sd7     Content-Length framing; only file that counts bytes
@@ -91,7 +92,7 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
 2. `prog := parseStri(text, parseOptions.value, libraryDirs)`. `libraryDirs` comes from settings, then cwd, then `SEED7_LIBRARY`; the interpreter's own `../lib` fallback stays untouched.
 3. Read diagnostics with `errorCount` + `getError(i)` → `{error, fileName, lineNumber, columnNumber, message, errorLine}`. Then let `prog` go.
 4. Mapping rules:
-   - `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and it is the scanner's current position at raise time (`IN_FILE_TELL()` minus the line start in Seed7's `src/error.c`), so it names the byte just after a token-level error's offending token and only a mid-token raise like `ILLEGAL_STRING_ESCAPE` names a byte inside the token; analyzer columns therefore go through `doc_store.lspRangeBytes` and nothing else does, and the range covers `[col, col+1]` in bytes before that conversion — which marks the character *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the escape for `ILLEGAL_STRING_ESCAPE`. Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all semantic errors" — `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION` and `UNCLOSED_COMMENT` arrive with 0 — and there the range spans the whole line, by asking `lspRangeBytes` for an absurd column and letting it clamp. The byte rule is pinned by three checks in `tests/analysis_test.sd7`, each pinning the diagnostic count, kind, line and message beside the column: `Illegal string escape "\z"` reports column 26 both after `"ππ"` (where the `z` is the 24th character) and after one astral character (where it is the 23rd), and the first diagnostic on `    writeln(1) writeln(2);` — quoted with its four-space indent, since without it the token spans bytes 12-18 and the column is 19 — is `EXPECTED_SYMBOL` at line 4 column 23, one byte past the `writeln`.
+   - `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and it is the scanner's current position at raise time (`IN_FILE_TELL()` minus the line start in Seed7's `src/error.c`), so it names the byte just after a token-level error's offending token and only a mid-token raise like `ILLEGAL_STRING_ESCAPE` names a byte inside the token; analyzer columns therefore go through `doc_store.lspRangeBytes` and nothing else does, and the range covers `[col, col+1]` in bytes before that conversion — which marks the character *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the escape for `ILLEGAL_STRING_ESCAPE`. Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all semantic errors" — `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION` and `UNCLOSED_COMMENT` arrive with 0 — and there the range spans the whole line, by asking `lspRangeBytes` for an absurd column and letting it clamp. The byte rule is pinned by three checks in `tests/analysis_test.sd7`, each pinning the raw error count, the kind, the line and the message beside the column: `Illegal string escape "\z"` reports column 26 both after `"ππ"` (where the `z` is the 24th character) and after one astral character (where it is the 23rd), and the first diagnostic on `    writeln(1) writeln(2);` — quoted with its four-space indent, since without it the token spans bytes 12-18 and the column is 19 — is `EXPECTED_SYMBOL` at line 4 column 23, one byte past the `writeln`.
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.
