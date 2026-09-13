@@ -171,15 +171,17 @@ const proc: main is func
     # character positions differ report the SAME column, because both escape sequences end
     # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"ππ\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
-    check("escape after two 2-byte chars reports byte column 26",
-          str(a.diags[1].column1), "26");
+    check("escape after two 2-byte chars: 1 diagnostic, byte column 26",
+          str(length(a.diags)) <& ":" <& str(a.diags[1].column1), "1:26");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"\128169;\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
-    check("escape after one 4-byte char reports that same column at a different character",
-          str(a.diags[1].column1), "26");
+    check("escape after one 4-byte char: same byte column at a different character",
+          str(length(a.diags)) <& ":" <& str(a.diags[1].column1), "1:26");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n" &
                      "  begin\n    writeln(1) writeln(2);\n  end func;\n", dirs);
-    check("a token-level error names the byte after its token, not a character",
-          str(a.diags[1].column1) <& "@line" <& str(a.diags[1].line1), "23@line4");
+    checkTrue("the missing-semicolon fixture reports something", length(a.diags) <> 0);
+    check("a token-level error names the position just after its token",
+          str(a.diags[1].column1) <& "@" <& str(a.diags[1].errKind) <& "@line" <&
+          str(a.diags[1].line1), "23@EXPECTED_SYMBOL@line4");
     check("an unanalysable buffer yields nothing",
           str(length(analyzeSymbols("", dirs))), "0");
     report("analysis");
