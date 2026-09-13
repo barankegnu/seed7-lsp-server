@@ -300,7 +300,7 @@ If any mutation leaves the suite green, the check it was meant to kill is decora
 
 **Files:**
 - Modify: `src/doc_store.sd7` (`codeText`'s `#` branch, plus one new predicate near `isDigit`)
-- Test: `tests/doc_store_test.sd7`, `tests/transcript.py`
+- Test: `tests/doc_store_test.sd7`
 
 **Interfaces:**
 - Consumes: `doc_store.isDigit`, `isAlpha`, `codeText`, `wordAt`.
@@ -371,7 +371,7 @@ const func boolean: isRadixHash (in string: text, in integer: i) is func
 ```
 
 Run: `make test-doc_store`
-Expected: PASS — 61 checks, 0 failed (48 baseline + 5 from Task 1 + 8 here).
+Expected: PASS — 63 checks, 0 failed (48 baseline + 5 from Task 1 + 10 here).
 
 - [ ] **Step 4: Confirm nothing else moved.** Run `make test`
 Expected: PASS, all suites, including `transcript: 45 checks, 0 failed`. `features_test` exercises `codeText` through `signature_help` and `wordAt`; a green run there is the evidence that the mask did not start leaking comment text as code.
@@ -391,7 +391,11 @@ Second mutation, the other direction: in `isRadixHash`, weaken the left-hand gua
 Run: `make test-doc_store` → Expected: FAIL or abort on `a hash that opens the line is still a comment` — a Seed7 string index of 0 raises, and a raise inside the suite is a failed run, not a pass.
 Revert: `git checkout -- src/doc_store.sd7`
 
-The remaining disjunct, `isDigit(text[succ(i)])` in the `or`, is **not** independently covered: every fixture with a digit after the `#` also has a letter, so deleting that disjunct leaves all eight checks green. Either add a fixture that needs it (a digit-only based literal followed by code that must survive) and prove the mutation fails, or state plainly in the final report that this branch is unproven. Do not claim a proof you do not have.
+The third mutation deletes the `isDigit(text[succ(i)])` disjunct — `(isAlpha(...) or isDigit(...))` becomes `isAlpha(...)`.
+Run: `make test-doc_store` → Expected: FAIL `two based literals on one line`, because the `8#77` fixture has a digit and no letter after its `#`.
+Revert: `git checkout -- src/doc_store.sd7`
+
+An earlier revision of this step asserted the digit disjunct was unproven and told the implementer either to add a fixture or to report the gap. That was wrong in the good direction: the fixture set already contains `8#77`, and every branch of `isRadixHash` now sits behind a mutation that fails a named check.
 
 ---
 
