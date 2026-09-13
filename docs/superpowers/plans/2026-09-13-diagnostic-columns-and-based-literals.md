@@ -68,7 +68,7 @@
 ```
 
 Run: `make test-transport`
-Expected: FAIL — `*** … Name "utf8CharLength" not defined … Declaration of "main" failed`. The point of the failure is the missing name, not a wrong number.
+Expected: FAIL — the suite does not analyse, because the name does not exist yet. On this build (`s7` 5.4.10) the analyzer says `Match for utf8CharLength(...) failed` and `Declaration of "main" failed`; the wording is not `Name … not defined`. Either way the point of the failure is the missing name, not a wrong number.
 
 - [ ] **Step 2: Add the helper and fold the duplicate thresholds into it.** In `src/transport.sd7`, insert **above** `utf8Length` (Seed7 cannot call a function defined later in the file):
 
@@ -164,7 +164,7 @@ Expected: FAIL `a byte column lands on the character it names` with `got: … "c
 ```
 
 Run: `make test-doc_store`
-Expected: FAIL — `Name "lspRangeBytes" not defined`.
+Expected: FAIL — the suite does not analyse: on this build, `Match for lspRangeBytes(...) failed` plus the `Declaration of "main" failed` that follows it. The new names do not exist yet.
 
 - [ ] **Step 5: Implement the mapping in `doc_store.sd7`.** Add `include "transport.sd7";` to its include list (`doc_store` currently includes only `seed7_05.s7i`; this is the seam where byte widths are allowed to enter). Then add after `lspRange`, and change `lspRange`'s own clamp to use the shared helper:
 
@@ -273,9 +273,11 @@ git commit -m "Count the analyzer's column in bytes before mapping it to a chara
 Run: `make test-doc_store` → Expected: FAIL `byte 26 of a line with two 2-byte chars -> character 23` (it lands one character late).
 Revert: `git checkout -- src/doc_store.sd7`
 
-(b) In `src/transport.sd7`, change `if cp < 2048 then` to `if cp < 65536 then` (a two-byte character starts counting as three).
+(b) In `src/transport.sd7`, change `elsif cp < 2048 then` to `elsif cp < 128 then`, so a two-byte character falls through to the three-byte branch.
 Run: `make test-diagnostics` → Expected: FAIL `a byte column lands on the character it names`.
 Revert: `git checkout -- src/transport.sd7`
+
+(An earlier revision of this step said to change `cp < 2048` to `cp < 65536`; the first Task 1 implementer proved that mutation leaves `test-diagnostics` green, because it demotes three-byte characters and the fixture's `π` pair still measures 2. The mutation above is the faithful one; the same wrong edit is still caught by `make test-transport`.)
 
 If either mutation leaves the suite green, the check is decorative: fix the check before continuing.
 
