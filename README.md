@@ -84,7 +84,9 @@ string in any rule that does not know char literals exist.
 
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's
-*extent* (where it ends) is not available from the analyzer at all.
+*extent* (where it ends) is not available from the analyzer at all. Where the analyzer
+reports a column, it counts bytes and the server converts — see
+`doc_store.lspRangeBytes`.
 
 ## What does not work yet
 

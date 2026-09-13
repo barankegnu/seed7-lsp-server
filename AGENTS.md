@@ -115,8 +115,21 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   that one kind is downgraded to Information too, keyed on `parseError.error`. Do not
   expect the member on a file that has its `$ include "seed7_05.s7i";` line: with the
   essential include present, a main-less program analyses clean.
-- Semantic errors arrive with `columnNumber = 0`. Ask `lspRange` for an absurd column
-  and let it clamp, rather than adding a second position function.
+- `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and
+  it names the last byte of the offending token. `lspRange` takes a character column, so
+  analyzer columns go through `lspRangeBytes` and nothing else does. Measured: the same
+  token reports column 29 with `"x"`, 30 with `"π"`, 32 with `"ππ"` or an astral
+  character.
+- Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
+  semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
+  and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the
+  comment *opened*. Ask `lspRangeBytes` for an absurd column and let it clamp.
+- `errorType` has 67 identifiers in the interpreter's C enum; the 14 catchable
+  `EXCEPTION`s in `seed7_05.s7i:277-291` are a different set (15 names, one of them
+  `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
+- `#` is both the line-comment introducer and the radix marker of `16#beef`.
+  `doc_store.isRadixHash` decides by context, and `codeText` is the only place that
+  decides. `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
 
 ## Do not "fix" these
 
