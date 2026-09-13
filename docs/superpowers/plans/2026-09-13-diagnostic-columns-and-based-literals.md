@@ -309,7 +309,7 @@ If any mutation leaves the suite green, the check it was meant to kill is decora
 
 **Why this is one fix, not four:** `wordAt` (hover, definition, completion) and `signature_help.callContextOf` both read the document through `codeText`. Today `16#beef + afterThis;` masks everything from the `#` to end of line, so the tail of the line is invisible to all four features. Verified against the real server: on a clean program (0 diagnostics), hover **and** definition at line 6 character 26 of `    total := 16#beef + afterThis;` both return `null`. `lib/aes.s7i` has 691 lines with based literals and `lib/shiftjis.s7i` 1770, so this is not a corner.
 
-- [ ] **Step 1: Write the failing masking checks.** Extend `main`'s `local` block in `tests/doc_store_test.sd7` with `var string: radixMask is "";` and add before `report("doc_store")`:
+- [ ] **Step 1: Write the failing masking checks.** Add these eleven checks before `report("doc_store")` (the `bLine` local from Task 1 is already declared; no new local is needed):
 
 The prefix lengths below are measured, not counted by hand (`;` is the 28th character of the second fixture, the 33rd of the third). Only the last fixture asserts a run of spaces, and it does so because the `;` it pins is *inside* the comment.
 
@@ -327,7 +327,6 @@ The prefix lengths below are measured, not counted by hand (`;` is the 28th char
           str(pos(codeText(doc), "hiddenWord")), "0");
     check("the code before that comment survives", codeText(doc)[1 .. 28],
           "const integer: y is 16#beef;");
-    radixMask := codeText(doc);
     setVersion(doc, "const integer: w is 16#ff + 8#77; # tail\n", 1);
     check("two based literals on one line", codeText(doc)[1 .. 33],
           "const integer: w is 16#ff + 8#77;");
