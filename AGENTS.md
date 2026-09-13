@@ -78,7 +78,14 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    one line. Feature files receive `symRec` records; the temptation to read a `reference`
    directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
-3. Only `src/transport.sd7` computes or consumes byte lengths.
+3. Only `src/transport.sd7` owns UTF-8 byte widths: it holds the width table
+   (`utf8CharLength`) and computes or consumes every outbound byte count.
+   `src/doc_store.sd7` may consume a byte-valued column only to convert it into a
+   character column (`charColumnForBytes`/`lspRangeBytes`), and never emits a byte count.
+   `doc_store` includes `transport.sd7` to reach that one helper, which inverts the
+   layering — a merge-time decision, not an accident: §2 of the design spec lists the
+   intended module layout, and the helper's next consumer is `scan.sd7` in the milestone
+   after this one, so the `src/utf8bytes.sd7` extraction belongs to the `scan.sd7` plan.
 4. Only `src/*.sd7` and `src/features/*.sd7` build LSP response shapes; `analysis.sd7`
    returns Seed7-shaped data and knows nothing about LSP.
 5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
@@ -115,11 +122,17 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   that one kind is downgraded to Information too, keyed on `parseError.error`. Do not
   expect the member on a file that has its `$ include "seed7_05.s7i";` line: with the
   essential include present, a main-less program analyses clean.
-- `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and
-  it names the last byte of the offending token. `lspRange` takes a character column, so
-  analyzer columns go through `lspRangeBytes` and nothing else does. Measured: the same
-  token reports column 29 with `"x"`, 30 with `"π"`, 32 with `"ππ"` or an astral
-  character.
+- `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start — the
+  scanner's *current position at raise time* (`IN_FILE_TELL()` minus the line start in
+  Seed7's `src/error.c`), so it names the byte just **after** a token-level error's
+  offending token, and only a mid-token raise like `ILLEGAL_STRING_ESCAPE` names a byte
+  inside the token. `lspRange` takes a character column, so analyzer columns go through
+  `lspRangeBytes` and nothing else does. Consequence: `[col, col+1]` marks the character
+  *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the
+  escape for `ILLEGAL_STRING_ESCAPE`. Measured: the same token reports column 29 with
+  `"x"`, 30 with `"π"`, 32 with `"ππ"` or an astral character; and a `";" expected
+  found "writeln"` on `    writeln(1) writeln(2);` reports 23 for a token spanning
+  bytes 16-22.
 - Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
   semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
   and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the

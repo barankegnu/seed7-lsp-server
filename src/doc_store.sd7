@@ -7,9 +7,12 @@ const type: lsDoc is new struct
     var array integer: lineStart is 1 times 1;
   end struct;
 
-# The token under an LSP position. line1/column1 follow the analyzer's convention
-# (1-based line, 1-based column measured from the line start) so a feature can hand
-# them straight to lspRange/lspRangePair. An empty word means "no token here".
+# The token under an LSP position. line1/column1 are 1-based and measured from the start
+# of the line, but they are CHARACTER columns -- they do NOT follow the analyzer's
+# byte-valued convention -- so a feature hands them straight to lspRange/lspRangePair.
+# Only columns taken from parseError.columnNumber go through lspRangeBytes; routing a
+# character column there would shift every range on a non-ASCII line.
+# An empty word means "no token here".
 const type: wordRef is new struct
     var string: word is "";
     var integer: line1 is 0;

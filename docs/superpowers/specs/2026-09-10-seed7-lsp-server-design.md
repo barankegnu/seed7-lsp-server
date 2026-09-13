@@ -39,7 +39,7 @@ Invariants — a violation of any of these is a defect, not a style preference:
 
 1. Only `analysis.sd7` imports `progs.s7i`.
 2. Only `doc_store.sd7` converts LSP positions to string offsets.
-3. Only `transport.sd7` computes or consumes byte lengths.
+3. Only `transport.sd7` owns the UTF-8 byte-width table and computes or consumes outbound byte lengths; `doc_store.sd7` may consume a byte-valued column only to convert it into a character column, and never emits a byte count.
 4. Only `features/*.sd7` build LSP responses; `analysis.sd7` returns Seed7-shaped data and knows nothing about LSP.
 5. No dynamic capability registration; everything is advertised statically in `InitializeResult`.
 
@@ -86,7 +86,7 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
 2. `prog := parseStri(text, parseOptions.value, libraryDirs)`. `libraryDirs` comes from settings, then cwd, then `SEED7_LIBRARY`; the interpreter's own `../lib` fallback stays untouched.
 3. Read diagnostics with `errorCount` + `getError(i)` → `{error, fileName, lineNumber, columnNumber, message, errorLine}`. Then let `prog` go.
 4. Mapping rules:
-   - `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and it names the last byte of the offending token, so analyzer columns go through `doc_store.lspRangeBytes` and nothing else does; the range covers `[col, col+1]` in bytes before that conversion. Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all semantic errors" — `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION` and `UNCLOSED_COMMENT` arrive with 0 — and there the range spans the whole line, by asking `lspRangeBytes` for an absurd column and letting it clamp.
+   - `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and it is the scanner's current position at raise time (`IN_FILE_TELL()` minus the line start in Seed7's `src/error.c`), so it names the byte just after a token-level error's offending token and only a mid-token raise like `ILLEGAL_STRING_ESCAPE` names a byte inside the token; analyzer columns therefore go through `doc_store.lspRangeBytes` and nothing else does, and the range covers `[col, col+1]` in bytes before that conversion — which marks the character *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the escape for `ILLEGAL_STRING_ESCAPE`. Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all semantic errors" — `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION` and `UNCLOSED_COMMENT` arrive with 0 — and there the range spans the whole line, by asking `lspRangeBytes` for an absurd column and letting it clamp.
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.
@@ -139,7 +139,7 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 
 `str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. and are the single source for hover, completion detail, and signatureHelp.
 
-Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. The earlier claim that `Seed7Home/libraries/*.htm` has no per-function anchors is refuted by the reading pass: it **does** carry per-declaration anchors (2992 of them, one per overload signature), and `subject_index.htm` is a 512 KB declaration catalogue with 3248 entries — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work; linking to `seed7.net` in hover remains acceptable alongside prose.
+Hover prose comes from the `(** ... *)` comment immediately preceding a declaration in a `.s7i`, read lazily by `doc_index.sd7`. The earlier claim that `Seed7Home/libraries/*.htm` has no per-function anchors is refuted by the reading pass: it **does** carry per-declaration anchors (2992 of them, one per overload signature), and `subject_index.htm` is a 512 KB declaration catalogue with 3165 library declaration entries (measured here: `grep -c '<li><a href="libraries/' subject_index.htm` → 3165; all 3484 `<li><a` links include 319 manual- and screenshot-topic entries) — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work; linking to `seed7.net` in hover remains acceptable alongside prose.
 
 ## 6. Errors, config, logging
 
@@ -174,9 +174,8 @@ No editor is required to test any of this, which is the point of the module spli
 | M0 | risk spikes | done — §3/§4/§5 above are measurements, not assumptions |
 | M1 | transport + rpc + lifecycle + doc store | transcript: `initialize` answers with our capabilities; unknown method → `-32601`; request before initialize → `-32002`; `shutdown`/`exit` codes correct |
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
-| M3 | documentSymbol + definition | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper. **Merged on `m3`, except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
-| M4 | hover + signatureHelp + completion | signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover |
-| M5 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved. Note: `AGENTS.md` calls this milestone M4 and the spec's table calls it M5; pick one label in the next commit that touches either file |
+| M3 | documentSymbol + definition + hover + signatureHelp + completion | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper; signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover. **Merged on `m3` — the hover/signatureHelp/completion deliverable landed with it — except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
+| M4 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
 | M6 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |
 
 ## 9. Risks

@@ -48,7 +48,7 @@ const proc: main is func
     check("line2 after 3 chars", lspRange(doc, 2, 4), "{\"line\":1,\"character\":3}");
     check("col past eol clamps", lspRange(doc, 1, 99), "{\"line\":0,\"character\":3}");
     check("line past eof clamps", lspRange(doc, 99, 1), "{\"line\":2,\"character\":0}");
-    check("col 0 from semantic errors", lspRange(doc, 0, 0), "{\"line\":0,\"character\":0}");
+    check("column 0 keeps lspRange total", lspRange(doc, 0, 0), "{\"line\":0,\"character\":0}");
     setVersion(crlf, "ab\r\ncd", 1);
     check("crlf second line start", lspRange(crlf, 2, 1), "{\"line\":1,\"character\":0}");
     check("astral counts twice", str(utf16Before("a𐐀b", 3) - utf16Before("a𐐀b", 1)), "3");
@@ -144,6 +144,11 @@ const proc: main is func
     bLine := lspRangeBytes(doc, 1, 26);
     check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
           "{\"line\":0,\"character\":23}");
+    # A byte strictly inside a multi-byte character names that character: the astral
+    # char occupies bytes 21-24 of this line, and it sits at UTF-16 unit 20.
+    bLine := lspRangeBytes(doc, 1, 23);
+    check("a byte inside an astral char names that char", bLine,
+          "{\"line\":0,\"character\":20}");
     # '#' between a digit and an extended digit is the radix separator of a based
     # literal (manual/tokens.htm: based_integer ::= '#' extended_digit { extended_digit }).
     # Masking it as a line comment hid the rest of every line that contains 16#beef.
