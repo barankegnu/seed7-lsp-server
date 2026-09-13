@@ -33,11 +33,11 @@
 |---|---|---|
 | `src/transport.sd7` | Modify | Owns every byte-length computation: new `utf8CharLength(ch)`; `utf8Length(stri)` now calls it, so the `ord()` thresholds exist once. |
 | `src/doc_store.sd7` | Modify | Owns position conversion: new `lineIndexOf` (clamped line), `charColumnForBytes` (byte→character within one line), `lspRangeBytes` (analyzer-column → LSP range); `codeText` learns the radix-`#` rule; `lspRange` stops open-coding its own line clamp. |
-| `src/diagnostics.sd7` | Modify | Nothing about bytes: swaps two `lspRange` calls for `lspRangeBytes`, because a `parseError` column arrives in bytes. |
+| `src/diagnostics.sd7` | Modify | Nothing about bytes: swaps its three `lspRange` calls for `lspRangeBytes`, because a `parseError` column arrives in bytes. |
 | `tests/transport_test.sd7` | Modify | Character-width checks. |
 | `tests/doc_store_test.sd7` | Modify | Byte→character checks and the based-literal masking checks. |
 | `tests/diagnostics_test.sd7` | Modify | One golden-JSON check that a byte column lands on the character it names. |
-| `tests/transcript.py` | Modify | Two client-visible checks over real frames: a non-ASCII diagnostic range, and hover/definition after a based literal. |
+| `tests/transcript.py` | Modify (Task 3) | Two client-visible checks over real frames: a non-ASCII diagnostic range, and hover/definition after a based literal. Task 1 and Task 2 prove themselves in unit suites only; the wire-level proof arrives with Task 3. |
 | `AGENTS.md`, `README.md`, spec | Modify (Task 3) | Record that `columnNumber` is a byte offset, correct the `columnNumber = 0` half-truth, and note the two protocol findings this reading pass proved. |
 
 ---
@@ -157,6 +157,14 @@ Expected: FAIL `a byte column lands on the character it names` with `got: … "c
     bLine := lspRangeBytes(doc, 1, 2147483647);
     check("an absurd byte column clamps to the line length", bLine,
           "{\"line\":0,\"character\":26}");
+    # lspRangeBytes indexes the line-start table itself, so the clamp has to be proven
+    # from both sides: a line below the buffer and a line past it must map, not raise.
+    bLine := lspRangeBytes(doc, 0, 26);
+    check("a line below range still maps its byte", bLine,
+          "{\"line\":0,\"character\":23}");
+    bLine := lspRangeBytes(doc, 99, 26);
+    check("a line past the buffer still answers, clamped", bLine,
+          "{\"line\":1,\"character\":0}");
     setVersion(doc, "const string: s is \"\128169;\\z\";\n", 1);
     bLine := lspRangeBytes(doc, 1, 26);
     check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
@@ -237,7 +245,7 @@ const func string: lspRangeBytes (in lsDoc: doc, in integer: line1,
 ```
 
 Run: `make test-doc_store`
-Expected: PASS — 51 checks, 0 failed.
+Expected: PASS — 53 checks, 0 failed.
 
 - [ ] **Step 6: Route diagnostics through it.** In `src/diagnostics.sd7`, the three `lspRange(doc, diags[i]…)` calls inside `diagnosticsJson` become `lspRangeBytes`:
 
@@ -267,7 +275,7 @@ git add src/transport.sd7 src/doc_store.sd7 src/diagnostics.sd7 \
 git commit -m "Count the analyzer's column in bytes before mapping it to a character"
 ```
 
-- [ ] **Step 8: Mutation proof.** Two mutations, each reverted separately.
+- [ ] **Step 8: Mutation proof.** Three mutations, each reverted separately.
 
 (a) In `src/doc_store.sd7`, change `charColumnForBytes`'s test from `>= byteCol` to `> byteCol`.
 Run: `make test-doc_store` → Expected: FAIL `byte 26 of a line with two 2-byte chars -> character 23` (it lands one character late).
@@ -279,7 +287,12 @@ Revert: `git checkout -- src/transport.sd7`
 
 (An earlier revision of this step said to change `cp < 2048` to `cp < 65536`; the first Task 1 implementer proved that mutation leaves `test-diagnostics` green, because it demotes three-byte characters and the fixture's `π` pair still measures 2. The mutation above is the faithful one; the same wrong edit is still caught by `make test-transport`.)
 
-If either mutation leaves the suite green, the check is decorative: fix the check before continuing.
+(c) In `src/doc_store.sd7`, replace `lineIdx := lineIndexOf(doc, line1);` inside `lspRangeBytes` with `lineIdx := line1;`.
+Run: `make test-doc_store` → Expected: FAIL or abort on `a line below range still maps its byte` — the line-start table is then indexed unclamped, the raise site the task's never-raise constraint forbids.
+Revert: `git checkout -- src/doc_store.sd7`
+(Added after the Task 1 review: `lspRangeBytes` indexes `doc.lineStart` itself, and no check pinned that clamp.)
+
+If any mutation leaves the suite green, the check it was meant to kill is decorative: fix the check before continuing.
 
 ---
 
@@ -358,7 +371,7 @@ const func boolean: isRadixHash (in string: text, in integer: i) is func
 ```
 
 Run: `make test-doc_store`
-Expected: PASS — 59 checks, 0 failed (48 baseline + 3 from Task 1 + 8 here).
+Expected: PASS — 61 checks, 0 failed (48 baseline + 5 from Task 1 + 8 here).
 
 - [ ] **Step 4: Confirm nothing else moved.** Run `make test`
 Expected: PASS, all suites, including `transcript: 45 checks, 0 failed`. `features_test` exercises `codeText` through `signature_help` and `wordAt`; a green run there is the evidence that the mask did not start leaking comment text as code.
