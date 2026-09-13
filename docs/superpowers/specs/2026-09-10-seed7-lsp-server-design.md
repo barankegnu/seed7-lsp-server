@@ -86,7 +86,7 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
 2. `prog := parseStri(text, parseOptions.value, libraryDirs)`. `libraryDirs` comes from settings, then cwd, then `SEED7_LIBRARY`; the interpreter's own `../lib` fallback stays untouched.
 3. Read diagnostics with `errorCount` + `getError(i)` → `{error, fileName, lineNumber, columnNumber, message, errorLine}`. Then let `prog` go.
 4. Mapping rules:
-   - `columnNumber = 0` (all semantic errors) → range spans the whole line; a syntax error gets `[col, col+1]` of the offending token start.
+   - `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start, and it names the last byte of the offending token, so analyzer columns go through `doc_store.lspRangeBytes` and nothing else does; the range covers `[col, col+1]` in bytes before that conversion. Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all semantic errors" — `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION` and `UNCLOSED_COMMENT` arrive with 0 — and there the range spans the whole line, by asking `lspRangeBytes` for an absurd column and letting it clamp.
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.

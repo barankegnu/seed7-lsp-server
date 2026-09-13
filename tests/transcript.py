@@ -389,17 +389,28 @@ notes2 = [r for r in replies2 if r.get("method") == "textDocument/publishDiagnos
 pi_notes = [n for n in notes2 if n["params"]["uri"] == "file:///tmp/tt_pi.sd7"]
 expect(len(pi_notes) == 1, "the escape fixture publishes one diagnostic")
 if pi_notes:
-    pr = pi_notes[0]["params"]["diagnostics"][0]["range"]
-    expect(pr["start"] == {"line": 3, "character": 16} and
-           pr["end"] == {"line": 3, "character": 17},
-           "diagnostic range is in characters, not bytes (%r)" % pr)
+    pid = pi_notes[0]["params"]["diagnostics"]
+    expect(len(pid) == 1,
+           "the escape notification carries exactly one diagnostic, got %d" % len(pid))
+    if len(pid) == 1:
+        pr = pid[0]["range"]
+        expect(pr["start"] == {"line": 3, "character": 16} and
+               pr["end"] == {"line": 3, "character": 17},
+               "diagnostic range is in characters, not bytes (%r)" % pr)
+        expect(pid[0]["message"] == 'Illegal string escape "\\z"',
+               "diagnostic message is the analyzer's own (%r)" % pid[0]["message"])
+radix_notes = [n for n in notes2 if n["params"]["uri"] == "file:///tmp/tt_radix.sd7"]
+expect(len(radix_notes) == 1 and radix_notes[0]["params"]["diagnostics"] == [],
+       "the based-literal fixture publishes no diagnostics (%r)" % radix_notes)
 hov2 = by_id2.get(11, {}).get("result") or {}
 expect("afterThis" in hov2.get("contents", {}).get("value", ""),
        "hover reaches a name written after a based literal (%r)" % hov2)
 defn2 = by_id2.get(12, {}).get("result") or []
 expect(len(defn2) == 1 and defn2[0]["range"]["start"]["line"] == 1,
        "definition reaches it too (%r)" % defn2)
-expect(code2 == 0, "exit after shutdown is status 0 for the second run")
+expect(code2 == 0 and junk2 == 0,
+       "exit after shutdown is status 0 and stdout held only frames for the second run (%d, junk=%d)"
+       % (code2, junk2))
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
