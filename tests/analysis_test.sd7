@@ -90,6 +90,23 @@ const func integer: countDistinctLines (in array symRec: syms, in string: nm,
     end for;
   end func;
 
+# Test-only. The analyzer’s error records are a third-party shape these checks characterise,
+# so a release that stops reporting them must read as a FAIL, not as an uncaught index. The
+# string carries the count, column, kind, line and message together: one assertion per fixture.
+const func string: diagPin (in analysisResult: a, in integer: i) is func
+  result
+    var string: out is "";
+  begin
+    if length(a.diags) >= i then
+      out := str(length(a.diags)) <& "|" <& str(a.diags[i].column1) <& "@" <&
+             str(a.diags[i].errKind) <& "@line" <& str(a.diags[i].line1) <& "|" <&
+             a.diags[i].message;
+    else
+      out := str(length(a.diags)) <& "|no diagnostic " <& str(i) <& " of " <&
+             str(length(a.diags));
+    end if;
+  end func;
+
 const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
@@ -171,17 +188,16 @@ const proc: main is func
     # character positions differ report the SAME column, because both escape sequences end
     # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"ππ\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
-    check("escape after two 2-byte chars: 1 diagnostic, byte column 26",
-          str(length(a.diags)) <& ":" <& str(a.diags[1].column1), "1:26");
+    check("escape after two 2-byte chars: one diagnostic at byte column 26",
+          diagPin(a, 1), "1|26@ILLEGAL_STRING_ESCAPE@line2|Illegal string escape \"\\z\"");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"\128169;\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
-    check("escape after one 4-byte char: same byte column at a different character",
-          str(length(a.diags)) <& ":" <& str(a.diags[1].column1), "1:26");
+    check("escape after one 4-byte char: same column at a different character",
+          diagPin(a, 1), "1|26@ILLEGAL_STRING_ESCAPE@line2|Illegal string escape \"\\z\"");
     a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n" &
                      "  begin\n    writeln(1) writeln(2);\n  end func;\n", dirs);
-    checkTrue("the missing-semicolon fixture reports something", length(a.diags) <> 0);
     check("a token-level error names the position just after its token",
-          str(a.diags[1].column1) <& "@" <& str(a.diags[1].errKind) <& "@line" <&
-          str(a.diags[1].line1), "23@EXPECTED_SYMBOL@line4");
+          diagPin(a, 1),
+          "7|23@EXPECTED_SYMBOL@line4|\"end\" expected found \"writeln\"");
     check("an unanalysable buffer yields nothing",
           str(length(analyzeSymbols("", dirs))), "0");
     report("analysis");
