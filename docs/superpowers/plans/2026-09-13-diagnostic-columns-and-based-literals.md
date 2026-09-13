@@ -474,7 +474,7 @@ expect(code2 == 0, "exit after shutdown is status 0 for the second run")
 ```bash
 python3 tests/transcript.py
 ```
-Expected: `transcript: 50 checks, 0 failed` (45 + 5). If `diagnostic range is in characters, not bytes` fails, do not edit the expectation to match the output — re-derive it: the analyzer's `columnNumber` for that line is 19 bytes, byte 19 falls inside the 17th character, and the 16 UTF-16 units before it are 16 characters, because nothing before the position is astral. A mismatch means one of the two fixes is incomplete.
+Expected: `transcript: 53 checks, 0 failed` (45 + 8). The three additions came from the Task 3 review: the diagnostic count and message text are pinned before `diagnostics[0]` is indexed, the second run asserts `junk2 == 0` (nothing but frames on stdout), and the radix buffer's published diagnostics must be empty so the hover assertions cannot be excused by a broken parse. If `diagnostic range is in characters, not bytes` fails, do not edit the expectation to match the output — re-derive it: the analyzer's `columnNumber` for that line is 19 bytes, byte 19 falls inside the 17th character, and the 16 UTF-16 units before it are 16 characters, because nothing before the position is astral. A mismatch means one of the two fixes is incomplete.
 
 - [ ] **Step 3: Commit the harness.**
 
@@ -514,7 +514,7 @@ with:
 
 In `README.md`, in **What works**, extend the sentence about `Ranges are line-based.` with: "Where the analyzer reports a column, it counts bytes and the server converts — see `doc_store.lspRangeBytes`." Do not add a new section.
 
-In the design spec, correct §5's claim about library docs, which this reading pass refuted: `Seed7Home/libraries/*.htm` **does** carry per-declaration anchors (2992 of them, one per overload signature) and `subject_index.htm` is a 512 KB declaration catalogue with 3248 entries — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work. Also note that the scanner milestone is called M4 in `AGENTS.md` and M5 in the spec's milestone table, and pick one label in the next commit that touches either file.
+In the design spec, correct **§4's diagnostic mapping rule as well as §5's** claim about library docs — the spec is the authority `AGENTS.md` says conflicts resolve in favour of, so leaving §4 stating "`columnNumber = 0` (all semantic errors)" would license re-introducing Task 1's bug., which this reading pass refuted: `Seed7Home/libraries/*.htm` **does** carry per-declaration anchors (2992 of them, one per overload signature) and `subject_index.htm` is a 512 KB declaration catalogue with 3248 entries — usable, but spelled with abstract type variables (`inout_arrayType`), so mapping a resolved type to that spelling is the work. Also note that the scanner milestone is called M4 in `AGENTS.md` and M5 in the spec's milestone table, and pick one label in the next commit that touches either file.
 
 - [ ] **Step 5: Commit and report.**
 
