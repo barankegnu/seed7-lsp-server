@@ -300,6 +300,7 @@ If any mutation leaves the suite green, the check it was meant to kill is decora
 
 **Files:**
 - Modify: `src/doc_store.sd7` (`codeText`'s `#` branch, plus one new predicate near `isDigit`)
+**Files:**
 - Test: `tests/doc_store_test.sd7`
 
 **Interfaces:**
@@ -310,7 +311,7 @@ If any mutation leaves the suite green, the check it was meant to kill is decora
 
 - [ ] **Step 1: Write the failing masking checks.** Extend `main`'s `local` block in `tests/doc_store_test.sd7` with `var string: radixMask is "";` and add before `report("doc_store")`:
 
-The prefix lengths below are measured, not counted by hand (`;` is the 28th character of the second fixture, the 33rd of the third). Nothing asserts a run of spaces: a space-count literal is a fixture waiting to be wrong.
+The prefix lengths below are measured, not counted by hand (`;` is the 28th character of the second fixture, the 33rd of the third). Only the last fixture asserts a run of spaces, and it does so because the `;` it pins is *inside* the comment.
 
 ```sd7
     # '#' between a digit and an extended digit is the radix separator of a based
@@ -327,8 +328,6 @@ The prefix lengths below are measured, not counted by hand (`;` is the 28th char
     check("the code before that comment survives", codeText(doc)[1 .. 28],
           "const integer: y is 16#beef;");
     radixMask := codeText(doc);
-    check("and the mask is still the length of the text", str(length(radixMask)),
-          str(length(doc.text)));
     setVersion(doc, "const integer: w is 16#ff + 8#77; # tail\n", 1);
     check("two based literals on one line", codeText(doc)[1 .. 33],
           "const integer: w is 16#ff + 8#77;");
@@ -340,6 +339,17 @@ The prefix lengths below are measured, not counted by hand (`;` is the 28th char
     check("a hash that opens the line is still a comment",
           str(pos(codeText(doc), "hashFirst")), "0");
     check("and the next line is still code", wordAt(doc, 1, 21).word, "keepMe");
+    # Two guards inside isRadixHash that no fixture above reaches. The first is the one
+    # standing between this rule and a comment leak: '#' after a non-digit must comment,
+    # and only the left-neighbour test says so. The second is the truncated buffer a
+    # typist actually has -- '#' as the last character of the document -- where reading
+    # text[succ(i)] would raise and cost the client a request.
+    setVersion(doc, "const integer: n is 2;#tightNote\n", 1);
+    check("a comment tight against code is still a comment",
+          str(pos(codeText(doc), "tightNote")), "0");
+    setVersion(doc, "const integer: q is 16#", 1);
+    check("a document ending in a lone hash answers without raising",
+          str(length(codeText(doc))), str(length(doc.text)));
 ```
 
 Run: `make test-doc_store`
@@ -371,7 +381,7 @@ const func boolean: isRadixHash (in string: text, in integer: i) is func
 ```
 
 Run: `make test-doc_store`
-Expected: PASS — 63 checks, 0 failed (48 baseline + 5 from Task 1 + 10 here).
+Expected: PASS — 64 checks, 0 failed (48 baseline + 5 from Task 1 + 11 here).
 
 - [ ] **Step 4: Confirm nothing else moved.** Run `make test`
 Expected: PASS, all suites, including `transcript: 45 checks, 0 failed`. `features_test` exercises `codeText` through `signature_help` and `wordAt`; a green run there is the evidence that the mask did not start leaking comment text as code.
@@ -395,7 +405,13 @@ The third mutation deletes the `isDigit(text[succ(i)])` disjunct — `(isAlpha(.
 Run: `make test-doc_store` → Expected: FAIL `two based literals on one line`, because the `8#77` fixture has a digit and no letter after its `#`.
 Revert: `git checkout -- src/doc_store.sd7`
 
-An earlier revision of this step asserted the digit disjunct was unproven and told the implementer either to add a fixture or to report the gap. That was wrong in the good direction: the fixture set already contains `8#77`, and every branch of `isRadixHash` now sits behind a mutation that fails a named check.
+An earlier revision of this step asserted the digit disjunct was unproven and told the implementer either to add a fixture or to report the gap. That was wrong in the good direction: the fixture set already contains `8#77`, and that mutation fails a named check.
+
+The fourth mutation deletes the LEFT-neighbour conjunct, `isDigit(text[pred(i)])`, from `isRadixHash`. This is the term that keeps `x is 2;#note` commenting rather than opening a phantom literal, so it is the term whose failure turns comment text into visible code. Expected: FAIL `a comment tight against code is still a comment`. Revert the same way.
+
+The fifth mutation deletes the `i < length(text)` conjunct. Expected: the `const integer: q is 16#` fixture raises reading `text[succ(i)]`, so the suite aborts with no `report` line — a failed run, not a pass. Revert the same way.
+
+If any mutation leaves the suite green, the check it was meant to kill is decorative: fix the check before continuing.
 
 ---
 
