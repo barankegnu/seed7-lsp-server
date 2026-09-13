@@ -358,5 +358,48 @@ expect(all(r.get("id") is None or "method" in r for r in replies
            if r.get("error", {}).get("code") == -32700),
        "parse error carries a null id, per JSON-RPC")
 
+# --- Task 1/2 wire proofs: analyzer byte columns arrive as UTF-16 character ranges,
+# --- and code after a based literal is visible to wordAt again ---
+# A line whose error sits behind two 2-byte characters: the analyzer counts bytes,
+# the client counts UTF-16 units, and the range must arrive in the client's units.
+PI = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln("\u03c0\u03c0\\z");\n  end func;\n'
+RADIX = ('$ include "seed7_05.s7i";\nconst integer: afterThis is 1;\n'
+         'const proc: main is func\n  local\n    var integer: total is 0;\n  begin\n'
+         '    total := 16#beef + afterThis;\n    writeln(total);\n  end func;\n')
+msgs2 = [
+    {"jsonrpc": "2.0", "id": 10, "method": "initialize", "params": {"capabilities": {}}},
+    {"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+        {"textDocument": {"uri": "file:///tmp/tt_pi.sd7", "languageId": "seed7",
+                          "version": 1, "text": PI}}},
+    {"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+        {"textDocument": {"uri": "file:///tmp/tt_radix.sd7", "languageId": "seed7",
+                          "version": 1, "text": RADIX}}},
+    {"jsonrpc": "2.0", "id": 11, "method": "textDocument/hover", "params":
+        {"textDocument": {"uri": "file:///tmp/tt_radix.sd7"},
+         "position": {"line": 6, "character": 26}}},
+    {"jsonrpc": "2.0", "id": 12, "method": "textDocument/definition", "params":
+        {"textDocument": {"uri": "file:///tmp/tt_radix.sd7"},
+         "position": {"line": 6, "character": 26}}},
+    {"jsonrpc": "2.0", "id": 13, "method": "shutdown"},
+    {"jsonrpc": "2.0", "method": "exit"},
+]
+replies2, code2, err2, junk2 = run([frame(m) for m in msgs2])
+by_id2 = {r.get("id"): r for r in replies2 if "id" in r}
+notes2 = [r for r in replies2 if r.get("method") == "textDocument/publishDiagnostics"]
+pi_notes = [n for n in notes2 if n["params"]["uri"] == "file:///tmp/tt_pi.sd7"]
+expect(len(pi_notes) == 1, "the escape fixture publishes one diagnostic")
+if pi_notes:
+    pr = pi_notes[0]["params"]["diagnostics"][0]["range"]
+    expect(pr["start"] == {"line": 3, "character": 16} and
+           pr["end"] == {"line": 3, "character": 17},
+           "diagnostic range is in characters, not bytes (%r)" % pr)
+hov2 = by_id2.get(11, {}).get("result") or {}
+expect("afterThis" in hov2.get("contents", {}).get("value", ""),
+       "hover reaches a name written after a based literal (%r)" % hov2)
+defn2 = by_id2.get(12, {}).get("result") or []
+expect(len(defn2) == 1 and defn2[0]["range"]["start"]["line"] == 1,
+       "definition reaches it too (%r)" % defn2)
+expect(code2 == 0, "exit after shutdown is status 0 for the second run")
+
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
