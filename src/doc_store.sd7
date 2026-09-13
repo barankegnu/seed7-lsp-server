@@ -165,6 +165,19 @@ const func boolean: isAlpha (in char: ch) is
 const func boolean: isDigit (in char: ch) is
   return ch >= '0' and ch <= '9';
 
+# TRUE when the '#' at index `i` of a line is the radix separator of a based literal.
+# Seed7's '#'-terminated line comment and its `16#beef` share a character, and the
+# grammar decides by what surrounds it: a digit before, an extended digit (0-9, A-Z,
+# a-z) after. Its own function because a mixed and/or chain of these comparisons can
+# fail to match at analysis time.
+const func boolean: isRadixHash (in string: text, in integer: i) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := i > 1 and i < length(text) and isDigit(text[pred(i)]) and
+           (isAlpha(text[succ(i)]) or isDigit(text[succ(i)]));
+  end func;
+
 const func boolean: nameChar (in char: ch) is
   return ch = '_' or isAlpha(ch) or isDigit(ch);
 
@@ -253,7 +266,7 @@ const func string: codeText (in lsDoc: doc) is func
       elsif ch = '(' and nextIs(doc.text, i, '*') then
         out &:= " ";
         depth +:= 1;
-      elsif ch = '#' then
+      elsif ch = '#' and not isRadixHash(doc.text, i) then
         out &:= " ";
         inLine := TRUE;
       else

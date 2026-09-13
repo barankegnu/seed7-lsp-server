@@ -39,6 +39,7 @@ const proc: main is func
     var lsDoc: masked is lsDoc.value;
     var wordRef: w is wordRef.value;
     var string: bLine is "";
+    var string: radixMask is "";
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -144,5 +145,32 @@ const proc: main is func
     bLine := lspRangeBytes(doc, 1, 26);
     check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
           "{\"line\":0,\"character\":23}");
+    # '#' between a digit and an extended digit is the radix separator of a based
+    # literal (manual/tokens.htm: based_integer ::= '#' extended_digit { extended_digit }).
+    # Masking it as a line comment hid the rest of every line that contains 16#beef.
+    setVersion(doc, "const integer: y is 16#beef + afterThis;\n", 1);
+    check("a name after a based literal is still code", wordAt(doc, 0, 35).word,
+          "afterThis");
+    check("a line of pure code masks to itself", codeText(doc),
+          "const integer: y is 16#beef + afterThis;\n");
+    setVersion(doc, "const integer: y is 16#beef; # hiddenWord\n", 1);
+    check("a real comment after a based literal still hides",
+          str(pos(codeText(doc), "hiddenWord")), "0");
+    check("the code before that comment survives", codeText(doc)[1 .. 28],
+          "const integer: y is 16#beef;");
+    radixMask := codeText(doc);
+    check("and the mask is still the length of the text", str(length(radixMask)),
+          str(length(doc.text)));
+    setVersion(doc, "const integer: w is 16#ff + 8#77; # tail\n", 1);
+    check("two based literals on one line", codeText(doc)[1 .. 33],
+          "const integer: w is 16#ff + 8#77;");
+    check("and the comment is still a comment", str(pos(codeText(doc), "tail")), "0");
+    setVersion(doc, "const integer: v is 1#;\n", 1);
+    check("a hash with no extended digit after it is a comment", codeText(doc),
+          "const integer: v is 1  \n");
+    setVersion(doc, "# hashFirst\nconst integer: keepMe is 1;\n", 1);
+    check("a hash that opens the line is still a comment",
+          str(pos(codeText(doc), "hashFirst")), "0");
+    check("and the next line is still code", wordAt(doc, 1, 21).word, "keepMe");
     report("doc_store");
   end func;
