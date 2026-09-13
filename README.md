@@ -62,7 +62,9 @@ diagnostics of the server itself go to stderr; the LSP stream is stdout.
 
 Base protocol framing, lifecycle (`initialize`/`initialized`/`shutdown`/`exit`), full
 text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from the
-analyzer: deduplicated, whole-line where the analyzer reports no column, capped, and with
+analyzer: deduplicated, landed on characters even when the line ahead of it holds
+non-ASCII text, and with a based literal in the line no longer hiding what follows
+it; whole-line where the analyzer reports no column, capped, and with
 truncation-during-typing downgraded to Information instead of a wall of red. Error
 handling is spec-shaped: `-32002` before initialize, `-32600` after shutdown, `-32700`
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
@@ -101,7 +103,8 @@ reports a column, it counts bytes and the server converts — see
 hierarchy for nested and local declarations, completion of local variables, pull
 diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
 and completion as well as stale diagnostics, because a library is analysed through a driver
-that reads the file back from disk, not from the editor buffer), a based literal
+that reads the file back from disk, which also breaks the spec's rule that an open
+document must not be read through its uri), a based literal
 answering as a name (`16#be|ef` hovers `beef`) until `scan.sd7` separates number tokens
 from name tokens, `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
 for an unimplemented method returns `-32601 Method not found`, which editors display as

@@ -51,6 +51,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
+  A test suite inherits the trap: one that fails to analyse prints nothing, exits 0,
+  and would pass the recipe unread, so `Makefile`'s `test-%` rule grades the suite's
+  own `N checks, M failed` line.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
   (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
@@ -165,10 +168,12 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 ## Milestones
 
-M1+M2 (base protocol, lifecycle, sync, diagnostics) are merged-ready. M3's five symbol
-features (documentSymbol, definition, hover, completion, signatureHelp) are in on this
-branch; the trust gate, the `.s7i` staleness fix (R-F10) and local-variable completion were
-split out of it and remain open.
+M1+M2 (base protocol, lifecycle, sync, diagnostics) and M3's five symbol features
+(documentSymbol, definition, hover, completion, signatureHelp) are merged on `master`.
+Still open from M3: the trust gate, local-variable completion, and R-F10 — which is
+a conformance violation as well as stale data, because `textToAnalyze` reads an open
+`.s7i` back from disk while the spec says the server must not read a document's content
+through its uri.
 
 Masking already exists — `doc_store.codeText` blanks string literals, char literals,
 `(* *)` and `#` comments, `wordAt` answers nothing inside masked text, and
@@ -176,4 +181,8 @@ Masking already exists — `doc_store.codeText` blanks string literals, char lit
 "does this position mean anything" but token *spans*: foldingRange, selectionRange and
 semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
 reflection API yields declarations only, never use sites, which is why references and
-rename stay M5.
+rename stay M5. Settle two things first, or M4 makes them permanent: `scan.sd7` is the
+third consumer of the UTF-8 byte-width table, so extracting it out of `transport.sd7` is
+step 1 (see invariant 3); and `utf16Before` scans from index 1 per call — tolerable
+for a hundred capped diagnostics, unusable for a token stream — so give each document
+a cumulative UTF-16 column table in `setVersion` before semanticTokens exists.
