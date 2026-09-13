@@ -7,6 +7,8 @@ const proc: main is func
     var array lspDiag: raw is 0 times lspDiag.value;
     var array lspDiag: mapped is 0 times lspDiag.value;
     var lsDoc: doc is lsDoc.value;
+    var lsDoc: uniDoc is lsDoc.value;
+    var array lspDiag: one is 0 times lspDiag.value;
     var lspDiag: d is lspDiag.value;
   begin
     setVersion(doc, "abc\nä€ 日本\nx", 1);
@@ -34,5 +36,21 @@ const proc: main is func
           "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":1,\"source\":\"seed7\",\"message\":\"Match failed\"}," &
           "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"\\\"end\\\" expected found \\\"END OF FILE\\\"\"}," &
           "{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":1}},\"severity\":3,\"source\":\"seed7\",\"message\":\"System declaration for main missing\"}]}");
+    # The analyzer's columnNumber is a 1-based UTF-8 BYTE offset from the line start.
+    # Measured on this exact line: ILLEGAL_STRING_ESCAPE reports column 26, and the
+    # character at byte 26 is the 24th, i.e. 0-based character 23. Handing the byte count
+    # to lspRange as a character index published 25 and put the squiggle two characters
+    # right of the bad escape.
+    setVersion(uniDoc, "const string: s is \"ππ\\z\";\n", 1);
+    d.line1 := 1;
+    d.column1 := 26;
+    d.message := "Illegal string escape";
+    d.atEof := FALSE;
+    one &:= d;
+    check("a byte column lands on the character it names",
+          diagnosticsJson("file:///u.sd7", uniDoc, one),
+          "{\"uri\":\"file:///u.sd7\",\"diagnostics\":[" &
+          "{\"range\":{\"start\":{\"line\":0,\"character\":23},\"end\":{\"line\":0,\"character\":24}}," &
+          "\"severity\":1,\"source\":\"seed7\",\"message\":\"Illegal string escape\"}]}");
     report("diagnostics");
   end func;

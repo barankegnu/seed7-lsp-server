@@ -57,12 +57,12 @@ const func string: diagnosticsJson (in string: uri, in lsDoc: doc,
           openObject(w);
             field(w, "range");
             openObject(w);
-              field(w, "start"); raw(w, lspRange(doc, diags[i].line1, diags[i].column1));
+              field(w, "start"); raw(w, lspRangeBytes(doc, diags[i].line1, diags[i].column1));
               field(w, "end");
               if diags[i].column1 > 0 then
-                raw(w, lspRange(doc, diags[i].line1, diags[i].column1 + 1));
+                raw(w, lspRangeBytes(doc, diags[i].line1, diags[i].column1 + 1));
               else
-                raw(w, lspRange(doc, diags[i].line1, 2147483647));
+                raw(w, lspRangeBytes(doc, diags[i].line1, 2147483647));
               end if;
             closeObject(w);
             field(w, "severity"); addInt(w, diags[i].severity);

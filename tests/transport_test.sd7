@@ -11,5 +11,9 @@ const proc: main is func
     check("astral",    str(utf8Length("𐐀")),       "4");
     check("mixed",     str(utf8Length("ä€ 日本")), "12");
     check("empty",     str(utf8Length("")),       "0");
+    check("ascii char is 1 byte", str(utf8CharLength('a')), "1");
+    check("greek char is 2 bytes", str(utf8CharLength("\960;"[1])), "2");
+    check("euro char is 3 bytes", str(utf8CharLength("\8364;"[1])), "3");
+    check("astral char is 4 bytes", str(utf8CharLength("\128169;"[1])), "4");
     report("transport");
   end func;

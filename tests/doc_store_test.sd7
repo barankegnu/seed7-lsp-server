@@ -38,6 +38,7 @@ const proc: main is func
     var lsDoc: op is lsDoc.value;
     var lsDoc: masked is lsDoc.value;
     var wordRef: w is wordRef.value;
+    var string: bLine is "";
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -121,5 +122,19 @@ const proc: main is func
     charForm("char literal: escaped quote", "" <& chr(92) <& chr(39));
     charForm("char literal: a double quote", "" <& chr(34));
     charForm("char literal: a hash", "#");
+    # charColumnForBytes is the mapping the analyzer's columns need; the astral case is
+    # the one that separates a character index from a UTF-16 unit index, because the LSP
+    # position must be counted in units.
+    setVersion(doc, "const string: s is \"ππ\\z\";\n", 1);
+    bLine := lspRangeBytes(doc, 1, 26);
+    check("byte 26 of a line with two 2-byte chars -> character 23", bLine,
+          "{\"line\":0,\"character\":23}");
+    bLine := lspRangeBytes(doc, 1, 2147483647);
+    check("an absurd byte column clamps to the line length", bLine,
+          "{\"line\":0,\"character\":26}");
+    setVersion(doc, "const string: s is \"\128169;\\z\";\n", 1);
+    bLine := lspRangeBytes(doc, 1, 26);
+    check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
+          "{\"line\":0,\"character\":23}");
     report("doc_store");
   end func;
