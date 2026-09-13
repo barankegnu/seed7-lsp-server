@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 10 suites + transcript, 223 checks, no editor required
+    make test          # 10 suites + transcript, 256 checks (203 unit + 53 wire), no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -62,7 +62,9 @@ diagnostics of the server itself go to stderr; the LSP stream is stdout.
 
 Base protocol framing, lifecycle (`initialize`/`initialized`/`shutdown`/`exit`), full
 text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from the
-analyzer: deduplicated, whole-line where the analyzer reports no column, capped, and with
+analyzer: deduplicated, landed on characters even when the line ahead of it holds
+non-ASCII text, and with a based literal in the line no longer hiding what follows
+it; whole-line where the analyzer reports no column, capped, and with
 truncation-during-typing downgraded to Information instead of a wall of red. Error
 handling is spec-shaped: `-32002` before initialize, `-32600` after shutdown, `-32700`
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
@@ -82,9 +84,17 @@ than the signature of some unrelated call — a real risk in files like `prg/cal
 continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
 string in any rule that does not know char literals exist.
 
+One hole in that mask: a char literal whose content is a numeric escape (`'\9;`, `'\16#ff;`)
+is counted as two characters, so the mask loses the two that follow its closing quote. There a
+request may answer nothing, or answer a name spelled out of the escape's tail (`ff`). The
+fixed-count state predates this branch and `scan.sd7` replaces the machine; `lib/jpeg.s7i` is
+where the based form clusters.
+
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's
-*extent* (where it ends) is not available from the analyzer at all.
+*extent* (where it ends) is not available from the analyzer at all. Where the analyzer
+reports a column, it counts bytes and the server converts — see
+`doc_store.lspRangeBytes`.
 
 ## What does not work yet
 
@@ -93,7 +103,10 @@ definition range is the whole line and `selectionRange` equals `range`. A symbol
 hierarchy for nested and local declarations, completion of local variables, pull
 diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
 and completion as well as stale diagnostics, because a library is analysed through a driver
-that reads the file back from disk, not from the editor buffer), `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
+that reads the file back from disk, which also breaks the spec's rule that an open
+document must not be read through its uri), a based literal
+answering as a name (`16#be|ef` hovers `beef`) until `scan.sd7` separates number tokens
+from name tokens, `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
 for an unimplemented method returns `-32601 Method not found`, which editors display as
 "no data" rather than as a failure — and a capability is advertised only once its method
 is answered.

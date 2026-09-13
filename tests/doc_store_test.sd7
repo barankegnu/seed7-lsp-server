@@ -38,6 +38,7 @@ const proc: main is func
     var lsDoc: op is lsDoc.value;
     var lsDoc: masked is lsDoc.value;
     var wordRef: w is wordRef.value;
+    var string: bLine is "";
   begin
     check("lineStarts count", str(length(lineStarts("a\nbb\r\nccc"))), "3");
     check("lineStarts third", str(lineStarts("a\nbb\r\nccc")[3]), "7");
@@ -47,7 +48,7 @@ const proc: main is func
     check("line2 after 3 chars", lspRange(doc, 2, 4), "{\"line\":1,\"character\":3}");
     check("col past eol clamps", lspRange(doc, 1, 99), "{\"line\":0,\"character\":3}");
     check("line past eof clamps", lspRange(doc, 99, 1), "{\"line\":2,\"character\":0}");
-    check("col 0 from semantic errors", lspRange(doc, 0, 0), "{\"line\":0,\"character\":0}");
+    check("column 0 keeps lspRange total", lspRange(doc, 0, 0), "{\"line\":0,\"character\":0}");
     setVersion(crlf, "ab\r\ncd", 1);
     check("crlf second line start", lspRange(crlf, 2, 1), "{\"line\":1,\"character\":0}");
     check("astral counts twice", str(utf16Before("a𐐀b", 3) - utf16Before("a𐐀b", 1)), "3");
@@ -121,5 +122,67 @@ const proc: main is func
     charForm("char literal: escaped quote", "" <& chr(92) <& chr(39));
     charForm("char literal: a double quote", "" <& chr(34));
     charForm("char literal: a hash", "#");
+    # charColumnForBytes is the mapping the analyzer's columns need; the astral case is
+    # the one that separates a character index from a UTF-16 unit index, because the LSP
+    # position must be counted in units.
+    setVersion(doc, "const string: s is \"ππ\\z\";\n", 1);
+    bLine := lspRangeBytes(doc, 1, 26);
+    check("byte 26 of a line with two 2-byte chars -> character 23", bLine,
+          "{\"line\":0,\"character\":23}");
+    bLine := lspRangeBytes(doc, 1, 2147483647);
+    check("an absurd byte column clamps to the line length", bLine,
+          "{\"line\":0,\"character\":26}");
+    # lspRangeBytes indexes the line-start table itself, so the clamp has to be proven
+    # from both sides: a line below the buffer and a line past it must map, not raise.
+    bLine := lspRangeBytes(doc, 0, 26);
+    check("a line below range still maps its byte", bLine,
+          "{\"line\":0,\"character\":23}");
+    bLine := lspRangeBytes(doc, 99, 26);
+    check("a line past the buffer still answers, clamped", bLine,
+          "{\"line\":1,\"character\":0}");
+    setVersion(doc, "const string: s is \"\128169;\\z\";\n", 1);
+    bLine := lspRangeBytes(doc, 1, 26);
+    check("byte 26 after an astral char -> character 23 (utf-16 units)", bLine,
+          "{\"line\":0,\"character\":23}");
+    # A byte strictly inside a multi-byte character names that character: the astral
+    # char occupies bytes 21-24 of this line, and it sits at UTF-16 unit 20.
+    bLine := lspRangeBytes(doc, 1, 23);
+    check("a byte inside an astral char names that char", bLine,
+          "{\"line\":0,\"character\":20}");
+    # '#' between a digit and an extended digit is the radix separator of a based
+    # literal (manual/tokens.htm: based_integer ::= '#' extended_digit { extended_digit }).
+    # Masking it as a line comment hid the rest of every line that contains 16#beef.
+    setVersion(doc, "const integer: y is 16#beef + afterThis;\n", 1);
+    check("a name after a based literal is still code", wordAt(doc, 0, 35).word,
+          "afterThis");
+    check("a line of pure code masks to itself", codeText(doc),
+          "const integer: y is 16#beef + afterThis;\n");
+    setVersion(doc, "const integer: y is 16#beef; # hiddenWord\n", 1);
+    check("a real comment after a based literal still hides",
+          str(pos(codeText(doc), "hiddenWord")), "0");
+    check("the code before that comment survives", codeText(doc)[1 .. 28],
+          "const integer: y is 16#beef;");
+    setVersion(doc, "const integer: w is 16#ff + 8#77; # tail\n", 1);
+    check("two based literals on one line", codeText(doc)[1 .. 33],
+          "const integer: w is 16#ff + 8#77;");
+    check("and the comment is still a comment", str(pos(codeText(doc), "tail")), "0");
+    setVersion(doc, "const integer: v is 1#;\n", 1);
+    check("a hash with no extended digit after it is a comment", codeText(doc),
+          "const integer: v is 1  \n");
+    setVersion(doc, "# hashFirst\nconst integer: keepMe is 1;\n", 1);
+    check("a hash that opens the line is still a comment",
+          str(pos(codeText(doc), "hashFirst")), "0");
+    check("and the next line is still code", wordAt(doc, 1, 21).word, "keepMe");
+    # Two guards inside isRadixHash that no fixture above reaches. The first is the one
+    # standing between this rule and a comment leak: '#' after a non-digit must comment,
+    # and only the left-neighbour test says so. The second is the truncated buffer a
+    # typist actually has -- '#' as the last character of the document -- where reading
+    # text[succ(i)] would raise and cost the client a request.
+    setVersion(doc, "const integer: n is 2;#tightNote\n", 1);
+    check("a comment tight against code is still a comment",
+          str(pos(codeText(doc), "tightNote")), "0");
+    setVersion(doc, "const integer: q is 16#", 1);
+    check("a document ending in a lone hash answers without raising",
+          str(length(codeText(doc))), str(length(doc.text)));
     report("doc_store");
   end func;

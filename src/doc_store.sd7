@@ -1,4 +1,5 @@
 $ include "seed7_05.s7i";
+  include "transport.sd7";
 
 const type: lsDoc is new struct
     var string: text is "";
@@ -6,9 +7,12 @@ const type: lsDoc is new struct
     var array integer: lineStart is 1 times 1;
   end struct;
 
-# The token under an LSP position. line1/column1 follow the analyzer's convention
-# (1-based line, 1-based column measured from the line start) so a feature can hand
-# them straight to lspRange/lspRangePair. An empty word means "no token here".
+# The token under an LSP position. line1/column1 are 1-based and measured from the start
+# of the line, but they are CHARACTER columns -- they do NOT follow the analyzer's
+# byte-valued convention -- so a feature hands them straight to lspRange/lspRangePair.
+# Only columns taken from parseError.columnNumber go through lspRangeBytes; routing a
+# character column there would shift every range on a non-ASCII line.
+# An empty word means "no token here".
 const type: wordRef is new struct
     var string: word is "";
     var integer: line1 is 0;
@@ -79,6 +83,21 @@ const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) 
 const func integer: lineCount (in lsDoc: doc) is
   return length(doc.lineStart);
 
+# The line index for a 1-based line number, clamped. Written once because lspRange and
+# lspRangeBytes both start from an analyzer-supplied line that can be past the buffer.
+# It sits above lspRange because Seed7 cannot call a function defined later in the file.
+const func integer: lineIndexOf (in lsDoc: doc, in integer: line1) is func
+  result
+    var integer: lineIdx is 1;
+  begin
+    lineIdx := line1;
+    if lineIdx < 1 then
+      lineIdx := 1;
+    elsif lineIdx > lineCount(doc) then
+      lineIdx := lineCount(doc);
+    end if;
+  end func;
+
 const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: column1) is func
   result
     var string: out is "";
@@ -88,12 +107,7 @@ const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: colum
     var integer: ch is 0;
     var integer: width is 0;
   begin
-    lineIdx := line1;
-    if lineIdx < 1 then
-      lineIdx := 1;
-    elsif lineIdx > lineCount(doc) then
-      lineIdx := lineCount(doc);
-    end if;
+    lineIdx := lineIndexOf(doc, line1);
     start := doc.lineStart[lineIdx];
     width := lineWidth(doc.text, start);
     ch := column1 - 1;
@@ -106,11 +120,66 @@ const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: colum
            utf16Before(doc.text, start + ch) - utf16Before(doc.text, start) <& "}";
   end func;
 
+# The 1-based character column that holds the 1-based UTF-8 byte offset `byteCol`.
+# A byte in the middle of a multi-byte character names that character, and a byte past
+# the line's end names the character just after it, which lspRange clamps to the line
+# length -- the same way it already clamps an absurd character column.
+const func integer: charColumnForBytes (in string: text, in integer: start,
+                                        in integer: byteCol) is func
+  result
+    var integer: ch is 1;
+  local
+    var integer: i is 0;
+    var integer: cum is 0;
+    var boolean: found is FALSE;
+  begin
+    i := start;
+    ch := 1;
+    cum := 0;
+    found := FALSE;
+    while i <= length(text) and text[i] <> '\n' and text[i] <> '\r' and not found do
+      if cum + utf8CharLength(text[i]) >= byteCol then
+        found := TRUE;
+      else
+        cum +:= utf8CharLength(text[i]);
+        i +:= 1;
+        ch +:= 1;
+      end if;
+    end while;
+  end func;
+
+# lspRange for a column that arrives from the analyzer, which counts bytes. Every other
+# caller of lspRange hands it a character column it computed itself.
+const func string: lspRangeBytes (in lsDoc: doc, in integer: line1,
+                                  in integer: byteCol) is func
+  result
+    var string: out is "";
+  local
+    var integer: lineIdx is 0;
+  begin
+    lineIdx := lineIndexOf(doc, line1);
+    out := lspRange(doc, lineIdx, charColumnForBytes(doc.text, doc.lineStart[lineIdx],
+                                                     byteCol));
+  end func;
+
 const func boolean: isAlpha (in char: ch) is
   return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z');
 
 const func boolean: isDigit (in char: ch) is
   return ch >= '0' and ch <= '9';
+
+# TRUE when the '#' at index `i` of the document is the radix separator of a based literal.
+# Seed7's '#'-terminated line comment and its `16#beef` share a character, and the
+# grammar decides by what surrounds it: a digit before, an extended digit (0-9, A-Z,
+# a-z) after. Its own function because a mixed and/or chain of these comparisons can
+# fail to match at analysis time.
+const func boolean: isRadixHash (in string: text, in integer: i) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := i > 1 and i < length(text) and isDigit(text[pred(i)]) and
+           (isAlpha(text[succ(i)]) or isDigit(text[succ(i)]));
+  end func;
 
 const func boolean: nameChar (in char: ch) is
   return ch = '_' or isAlpha(ch) or isDigit(ch);
@@ -200,7 +269,7 @@ const func string: codeText (in lsDoc: doc) is func
       elsif ch = '(' and nextIs(doc.text, i, '*') then
         out &:= " ";
         depth +:= 1;
-      elsif ch = '#' then
+      elsif ch = '#' and not isRadixHash(doc.text, i) then
         out &:= " ";
         inLine := TRUE;
       else

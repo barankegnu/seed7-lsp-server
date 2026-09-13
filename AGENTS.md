@@ -51,6 +51,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
+  A test suite inherits the trap: one that fails to analyse prints nothing, exits 0,
+  and would pass the recipe unread, so `Makefile`'s `test-%` rule grades the suite's
+  own `N checks, M failed` line.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
   (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
@@ -78,7 +81,14 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    one line. Feature files receive `symRec` records; the temptation to read a `reference`
    directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
-3. Only `src/transport.sd7` computes or consumes byte lengths.
+3. Only `src/transport.sd7` owns UTF-8 byte widths: it holds the width table
+   (`utf8CharLength`) and computes or consumes every outbound byte count.
+   `src/doc_store.sd7` may consume a byte-valued column only to convert it into a
+   character column (`charColumnForBytes`/`lspRangeBytes`), and never emits a byte count.
+   `doc_store` includes `transport.sd7` to reach that one helper, which inverts the
+   layering — a merge-time decision, not an accident: §2 of the design spec lists the
+   intended module layout, and the helper's next consumer is `scan.sd7` in the milestone
+   after this one, so the `src/utf8bytes.sd7` extraction belongs to the `scan.sd7` plan.
 4. Only `src/*.sd7` and `src/features/*.sd7` build LSP response shapes; `analysis.sd7`
    returns Seed7-shaped data and knows nothing about LSP.
 5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
@@ -115,8 +125,31 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   that one kind is downgraded to Information too, keyed on `parseError.error`. Do not
   expect the member on a file that has its `$ include "seed7_05.s7i";` line: with the
   essential include present, a main-less program analyses clean.
-- Semantic errors arrive with `columnNumber = 0`. Ask `lspRange` for an absurd column
-  and let it clamp, rather than adding a second position function.
+- `parseError.columnNumber` is a 1-based **UTF-8 byte** offset from the line start — the
+  scanner's *current position at raise time* (`IN_FILE_TELL()` minus the line start in
+  Seed7's `src/error.c`), so it names the byte just **after** a token-level error's
+  offending token, and only a mid-token raise like `ILLEGAL_STRING_ESCAPE` names a byte
+  inside the token. `lspRange` takes a character column, so analyzer columns go through
+  `lspRangeBytes` and nothing else does. Consequence: `[col, col+1]` marks the character
+  *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the
+  escape for `ILLEGAL_STRING_ESCAPE`. Pinned by three checks in
+  `tests/analysis_test.sd7`, each carrying the raw error count, the kind, the line
+  and the message beside the column: `Illegal string escape "\z"` reports column 26 both after
+  `"ππ"` (the `z` there is the 24th character) and after one astral character (there it is
+  the 23rd); and the first diagnostic on `    writeln(1) writeln(2);` — **with its
+  four-space indent**, the byte arithmetic is not the same without it — is
+  `EXPECTED_SYMBOL` at line 4 column 23, one byte past a `writeln` spanning bytes 16-22.
+  Change the interpreter's convention and those checks go red.
+- Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
+  semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
+  and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the
+  comment *opened*. Ask `lspRangeBytes` for an absurd column and let it clamp.
+- `errorType` has 67 identifiers in the interpreter's C enum; the 14 catchable
+  `EXCEPTION`s in `seed7_05.s7i:277-291` are a different set (15 names, one of them
+  `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
+- `#` is both the line-comment introducer and the radix marker of `16#beef`.
+  `doc_store.isRadixHash` decides by context, and `codeText` is the only place that
+  decides. `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
 
 ## Do not "fix" these
 
@@ -135,10 +168,12 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 ## Milestones
 
-M1+M2 (base protocol, lifecycle, sync, diagnostics) are merged-ready. M3's five symbol
-features (documentSymbol, definition, hover, completion, signatureHelp) are in on this
-branch; the trust gate, the `.s7i` staleness fix (R-F10) and local-variable completion were
-split out of it and remain open.
+M1+M2 (base protocol, lifecycle, sync, diagnostics) and M3's five symbol features
+(documentSymbol, definition, hover, completion, signatureHelp) are merged on `master`.
+Still open from M3: the trust gate, local-variable completion, and R-F10 — which is
+a conformance violation as well as stale data, because `textToAnalyze` reads an open
+`.s7i` back from disk while the spec says the server must not read a document's content
+through its uri.
 
 Masking already exists — `doc_store.codeText` blanks string literals, char literals,
 `(* *)` and `#` comments, `wordAt` answers nothing inside masked text, and
@@ -146,4 +181,8 @@ Masking already exists — `doc_store.codeText` blanks string literals, char lit
 "does this position mean anything" but token *spans*: foldingRange, selectionRange and
 semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
 reflection API yields declarations only, never use sites, which is why references and
-rename stay M6.
+rename stay M5. Settle two things first, or M4 makes them permanent: `scan.sd7` is the
+third consumer of the UTF-8 byte-width table, so extracting it out of `transport.sd7` is
+step 1 (see invariant 3); and `utf16Before` scans from index 1 per call — tolerable
+for a hundred capped diagnostics, unusable for a token stream — so give each document
+a cumulative UTF-16 column table in `setVersion` before semanticTokens exists.
