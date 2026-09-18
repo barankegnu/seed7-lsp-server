@@ -19,18 +19,16 @@ const type: analysisResult is new struct
 const func string: driverFor (in string: path) is
   return "$ include \"seed7_05.s7i\";\n  include " <& literal(path) <& ";\n";
 
-const func analysisResult: analyzeText (in string: text,
-                                        in array string: libraryDirs) is func
-  result
-    var analysisResult: out is analysisResult.value;
+# The diagnostics half of an already-parsed `program`. Written as a separate step because the
+# parse is the expensive part (it builds the whole stdlib) and one parse can also answer the
+# symbol half -- see analyzeAll, which a document version pays for once.
+const proc: collectDiags (in program: prog, inout analysisResult: res) is func
   local
-    var program: prog is program.EMPTY;
     var parseError: err is parseError.value;
     var integer: i is 0;
     var lspDiag: diag is lspDiag.value;
   begin
-    prog := parseStri(text, parseOptions.value, libraryDirs);
-    out.completed := TRUE;
+    res.completed := TRUE;
     for i range 1 to errorCount(prog) do
       err := getError(prog, i);
       diag.line1 := err.lineNumber;
@@ -38,8 +36,19 @@ const func analysisResult: analyzeText (in string: text,
       diag.message := err.message;
       diag.errKind := err.error;
       diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
-      out.diags &:= diag;
+      res.diags &:= diag;
     end for;
+  end func;
+
+const func analysisResult: analyzeText (in string: text,
+                                        in array string: libraryDirs) is func
+  result
+    var analysisResult: out is analysisResult.value;
+  local
+    var program: prog is program.EMPTY;
+  begin
+    prog := parseStri(text, parseOptions.value, libraryDirs);
+    collectDiags(prog, out);
   end func;
 
 # Reflection's file for anything declared in the text handed to parseStri -- every buffer
@@ -184,37 +193,45 @@ const func boolean: listed (in array string: texts, in string: one) is func
 
 const type: symSeen is hash [string] integer;
 
-const func array symRec: analyzeSymbols (in string: text,
-                                         in array string: libraryDirs) is func
-  result
-    var array symRec: out is 0 times symRec.value;
+# The symbol half of an already-parsed `program`, appended to `syms`. Both collectors are
+# separate from the parse so analyzeAll can pay for one parseStri and answer both questions.
+const proc: collectSyms (in program: prog, inout array symRec: syms) is func
   local
-    var program: prog is program.EMPTY;
     var ref_list: objs is ref_list.EMPTY;
     var reference: obj is NIL;
     var symSeen: seen is symSeen.EMPTY_HASH;
     var string: keyStr is "";
     var symRec: rec is symRec.value;
   begin
+    objs := globalObjects(prog);
+    for obj range objs do
+      rec.name := str(obj);
+      rec.file := file(obj);
+      if rec.file <> "?" and rec.file <> "" then
+        rec.cat := str(category(obj));
+        rec.ty := safeType(obj);
+        rec.line1 := line(obj);
+        rec.params := paramsOf(obj);
+        rec.sign := signatureOf(obj);
+        keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
+        if keyStr not in seen then
+          seen @:= [keyStr] 1;
+          syms &:= rec;
+        end if;
+      end if;
+    end for;
+  end func;
+
+const func array symRec: analyzeSymbols (in string: text,
+                                         in array string: libraryDirs) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var program: prog is program.EMPTY;
+  begin
     block
       prog := parseStri(text, parseOptions.value, libraryDirs);
-      objs := globalObjects(prog);
-      for obj range objs do
-        rec.name := str(obj);
-        rec.file := file(obj);
-        if rec.file <> "?" and rec.file <> "" then
-          rec.cat := str(category(obj));
-          rec.ty := safeType(obj);
-          rec.line1 := line(obj);
-          rec.params := paramsOf(obj);
-          rec.sign := signatureOf(obj);
-          keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
-          if keyStr not in seen then
-            seen @:= [keyStr] 1;
-            out &:= rec;
-          end if;
-        end if;
-      end for;
+      collectSyms(prog, out);
     exception
       # Every accessor above is total, so reaching here means the walk itself is
       # unreliable. Report nothing rather than a half-truth.
@@ -224,5 +241,36 @@ const func array symRec: analyzeSymbols (in string: text,
         out := 0 times symRec.value;
       catch ILLEGAL_ACTION:
         out := 0 times symRec.value;
+    end block;
+  end func;
+
+# Diagnostics and symbols from ONE parse. The dispatcher holds one of these per open document
+# (spec §4.2): analyzeText and analyzeSymbols each build and throw away a `program`, so a
+# didChange followed by a hover would otherwise cost two parses whose records are identical.
+# The error containment is analyzeSymbols' own -- diagnostics are reported whether or not the
+# reflection walk survives, because that is what analyzeText has always done.
+const type: docAnalysis is new struct
+    var analysisResult: parsed is analysisResult.value;
+    var array symRec: syms is 0 times symRec.value;
+  end struct;
+
+const func docAnalysis: analyzeAll (in string: text,
+                                    in array string: libraryDirs) is func
+  result
+    var docAnalysis: out is docAnalysis.value;
+  local
+    var program: prog is program.EMPTY;
+  begin
+    prog := parseStri(text, parseOptions.value, libraryDirs);
+    collectDiags(prog, out.parsed);
+    block
+      collectSyms(prog, out.syms);
+    exception
+      catch RANGE_ERROR:
+        out.syms := 0 times symRec.value;
+      catch INDEX_ERROR:
+        out.syms := 0 times symRec.value;
+      catch ILLEGAL_ACTION:
+        out.syms := 0 times symRec.value;
     end block;
   end func;

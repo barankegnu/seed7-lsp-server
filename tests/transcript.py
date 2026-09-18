@@ -55,6 +55,62 @@ def expect(cond, label):
     else:
         fails.append(label)
 
+
+# Frame builders, shared by every check that needs more than one request. Written once here
+# because Tasks 10-12 add foldingRange/selectionRange/semanticTokens checks on top of them.
+def req(rid, method, params):
+    return {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
+
+
+def notify(method, params):
+    return {"jsonrpc": "2.0", "method": method, "params": params}
+
+
+def pos(uri, line, character):
+    return {"textDocument": {"uri": uri},
+            "position": {"line": line, "character": character}}
+
+
+def td(uri, version=None):
+    """The `textDocument` member a notification or DocumentSymbol request carries."""
+    doc = {"uri": uri}
+    if version is not None:
+        doc["version"] = version
+    return {"textDocument": doc}
+
+
+def initialize(rid=1):
+    return req(rid, "initialize", {"capabilities": {}, "processId": None, "rootUri": None})
+
+
+def opened(uri, text, version=1):
+    return notify("textDocument/didOpen",
+                  {"textDocument": {"uri": uri, "languageId": "seed7",
+                                    "version": version, "text": text}})
+
+
+def changed(uri, text, version):
+    return notify("textDocument/didChange",
+                  dict(td(uri, version), contentChanges=[{"text": text}]))
+
+
+def closed(uri):
+    return notify("textDocument/didClose", td(uri))
+
+
+def shutdown(rid):
+    return req(rid, "shutdown", {})
+
+
+def exit_():
+    return notify("exit", {})
+
+
+def analyses(err):
+    """How many analyses the server logged. `note()` writes to stderr, so the log line in
+    the miss path is the observable and no counter variable enters the product."""
+    return err.count("analyzed ")
+
 BROKEN = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln(1 + "a");\n  end func;\n'
 FIXED = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln("日本");\n  end func;\n'
 
@@ -411,6 +467,65 @@ expect(len(defn2) == 1 and defn2[0]["range"]["start"]["line"] == 1,
 expect(code2 == 0 and junk2 == 0,
        "exit after shutdown is status 0 and stdout held only frames for the second run (%d, junk=%d)"
        % (code2, junk2))
+
+# --- Task 9 / spec §4.2: one analysis per document version -------------------
+CACHE_URI = "file:///tmp/tt_cache.sd7"
+CACHE_LINES = SYMS.split("\n")
+CACHE_LINE = CACHE_LINES.index("    writeln(totalSize(prototype, 2));")
+CACHE_CHAR = CACHE_LINES[CACHE_LINE].index("totalSize") + 4   # inside "totalSize"
+CACHE_TAIL = "\nconst integer: onlyAfterChange is 1;\n"
+
+# Hover and definition on the same version: both are served from one analysis.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(req(2, "textDocument/hover",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(3, "textDocument/definition",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(analyses(err) == 1,
+       "hover + definition on one version cost one analysis (saw %d)" % analyses(err))
+cache_hov = (by_id.get(2, {}).get("result") or {}).get("contents", {}).get("value", "")
+expect("totalSize" in cache_hov, "the cached records answer the hover (%r)" % cache_hov)
+cache_def = by_id.get(3, {}).get("result") or []
+expect(bool(cache_def) and cache_def[0]["range"]["start"]["line"] == 8,
+       "the cached records answer the definition (%s)" % cache_def[:1])
+
+# A didChange must cost exactly one more analysis, and the new version's own declaration must
+# reach the outline: the same assertion against a cache that never misses is the whole point.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(changed(CACHE_URI, SYMS + CACHE_TAIL, 2)),
+                                frame(req(3, "textDocument/hover",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(4, "textDocument/definition",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(5, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(6)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(analyses(err) == 2,
+       "a didChange costs exactly one more analysis, not three (saw %d)" % analyses(err))
+before_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+after_names = [s["name"] for s in by_id.get(5, {}).get("result") or []]
+expect("onlyAfterChange" not in before_names, "the first outline is the first version's")
+expect("onlyAfterChange" in after_names,
+       "the changed version's own declaration reaches the outline (%s)" % after_names)
+
+# didClose drops the entry: reopened at the *same* version, the document must not inherit the
+# previous session's records. Version equality alone cannot save this one.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(closed(CACHE_URI)),
+                                frame(opened(CACHE_URI, SYMS +
+                                             "\nconst integer: reopenedMarker is 1;\n")),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+reopen_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("reopenedMarker" in reopen_names,
+       "a document reopened after close re-analyses (%s)" % reopen_names)
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)

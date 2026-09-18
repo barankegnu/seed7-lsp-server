@@ -22,6 +22,18 @@ var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
 
+# One analysis of one document version: the diagnostics the push channel publishes and the
+# symbol records every textDocument feature answers from. It cannot live in `lsDoc`, because
+# `symRec` is declared in analysis.sd7 and doc_store.sd7 must not come to include that.
+const type: docCache is new struct
+    var docAnalysis: analyzed is docAnalysis.value;
+    var integer: version is -1;
+  end struct;
+
+const type: docCacheHash is hash [string] docCache;
+
+var docCacheHash: analysisCache is docCacheHash.EMPTY_HASH;
+
 const proc: note (in string: text) is func
   begin
     writeln(STD_UTF8_ERR, "seed7-lsp: " <& text);
@@ -99,12 +111,37 @@ const func string: textToAnalyze (in string: uri) is func
     end if;
   end func;
 
+# The single place a document is analysed. Every reader below goes through it, so one version
+# costs one parseStri and a hover arriving after a change costs none. The version stamp is the
+# invalidation: `setVersion` is the only writer of `openDocs[uri].version`, and didClose drops
+# the entry so a document reopened at the same version cannot inherit the last session's
+# records. The `analyzed ` line on stderr is what tests/transcript.py counts -- the log is the
+# observable, so no counter variable enters the product.
+const proc: ensureAnalyzed (in string: uri) is func
+  local
+    var docCache: fresh is docCache.value;
+  begin
+    if uri in openDocs and
+       not (uri in analysisCache and
+            analysisCache[uri].version = openDocs[uri].version) then
+      fresh.analyzed := analyzeAll(textToAnalyze(uri), libraryDirs);
+      fresh.version := openDocs[uri].version;
+      # ponytail: one entry per document, REPLACED on every version -- never one entry per
+      # version, which would add the measured ~1.4 MiB of records to RSS for every keystroke.
+      # A `hash [string] struct` stores by value (measured), so this cannot alias `fresh`.
+      analysisCache @:= [uri] fresh;
+      note("analyzed " <& uri <& " version " <& str(fresh.version) <&
+           " records " <& str(length(fresh.analyzed.syms)));
+    end if;
+  end func;
+
 const func analysisResult: analyzeDocument (in string: uri) is func
   result
     var analysisResult: out is analysisResult.value;
   begin
-    if uri in openDocs then
-      out := analyzeText(textToAnalyze(uri), libraryDirs);
+    ensureAnalyzed(uri);
+    if uri in analysisCache then
+      out := analysisCache[uri].analyzed.parsed;
     end if;
   end func;
 
@@ -136,13 +173,17 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
     end if;
   end func;
 
-# The only place that decides whether a document is analysed directly or through the
-# synthetic .s7i driver, so no feature has to ask the question.
+# The symbol table behind all five symbol features. Signature unchanged, body now cached:
+# a client that asks for a hover and a definition on one version pays for neither, and a
+# document that is not open answers with no records rather than analysing the empty text.
 const func array symRec: symbolsOfDocument (in string: uri) is func
   result
     var array symRec: out is 0 times symRec.value;
   begin
-    out := analyzeSymbols(textToAnalyze(uri), libraryDirs);
+    ensureAnalyzed(uri);
+    if uri in analysisCache then
+      out := analysisCache[uri].analyzed.syms;
+    end if;
   end func;
 
 const proc: refresh (in string: uri) is func
@@ -257,6 +298,9 @@ const proc: handle (in rpcMsg: msg) is func
       if uri in openDocs then
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
+        # The records belong to the session, not to the uri: a reopen that starts at version 1
+        # again must not be answered from the version-1 analysis it is about to collide with.
+        excl(analysisCache, uri);
       end if;
     else
       if msg.isRequest then
