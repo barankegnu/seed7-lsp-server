@@ -83,7 +83,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
 3. Only `src/utf8bytes.sd7` knows code-point widths: it holds the UTF-8 byte table
    (`utf8CharLength`/`utf8Length`) and the UTF-16 unit rule
-   (`utf16CharLength`/`utf16Length`), and nothing else re-derives either threshold.
+   (`utf16CharLength`), and nothing else re-derives either threshold.
    `src/transport.sd7` owns every outbound byte count — `Content-Length` is its arithmetic
    and no other file emits one. `src/doc_store.sd7` owns position conversion and may consume
    a byte-valued column only to turn it into a character column

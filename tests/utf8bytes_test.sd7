@@ -13,6 +13,17 @@ const proc: main is func
     check("ascii char is 1 unit",    str(utf16CharLength('a')),            "1");
     check("bmp char is 1 unit",      str(utf16CharLength("\8364;"[1])),    "1");
     check("astral char is 2 units",  str(utf16CharLength("\128169;"[1])),  "2");
-    check("utf16 units of a slice",  str(utf16Length("a\128169;b")),       "4");
+    # The boundary pins. Every fixture above sits mid-band -- 97, 960, 8364, 128169 -- so none
+    # of them can tell 128 from 127, 2048 from 2047 or 65536 from 65535, and each threshold in
+    # utf8bytes.sd7 would survive a one-code-point error. chr(n) states the code point as a
+    # number rather than as an escape, because the escape is exactly what the width depends on.
+    check("127 is the last 1-byte char",    str(utf8CharLength(chr(127))),  "1");
+    check("128 is the first 2-byte char",   str(utf8CharLength(chr(128))),  "2");
+    check("2047 is the last 2-byte char",   str(utf8CharLength(chr(2047))), "2");
+    check("2048 is the first 3-byte char",  str(utf8CharLength(chr(2048))), "3");
+    check("65535 is the last 3-byte char",  str(utf8CharLength(chr(65535))),"3");
+    check("65536 is the first 4-byte char", str(utf8CharLength(chr(65536))),"4");
+    check("65535 is the last 1-unit char",  str(utf16CharLength(chr(65535))), "1");
+    check("65536 is the first 2-unit char", str(utf16CharLength(chr(65536))), "2");
     report("utf8bytes");
   end func;

@@ -1,11 +1,14 @@
 $ include "seed7_05.s7i";
 
-# Code-point widths. The only place in this server that knows how wide a character is:
-# utf8Length for the bytes a Content-Length must count, utf16Length for the units an LSP
-# position counts under the negotiated "utf-16" encoding. transport.sd7 owns every outbound
-# byte count; doc_store.sd7 owns every position conversion; both call here rather than
-# re-deriving a threshold, because the two rules differ on purpose (2048 and 65536 are not
-# the same boundary) and a copy of one of them is a bug waiting for the other to move.
+# Code-point widths, per character. The only place in this server that knows how wide a
+# character is: utf8CharLength for the bytes a Content-Length must count, utf16CharLength for
+# the units an LSP position counts under the negotiated "utf-16" encoding, and utf8Length for
+# the whole-string byte count that writeMessage puts in a Content-Length. transport.sd7 owns
+# every outbound byte count; doc_store.sd7 owns every position conversion; both call here
+# rather than re-deriving a threshold, because the two rules differ on purpose (2048 and 65536
+# are not the same boundary) and a copy of one of them is a bug waiting for the other to move.
+# There is no whole-string utf16 count here on purpose: nothing calls for one, and a column
+# table belongs to a document, not to a string.
 
 const func integer: utf8CharLength (in char: ch) is func
   result
@@ -42,16 +45,5 @@ const func integer: utf8Length (in string: stri) is func
   begin
     for i range 1 to length(stri) do
       n +:= utf8CharLength(stri[i]);
-    end for;
-  end func;
-
-const func integer: utf16Length (in string: stri) is func
-  result
-    var integer: units is 0;
-  local
-    var integer: i is 0;
-  begin
-    for i range 1 to length(stri) do
-      units +:= utf16CharLength(stri[i]);
     end for;
   end func;
