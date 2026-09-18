@@ -1113,13 +1113,13 @@ that ever shows up in a profile.
     # measured: len 22/22  a_:=______;_________b$NL
     check("the mask keeps length and newlines and blanks the literals",
           maskOf("a := \"x\ty\"; (* c *) b\n"),
-          "a :=      ;        b\n");
+          "a :=      ;         b\n");
     # the literal '\9;' is FIVE characters; the old fixed-count machine masked seven, which is
     # the hole README records. measured: len 54/54
     #   const_char:_q_is______;_const_integer:_afterThis_is_1;
     check("a numeric-escape char literal masks exactly itself",
           maskOf("const char: q is '\\9;'; const integer: afterThis is 1;"),
-          "const char: q is     ; const integer: afterThis is 1;");
+          "const char: q is      ; const integer: afterThis is 1;");
     # a based literal is code and survives; only the comment goes.
     # measured: len 43/43  const_integer:_c_is_16#beef;_______$NLx_:=_1;
     check("a based literal is code, its comment tail is not",
@@ -1435,8 +1435,8 @@ observations and not arithmetic. `_` is a space, `$NL` a newline, `$TAB` a tab:
 | `a := "x<tab>y"; (* c *) b` + NL | 22/22 | `a_:=______;_________b$NL` |
 | `const char: q is '\9;'; const integer: afterThis is 1;` | 54/54 | `const_char:_q_is______;_const_integer:_afterThis_is_1;` |
 | `const integer: c is 16#beef; # tail` + NL + `x := 1;` | 43/43 | `const_integer:_c_is_16#beef;_______$NLx_:=_1;` |
-| `s := "a\"b"; # c` + NL | 17/17 | `s_:=______;____$NL` |
-| `(* a (* b *) c *) "x" '\9;' # c` + NL | 33/33 | `______________________     ____$NL` |
+| `s := "a\"b"; # c` + NL | 17/17 | `s_:=_______;____$NL` |
+| `(* a (* b *) c *) "x" '\9;' # c` + NL | 32/32 | `_______________________________$NL` |
 
 Row 2 is the recorded hole: the old machine spent three characters on `'\9;'` and then ate the
 `;` and the following space, so `afterThis` was masked and unreachable. Row 3 is the `#` case:

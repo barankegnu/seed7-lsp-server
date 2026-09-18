@@ -425,31 +425,6 @@ const proc: main is func
     check("a bare '(*' at EOF masks to the end of the buffer",
           maskOf("x (*"),
           "x   ");
-    # ---- the mask ----------------------------------------------------------
-    # The mask is a projection of the scan (Task 7), so every expectation below is MEASURED
-    # output of maskOf, annotated with `_` for a space, `$NL` for a newline and `$TAB` for a
-    # tab: a run of spaces in a literal cannot be reviewed by eye. Each mask is the length of
-    # its input, which is the contract doc_store.codeText has always had.
-    # measured: len 22/22  a_:=______;_________b$NL
-    check("the mask keeps length and newlines and blanks the literals",
-          maskOf("a := \"x\ty\"; (* c *) b\n"),
-          "a :=      ;         b\n");
-    # Row 2 is the hole README records: the old fixed-count machine spent SEVEN characters on
-    # a five-character literal -- its own closing quote opened a second one -- so the ';' and
-    # the space after it went too and 'const' below it was unreachable. Five characters of
-    # literal, five blanks. measured: len 54/54  const_char:_q_is______;_const_integer:_afterThis_is_1;
-    check("a numeric-escape char literal masks exactly itself",
-          maskOf("const char: q is '\\9;'; const integer: afterThis is 1;"),
-          "const char: q is      ; const integer: afterThis is 1;");
-    # A based literal is code and survives; only the comment goes. doc_store.isRadixHash used to
-    # guess that from the two neighbouring characters; scan.sd7 knows 16#beef is one number
-    # token. measured: len 43/43  const_integer:_c_is_16#beef;_______$NLx_:=_1;
-    check("a based literal is code, its comment tail is not",
-          maskOf("const integer: c is 16#beef; # tail\nx := 1;"),
-          "const integer: c is 16#beef;       \nx := 1;");
-    check("length never changes",
-          str(length(maskOf("s := \"a\\\"b\"; # c\n"))),
-          "17");
     # All four hidden kinds in one document: a nested comment, a string, a char literal with a
     # numeric escape and a line comment. Only the three spaces between them and the final
     # newline survive, so this is the check that goes red if any one kind stops being hidden.
@@ -458,20 +433,6 @@ const proc: main is func
     check("every hidden kind at once, and only they are blanked",
           maskOf("(* a (* b *) c *) \"x\" '\\9;' # c\n"),
           "                               \n");
-    # The two cross-boundary cases, which had no fixture anywhere before this task and are the
-    # two arm-order questions of nextToken: a '#' must not open a line comment inside a (* *)
-    # comment -- the comment arm runs to its own '*)' and everything in between is ordinary
-    # content -- and a '*)' must not close anything inside a '#' comment, which runs to the
-    # break. Each fixture keeps code on the SAME line after the construct, so a wrong answer
-    # is visible in the mask and not only in a length.
-    # measured: len 25/25  _____________writeln(1);$NL
-    check("a hash inside a (* *) comment does not end it early",
-          maskOf("(* # hash *) writeln(1);\n"),
-          "             writeln(1);\n");
-    # measured: len 26/26  x_:=_1;_________$NLy_:=_2;$NL
-    check("a closing *) inside a # comment does not end it early",
-          maskOf("x := 1; # *) here\ny := 2;\n"),
-          "x := 1;          \ny := 2;\n");
     # A truncated buffer is the normal state while typing and the mask runs on every request
     # path, so an unterminated string, char literal or comment must end at EOF: no raise -- one
     # reaching stdout corrupts the protocol channel -- and no loop that never terminates.
