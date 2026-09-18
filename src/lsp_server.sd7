@@ -127,8 +127,10 @@ const proc: ensureAnalyzed (in string: uri) is func
       fresh.analyzed := analyzeAll(textToAnalyze(uri), libraryDirs);
       fresh.version := openDocs[uri].version;
       # ponytail: one entry per document, REPLACED on every version -- never one entry per
-      # version, which would add the measured ~1.4 MiB of records to RSS for every keystroke.
-      # A `hash [string] struct` stores by value (measured), so this cannot alias `fresh`.
+      # version, which would keep ~1.4 MiB of records per keystroke (spec §4.3 prices one
+      # 1 060-record array at +1.15 MiB). Measured here: 21 versions of one document raised
+      # the server's RSS by 1.5 MiB *in total*, so the replace really does drop the old entry.
+      # A `hash [string] struct` stores by value (probed), so this cannot alias `fresh`.
       analysisCache @:= [uri] fresh;
       note("analyzed " <& uri <& " version " <& str(fresh.version) <&
            " records " <& str(length(fresh.analyzed.syms)));
