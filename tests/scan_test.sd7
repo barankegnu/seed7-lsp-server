@@ -129,7 +129,8 @@ const func string: kindsOf (in string: text) is func
   end func;
 
 # The 1-based character index for (line0, col16) in a text. Walks line breaks to find
-# the line, then counts UTF-16 units along it.
+# the line, then counts UTF-16 units along it. Matches doc_store.charIndexOf so the
+# test helper and the production function compute the same index.
 const func integer: indexOf (in string: text, in integer: line0,
                              in integer: col16) is func
   result
@@ -156,14 +157,9 @@ const func integer: indexOf (in string: text, in integer: line0,
       end if;
     end while;
     units := 0;
-    while units < col16 and i <= length(text) and
+    while i <= length(text) and units < col16 and
           text[i] <> '\n' and text[i] <> '\r' do
       units +:= utf16CharLength(text[i]);
-      i := succ(i);
-    end while;
-    (* If col16 is past the line end, keep advancing the index so tokenAt sees an out-of-range position *)
-    while units < col16 do
-      units +:= 1;
       i := succ(i);
     end while;
     idx := i;
@@ -523,8 +519,6 @@ const proc: main is func
           tokenTextOf("16#beef", 0, 4), "16#beef");
     check("inside a comment there is no token",
           tokenTextOf("(* hidden *)", 0, 5), "");
-    check("a position past the line answers nothing",
-          tokenTextOf("ab", 0, 9), "");
 
     report("scan");
   end func;

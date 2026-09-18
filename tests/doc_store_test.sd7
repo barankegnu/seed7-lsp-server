@@ -179,6 +179,12 @@ const proc: main is func
     setVersion(doc, "\"x\128169;y\" zzz", 1);
     check("a name after an astral string keeps its real UTF-16 column",
           str(wordAt(doc, 0, 7).character1), "7");
+    # A non-ASCII character is one TK_ILLEGAL token in the scanner, but wordAt suppresses
+    # it so hovering a control character does not offer a one-character word. The old
+    # character-run machine returned nothing for it; the suppression preserves that.
+    setVersion(doc, "a \8; b", 1);
+    check("a non-ASCII character under the cursor answers nothing",
+          wordAt(doc, 0, 2).word, "");
     # Two guards in the scanner's pastNumber that no fixture above reaches. The first is the one
     # standing between this rule and a comment leak: '#' after a non-digit must comment,
     # and only the left-neighbour test says so. The second is the truncated buffer a

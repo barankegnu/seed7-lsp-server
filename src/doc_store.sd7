@@ -224,9 +224,17 @@ const func integer: charIndexOf (in lsDoc: doc, in integer: line0,
 # The column is a CHARACTER column and the width counts characters, so completion's
 # prefixOf and hover's range need no change. The token comes from the scanner, not a
 # character run, which is what closes the a<b and 16#beef defects.
-# For operators, only those whose characters are in OP_CHARS are returned: the scanner's
-# SPECIAL_CHARS also holds '$', '.' and '`', which are directive markers or punctuation,
-# not meaningful symbols for hover/definition/completion.
+#
+# Two suppressions preserve what the deleted character-run machine answered:
+# - TK_ILLEGAL: a non-ASCII character under the cursor is one illegal token in the
+#   scanner, but the old machine returned nothing for it. Hovering a control character
+#   should not offer a one-character word.
+# - Operators whose first character is not in OP_CHARS: `.`, `$` and `` ` `` are special
+#   characters per manual/tokens.htm 10.2.2 and the scanner recognizes them as tokens,
+#   but the old machine's OP_CHARS excluded them. `.` is a declared operator with 79
+#   overloads in the base program, so this suppression is a known loss, not a rule about
+#   Seed7. The filter is a preserved defect from the character-run era, recorded so a
+#   follow-up spec can reopen it.
 const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
                             in integer: character0) is func
   result
@@ -242,9 +250,9 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
       start := doc.lineStart[lineIdx];
       idx := charIndexOf(doc, line0, character0);
       tk := tokenAt(doc.text, idx);
-      if tk.start > 0 and not hiddenKind(tk.kind) then
+      if tk.start > 0 and not hiddenKind(tk.kind) and tk.kind <> TK_ILLEGAL then
         if tk.kind = TK_OP and not opChar(doc.text[tk.start]) then
-          (* Operator not in OP_CHARS (e.g. '$', '.', '`'): not a meaningful symbol *)
+          (* `.`, `$`, `` ` ``: suppressed per the comment above *)
         else
           out.word := doc.text[tk.start .. tk.stop];
           out.line1 := succ(tk.line0);
