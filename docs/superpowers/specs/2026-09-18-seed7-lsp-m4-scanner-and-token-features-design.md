@@ -392,6 +392,15 @@ semanticTokensProvider: { legend: {7 types, 2 modifiers as in §6.2}, range: tru
 - **`selectionRange` over a stream is O(document) per request.** Accepted for the same reason
   `codeText` already is; the upgrade path is §4.3's cached array, priced in that table.
 
+- **Hover and definition cannot reach `.`, and this spec knows it.** `globalObjects` over a bare
+  `seed7_05.s7i` program holds 79 symbols named `.` — a declared, heavily overloaded operator —
+  and the scanner sees `.` as an operator token, so `wordAt` *could* answer it. Task 8 suppresses
+  it instead, to preserve the behaviour every symbol feature has had since M3. That suppression
+  is a known gap, not a rule about Seed7, and it is documented as such in the code. Closing it is
+  a decision about `definitionResult`'s contract — an empty array means "a symbol with no
+  locations", `null` means "there was nothing to ask about" — which needs its own spec and its own
+  checks rather than a clause folded into a projection.
+
 ## 12. Plan decomposition
 
 Thirteen tasks, in the order that keeps `make test` green at every commit: the width-table
