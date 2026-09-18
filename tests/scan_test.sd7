@@ -182,5 +182,30 @@ const proc: main is func
           positionsOf("a := b\r\nc\r\n d"), "0:0 0:2 0:5 1:0 2:1");
     check("a lone-CR document gives the same lines and columns",
           positionsOf("a := b\rc\r d\r"), "0:0 0:2 0:5 1:0 2:1");
+    check("integer, bigInteger, based, float, exponent",
+          kindsOf("12345 12345_ 16#beef 2#0001_ 12.3e-4 1e+3"),
+          "number 0:0:5 [12345] | number 0:6:6 [12345_] | number 0:13:7 [16#beef] " &
+          "| number 0:21:7 [2#0001_] | number 0:29:7 [12.3e-4] | number 0:37:4 [1e+3]");
+    check("a range is number, op, number",
+          kindsOf("1 .. 5"),
+          "number 0:0:1 [1] | op 0:2:2 [..] | number 0:5:1 [5]");
+    # The dots sit against the digits on purpose. With a space on either side -- "1 . 5" -- the
+    # float arm is never reached, so no change to its 'a digit must follow' test could fail this
+    # check. ".5" holds the other half of the rule: a dot with no digit BEFORE it is an operator,
+    # because the number arm only opens on a digit.
+    check("a dot needs a digit on each side to be a float",
+          kindsOf("1. 5 .5"),
+          "number 0:0:1 [1] | op 0:1:1 [.] | number 0:3:1 [5] | op 0:5:1 [.] | number 0:6:1 [5]");
+    # The hash rule, pinned as a width rather than through kindsOf: '#' becomes a lineComment
+    # token only in Task 6, and "16#" is the bound guard (a hash at EOF). The '# has to touch the
+    # digits for any of this to discriminate -- pastNumber stops scanning at the space in "5 # x",
+    # so a separated hash could not tell the extDigit test from its absence.
+    check("a hash extends a number only when an extended digit follows it",
+          str(firstWidthOf("5# x")) & "/" & str(firstWidthOf("16#")) & "/" &
+          str(firstWidthOf("2#0f")) & "/" & str(firstWidthOf("2#0_")),
+          "1/2/4/4");
+    check("an e that starts no exponent ends the number",
+          kindsOf("1e; 2"),
+          "number 0:0:1 [1] | name 0:1:1 [e] | op 0:2:1 [;] | number 0:4:1 [2]");
     report("scan");
   end func;

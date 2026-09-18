@@ -97,6 +97,82 @@ const proc: skipWhitespace (in string: text, inout scanCursor: cur) is func
     end while;
   end func;
 
+const func boolean: extDigit (in char: ch) is
+  return ch in LETTERS or ch in DIGITS;
+
+# TRUE when index j holds the E/e that starts an exponent: a sign is optional, a digit is not.
+const func boolean: startsExponent (in string: text, in integer: j) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: k is 0;
+  begin
+    out := FALSE;
+    if j <= length(text) and (text[j] = 'E' or text[j] = 'e') then
+      k := succ(j);
+      if k <= length(text) and (text[k] = '+' or text[k] = '-') then
+        k := succ(k);
+      end if;
+      out := k <= length(text) and text[k] in DIGITS;
+    end if;
+  end func;
+
+const proc: skipDigits (in string: text, inout integer: j) is func
+  begin
+    while j <= length(text) and text[j] in DIGITS do
+      j := succ(j);
+    end while;
+  end func;
+
+const proc: skipExtDigits (in string: text, inout integer: j) is func
+  begin
+    while j <= length(text) and extDigit(text[j]) do
+      j := succ(j);
+    end while;
+  end func;
+
+const proc: skipExponent (in string: text, inout integer: j) is func
+  begin
+    j := succ(j);
+    if j <= length(text) and (text[j] = '+' or text[j] = '-') then
+      j := succ(j);
+    end if;
+    skipDigits(text, j);
+  end func;
+
+# lit_number's dispatch order, in index terms. Seed7 allows at most one of '.', '_', '#' or an
+# exponent after the decimal digits, which is why these are elsif arms and not a loop:
+# 16#1.5 is a based number and then a dot, not a float.
+const func integer: pastNumber (in string: text, in integer: first) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: j is 0;
+  begin
+    j := succ(first);
+    skipDigits(text, j);
+    if j <= length(text) and text[j] = '.' and succ(j) <= length(text) and
+       text[succ(j)] in DIGITS then
+      j := succ(j);
+      skipDigits(text, j);
+      if startsExponent(text, j) then
+        skipExponent(text, j);
+      end if;
+    elsif j <= length(text) and text[j] = '_' then
+      j := succ(j);
+    elsif j <= length(text) and text[j] = '#' and succ(j) <= length(text) and
+          extDigit(text[succ(j)]) then
+      j := succ(j);
+      skipExtDigits(text, j);
+      if j <= length(text) and text[j] = '_' then
+        j := succ(j);
+      end if;
+    elsif startsExponent(text, j) then
+      skipExponent(text, j);
+    end if;
+    out := j;
+  end func;
+
 # One token, starting where the cursor sits: valid only when cur.offset <= length(text) and
 # the character there is not whitespace, and it leaves the cursor one character past the
 # token. An unrecognised character is one illegal token, one character wide -- that
@@ -122,6 +198,12 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
         j := succ(j);
       end while;
       out.kind := TK_NAME;
+    elsif ch in DIGITS then
+      j := pastNumber(text, cur.offset);
+      # digits, base markers and signs are all ASCII, so a number is as wide in units as in
+      # characters -- stated here because the next arms cannot say it.
+      units := j - cur.offset;
+      out.kind := TK_NUMBER;
     elsif ch in BRACKETS then
       out.kind := TK_BRACKET;
     elsif ch in SPECIAL_CHARS then
