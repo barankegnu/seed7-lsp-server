@@ -97,7 +97,7 @@ removes rather than works around.
 It does not resolve `::=`, `<&` or `&` into distinct tokens (a run is a run), it does not know
 keywords (they are `TK_NAME` tokens; §6 classifies them), and it does not attempt the
 `$`-pragma grammar beyond treating `$` as the start of an operator run. All three are fine for
-folding, selection ranges and a name/literal/comment legend, and each is stated here so nobody
+folding, selection ranges and a name/literal legend, and each is stated here so nobody
 later reads the scanner as a parser.
 
 ### 3.4 The one knowingly-wrong rule
@@ -231,11 +231,27 @@ that position**, which the spec permits explicitly, rather than a guessed range.
 Legend, registered up front, as the capability requires:
 
 ```
-tokenTypes:     keyword, comment, string, number, function, type, variable,
-                parameter, enumMember
+tokenTypes:     comment, string, number, function, type, variable, enumMember
 tokenModifiers: declaration, defaultLibrary
 range: true     full: true            # no delta: no resultId, no previousResultId state
 ```
+
+Two entries that stood in this legend during review are gone, removed by measurement rather than
+taste, and §8's capability must match. **`keyword`**: the terminals Seed7 declares for itself —
+`grep -h '^\$ syntax' lib/syntax.s7i | grep -o '\.[a-z_][a-z_0-9]*\.' | tr -d '.' | sort -u` —
+are 77 words, and they include `and`, `or`, `not`, `array`, `set`, `hash`, `class`, `cast`, `mod`,
+`div`, `mult`, `rem`, `times`, `value`, `radix`, `sci`, `conv`, `digits`, `elem`, `find`, `parse`
+and `tuple`: terminals of the declared syntax that are also ordinary-looking names. The curated
+keyword lists in `seed7-mode.el` (seven of them, the source `completion.sd7` already copies) union
+to 50, and the two sets differ by forty words in each direction — `result`, `local`, `proc`,
+`enum`, `noop`, `DYNAMIC`, `forward`, `default`, `param`, `fixLen` and `len` are curated but appear
+in no `$ syntax` declaration, while `array`, `set`, `hash`, `mod`, `div`, `value`, `class` and
+`cast` are declared but in no curated list. Neither set is the truth about a language whose own
+design says only the analyzer knows what Seed7 is; advertising a `keyword` class would let the
+server override a client grammar that is not wrong, in the one way Q4's rule exists to avoid.
+**`parameter`**: `analysis.sd7`'s `paramsOf` returns `array string` — a parameter has no `symRec`,
+no declaration line and no position, so reflection cannot say which name in the text is a
+parameter.
 
 - **No `TK_BRACKET` or `TK_OP` token is emitted.** The rule, not a knob: a Seed7 operator is a
   `special_identifier` run whose meaning only the analyzer knows, and every client colors
@@ -248,8 +264,9 @@ range: true     full: true            # no delta: no resultId, no previousResult
   | `lib/aes.s7i` | 17 908 | 7 559 | 37 795 | 226 KB |
   | `lib/shiftjis.s7i` | 85 155 | 28 515 | 142 575 | 850 KB |
 
-  The 850 KB worst case is why `range` is advertised: a client coloring a visible window asks
-  for a window.
+  The 850 KB worst case is why `range` is advertised: a client coloring a visible window asks for
+  a window.
+
 - **Name classes come from the cached `symRec` list** through a `hash [string] integer` built
   beside it (§4.2). `features/kinds.sd7`, which already maps `category`+`type` to
   `SymbolKind`/`CompletionItemKind`, is the same table and is extended, not re-derived. A name
@@ -257,8 +274,6 @@ range: true     full: true            # no delta: no resultId, no previousResult
   while inventing `variable` for every identifier overrides a highlighter that is not wrong.
   Overloaded names carry one class: the first declaration's, since the legend cannot express
   "depends on the call".
-- `declaration` when the token is the name field of a declaration on that line;
-  `defaultLibrary` when that declaration's `file` is not the document's path.
 - `keyword` needs the reserved list, and in Seed7 that list is *declared*. Measured source:
   `lib/syntax.s7i`'s 192 `$ syntax` lines, from which
   `grep -h '^\$ syntax' syntax.s7i | grep -o '\.[a-z_][a-z_0-9]*\.' | tr -d '.' | sort -u`
@@ -302,7 +317,7 @@ Static, per invariant 5, and each advertised only with its method answered:
 ```
 foldingRangeProvider: true
 selectionRangeProvider: true
-semanticTokensProvider: { legend: {…§6.2…}, range: true, full: true }
+semanticTokensProvider: { legend: {7 types, 2 modifiers as in §6.2}, range: true, full: true }
 ```
 
 `positionEncoding` stays `"utf-16"`. `textDocument/diagnostic` stays unadvertised (design §4.5).
@@ -354,10 +369,12 @@ semanticTokensProvider: { legend: {…§6.2…}, range: true, full: true }
 - **A lexical scanner paraphrases the analyzer.** Design §1 says only the analyzer knows what
   Seed7 is. That is true of the *grammar* and false of the *lexicon*: token boundaries do not
   depend on `$ syntax` declarations, except for `$ names unicode;` (§3.4). The scanner is
-  therefore sound for folding, selection and a name/literal/comment legend, and is not a parser
+  therefore sound for folding, selection and a name/literal legend, and is not a parser
   and never used as one.
-- **Keyword colouring is a list, and the language is extensible.** A user-declared construct
-  will not be coloured as a keyword. Nothing else about it breaks; folding sees its `end`.
+- **No keyword colouring at all**, for the reason in §6.2: a fixed list cannot be right in a
+  language where constructs are declared, and the two available lists disagree by forty words.
+  Folding is unaffected — it reads construct keywords as tokens, where a wrong guess costs a
+  missing region rather than a wrong colour.
 - **850 KB frames exist.** Bounded by the legend rule and `range`, not by a cap. If a client
   measurably suffers, the upgrade is a documented token ceiling, and the `ponytail:` comment
   says so in the file that would grow it.
