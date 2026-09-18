@@ -56,9 +56,17 @@ Applies to every task. Values are copied from the spec and the repo's own rules.
   scanner cannot hand its current token to a caller-supplied handler. Every consumer therefore
   writes its own `skipWhitespace`/`nextToken` loop, and what is shared is the *machine*, not the
   walk. Do not "fix" the duplicated loop.
-* `make test` at HEAD must stay green. Task 7 and Task 9 rewrite code other features read;
-  their exit criterion is that the existing 203 unit checks and 53 wire checks pass unchanged,
-  except where a check is listed below as deliberately re-pinned.
+* `make test` at HEAD must stay green. The baseline is a moving total, not the plan's number:
+  203 unit + 53 wire checks at the plan's writing, 216 + 53 after Task 1. What must not change is
+  every *pre-existing* check's verdict — a suite total may only move by checks this plan adds or
+  explicitly relocates. Task 7 and Task 9 rewrite code other features read, so their exit criterion
+  is that no pre-existing check flips, except where a check is named below as deliberately
+  re-pinned.
+
+* **Totals are counted, not predicted.** This plan's arithmetic on suite totals was wrong on its
+  first task (it claimed `scan: 7 checks` for a file holding 9), so from Task 3 onward every step
+  that states a total says "the suite's real total" instead: run it, report what printed, and treat
+  any number in the plan as advisory. A check is never adjusted to meet a predicted count.
 
 ## File Structure
 
@@ -422,9 +430,9 @@ $ include "seed7_05.s7i";
 # Seed7 data only: no positions (doc_store owns those), no jsonValue, no LSP shape.
 #
 # A token may span lines -- only (* *) does, and a string continued with '\' + newline. Such
-# a token reports the line and column it STARTS on and a width16 of 0; a consumer that needs
-# the end takes 'stop'. semanticTokens clips to that first line, which is what a client
-# without multilineTokenSupport would do anyway (spec 6.2).
+# a token reports the line and column it STARTS on and the width16 it occupies on THAT line only
+# -- never 0, never the whole span. A consumer needing the end position takes 'stop'.
+# semanticTokens emits one token per line such a span covers (spec 6.2).
 
 const integer: TK_ILLEGAL is 0;
 const integer: TK_NAME is 1;
@@ -454,7 +462,7 @@ const type: scanCursor is new struct
 const char: BACKSLASH is chr(92);
 const char: APOSTROPHE is chr(39);
 
-const set of char: OP_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
+const set of char: SPECIAL_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
                                 ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
 const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};
 const set of char: DIGITS is {'0','1','2','3','4','5','6','7','8','9'};
@@ -513,8 +521,8 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
       out.kind := TK_NAME;
     elsif ch in BRACKETS then
       out.kind := TK_BRACKET;
-    elsif ch in OP_CHARS then
-      while j <= length(text) and text[j] in OP_CHARS do
+    elsif ch in SPECIAL_CHARS then
+      while j <= length(text) and text[j] in SPECIAL_CHARS do
         units +:= utf16CharLength(text[j]);
         j := succ(j);
       end while;
@@ -542,7 +550,7 @@ comment in `scan.sd7` says so, so a later reader meets the ceiling before trippi
   `kindName` compiles; Tasks 3–6 give them behaviour. Leaving them declared-but-unproduced is
   deliberate: the enum order is part of the module's contract with `semanticTokens`.
 
-- [ ] **Step 5: Run and confirm green.** `make test-scan` → `scan: 7 checks, 0 failed`. Then
+- [ ] **Step 5: Run and confirm green.** `make test-scan` → `scan: 9 checks, 0 failed`. Then
   `make test`.
 
 - [ ] **Step 6: Prove two branches fail.** (i) In `nextToken`, delete the inner `while` of the
@@ -693,7 +701,7 @@ and inside `nextToken`, as the arm before `elsif ch in BRACKETS`:
       out.kind := TK_NUMBER;
 ```
 
-- [ ] **Step 4: Run to green.** `make test-scan` → `scan: 12 checks, 0 failed`; `make test`.
+- [ ] **Step 4: Run to green.** `make test-scan` → the suite's real total, 0 failed; `make test`.
 
 - [ ] **Step 5: Prove the three guards can fail.** (i) `extDigit(text[succ(j)])` → `TRUE`:
   expected FAIL `a hash with nothing extendable after it is a line comment`. (ii) the float arm's
@@ -736,7 +744,7 @@ can occupy several lines.
           "string 0:0:9 [\"\\16#ff;\"]");
     check("a continuation crosses the newline and stays one token",
           kindsOf("\"ab\\\n        \\cd\";"),
-          "string 0:0:0 [\"ab\\\n        \\cd\"] | op 0:20:1 [;]");
+          "string 0:0:4 [\"ab\\\n        \\cd\"] | op 1:12:1 [;]");
     check("an unterminated string ends at EOF and raises nothing",
           kindsOf("const string: s is \"abc"),
           "name 0:0:5 [const] | name 0:6:6 [string] | op 0:12:1 [:] | name 0:14:1 [s] " &
@@ -746,9 +754,12 @@ can occupy several lines.
           str(firstWidthOf("\"x\128169;y\"")), "6");
 ```
 
-The continuation check expects `width16` of **0**, because the token ends on a later line and a
-multi-line token reports no width (Task 2's contract). If a future change makes that number
-meaningful, this is the check that says so.
+The continuation check expects `width16` of **4** — the four units `"`, `a`, `b`, `\` that sit on
+the line the token starts on — and the `;` that follows at **line 1, column 3**, because the
+cursor is left where the token truly ended. That is the convention §3.1 now states: a multi-line
+token reports its START line/column and the width it occupies on that line, never zero and never a
+span-wide number. Both numbers were measured against a compiled prototype, not counted by hand;
+if a run disagrees, re-measure rather than editing the expectation to fit.
 
 - [ ] **Step 2: Run, and name the failure.** `make test-scan`. Expected: five FAILs where the
   string comes back as `op`/`name`/`illegal` fragments starting at the quote — no arm claims `'"'`
@@ -843,21 +854,37 @@ const func integer: pastEscape (in string: text, in integer: j) is func
       out.kind := TK_STRING;
 ```
 
-- [ ] **Step 5: Make the multi-line rule explicit in `nextToken`'s tail.** The current
-  `out.width16 := units;` must not silently report a stale count for a token that ended on a
-  later line. Replace the tail with:
+- [ ] **Step 5: Make the multi-line rule explicit, in the arms, not in a tail.** A token that
+  crosses a line owns width on its start line and nothing else, and the way to get that right is
+  to stop counting when the cursor leaves the line — never to zero the number afterwards, which
+  would also throw away the units the token *did* occupy there. So every place that advances
+  `units` in a token that may span lines sits behind `if cur.line0 = out.line0`, including the
+  character that carries the cursor to the next line (a continuation's first backslash counts on
+  the line it sits on). The tail stays exactly as Task 2 left it:
 
 ```seed7
     out.stop := pred(j);
-    if cur.line0 <> out.line0 then
-      units := 0;
-    end if;
     out.width16 := units;
     cur.col16 +:= units;
     cur.offset := j;
 ```
 
-- [ ] **Step 6: Run to green.** `make test-scan` → `scan: 17 checks, 0 failed`. Then `make test`
+The two numbers below are derived, and the derivation is the test — write it in the check's
+comment so a reader can re-check it without running anything. For the fixture `"ab\` + newline +
+eight spaces + `\cd";`:
+- the string token starts at line 0 column 0 and occupies `"`, `a`, `b`, `\` on that line → `w` 4;
+- the cursor then lives on line 1, advanced per character across the eight spaces (0-7), the
+  closing `\` (8), `c` (9), `d` (10) and the terminating `"` (11) → the `;` sits at column 12.
+
+So the expectation is `string 0:0:4 [...] | op 1:12:1 [;]`. If a run says otherwise, the run is
+right and one of two things is wrong: the derivation above, or the arms — and the failure to be
+watched for is the second one, because a multi-line token's interior must still advance
+`cur.col16` per character even though it no longer adds to `units`. Those are two different
+quantities and only the first is the token's width. A `;` measured at column 3 instead of 12 is
+a cursor that stopped counting, which would hand every later token on that line a column a full
+line's width too early.
+
+- [ ] **Step 6: Run to green.** `make test-scan` → 0 failed at the suite's real total. Then `make test`
   — `doc_store_test` must be untouched: the mask is still the old machine until Task 7.
 
 - [ ] **Step 7: Prove three guards.** (i) delete the `text[j] <> '"'` from the `while` condition:
@@ -935,7 +962,7 @@ count is what loses the characters *after* the closing quote.
       out.kind := TK_CHAR;
 ```
 
-- [ ] **Step 4: Run to green.** `make test-scan` → `scan: 20 checks, 0 failed`; `make test`.
+- [ ] **Step 4: Run to green.** `make test-scan` → 0 failed at the suite's real total; `make test`.
 
 - [ ] **Step 5: Prove it.** Replace `units +:= j - before;` with `units +:= 1;` — the fixed-count
   assumption that produced the recorded hole. Expected: FAIL `the five char spellings and their
@@ -1031,7 +1058,7 @@ git commit -m "Give char literals their real length, which is what the mask was 
       out.kind := TK_LINE_COMMENT;
 ```
 
-- [ ] **Step 4: Run to green.** `make test-scan` → `scan: 25 checks, 0 failed`; `make test`.
+- [ ] **Step 4: Run to green.** `make test-scan` → 0 failed at the suite's real total; `make test`.
 
 - [ ] **Step 5: Prove it twice.** (i) `depth := 1` → `depth := 9` … better: replace `depth := 1`
   with `depth := 1` and then make the `*)` arm not decrement (`depth := pred(depth)` deleted);
@@ -1223,8 +1250,11 @@ a big file (the mask always scans the whole document; this one does not).
 
 **Interfaces:**
 - Consumes: `nextToken`, `skipWhitespace`, `lsDoc.lineStart`, `lineWidth`.
-- Produces: `tokenAt (in string: text, in integer: line0, in integer: col16) → tok`, where a
-  `start` of 0 means "no token here"; `wordRef` unchanged in shape.
+- Produces: `tokenAt (in string: text, in integer: idx) → tok`, where `idx` is a 1-based character
+  index and a `start` of 0 means "no token here"; `wordRef` unchanged in shape. It takes an index
+  and not a (line, column) deliberately: containment for a token that spans lines is only exact in
+  indices, and converting a position to an index is `doc_store`'s job under invariant 2, not the
+  scanner's.
 
 - [ ] **Step 1: Write the failing checks** in `tests/scan_test.sd7`:
 
@@ -1280,7 +1310,7 @@ const func string: tokenTextOf (in string: text, in integer: line0,
 #
 # Returns a tok with start = 0 when the position is outside every token, including inside a
 # comment or a literal, which is what makes a request inside "..." answer nothing.
-const func tok: tokenAt (in string: text, in integer: line0, in integer: col16) is func
+const func tok: tokenAt (in string: text, in integer: idx) is func
   result
     var tok: out is tok.value;
   local
@@ -1298,17 +1328,16 @@ const func tok: tokenAt (in string: text, in integer: line0, in integer: col16) 
         after := TRUE;
       else
         tk := nextToken(text, cur);
-        if tk.line0 > line0 then
+        if tk.start > idx then
           after := TRUE;
-        elsif tk.line0 = line0 and hiddenKind(tk.kind) and col16 >= tk.col16 and
-              col16 <= tk.col16 + tk.width16 then
-          out.start := 0;
+        elsif idx >= tk.start and idx <= tk.stop then
+          if hiddenKind(tk.kind) then
+            out.start := 0;
+          else
+            out := tk;
+          end if;
           after := TRUE;
-        elsif tk.line0 = line0 and col16 > tk.col16 and
-              col16 <= tk.col16 + tk.width16 then
-          out := tk;
-          after := TRUE;
-        elsif tk.line0 = line0 and col16 = tk.col16 and out.start = 0 then
+        elsif idx = succ(tk.stop) and not hiddenKind(tk.kind) and out.start = 0 then
           out := tk;
         end if;
       end if;
@@ -1316,9 +1345,21 @@ const func tok: tokenAt (in string: text, in integer: line0, in integer: col16) 
   end func;
 ```
 
-The last `elsif` keeps the *starts-here* token as a candidate without stopping the walk, so a
-token ending at the same column wins. `out.start = 0` is the guard that makes the first such
-candidate the one that is kept.
+Index arithmetic replaces the whole column comparison. `idx > tk.stop` is the prefix bound —
+the walk stops at the first token that starts past the question, which is what makes this cheaper
+than a whole-document mask. The `idx = succ(tk.stop)` arm is the left-of-character rule in its
+exact form: a position sitting just past a token's last character names that token, and a hidden
+kind returns nothing at all. A (line, column) pair would have needed the width, and the width of a
+multi-line token is by convention only its first line — so a position on the second line of a
+comment would have matched no token and the walk would have run on into the token after the
+comment, answering a name from inside a comment. That is why this takes an index.
+
+The boundary rule Task 2's `tokenColOf` test helper uses is inclusive at the token's end
+(`col16 <= tk.col16 + tk.width16`) because that is `doc_store.wordAt`'s left-of-character rule:
+a position that *ends* a token names it. `tokenAt` below must honour the same convention, and
+`tests/scan_test.sd7`'s astral-column checks are pinned to it — if `tokenAt` were written
+half-open, the helper and the production rule would drift and the astral check would go red for a
+reason that looks like a width bug. Say so in the commit message when the first such check moves.
 
 - [ ] **Step 4: Rewrite `wordAt`** in `src/doc_store.sd7` as a thin adapter, because every feature
   already reads a `wordRef`:

@@ -296,9 +296,11 @@ parameter.
   reader can re-derive it instead of trusting it. `completion.sd7:SEED7_KEYWORDS`, whose
   provenance is a copy of `seed7-mode.el`'s lists, stays as it is — it is a completion list, not
   a lexer table, and unifying the two is not this milestone's business.
-- Multi-line `(* *)` comments are clipped to the line they start on unless the client advertises
-  `multilineTokenSupport`, because a token whose length passes its line end is truncated by
-  clients that lack it, and clipping ourselves is smaller than depending on that.
+- Multi-line tokens are emitted as one token per line they occupy, each with the width that
+  line's share of the span covers. `multilineTokenSupport` is not advertised, and a client
+  without it treats a length that passes the line end as truncated there — so a 50-line `(* *)`
+  licence header colours its first line only, which is the visible defect of the lazy choice;
+  emitting per-line pieces costs one walk of the span and no new state.
 - `textDocument/semanticTokens/range` scans from the document start (the analyzer allows a
   broader answer) and emits tokens intersecting the requested range.
 
