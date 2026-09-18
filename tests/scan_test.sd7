@@ -189,6 +189,17 @@ const proc: main is func
     check("a range is number, op, number",
           kindsOf("1 .. 5"),
           "number 0:0:1 [1] | op 0:2:2 [..] | number 0:5:1 [5]");
+    # The same range with no spaces at all, which is the different path through pastNumber that
+    # the fixture above cannot reach: there the '.' is never the character a digit-run stops at.
+    # Deleting the 'a digit must follow the dot' test would make this one number, not three.
+    check("a range glued to its dots is number, op, number",
+          kindsOf("1..5"),
+          "number 0:0:1 [1] | op 0:1:2 [..] | number 0:3:1 [5]");
+    # 37#0 is rejected by the ANALYZER for its base; the scanner still owes it one number token,
+    # because lit_number's shape is not the scanner's business and semanticTokens colours it.
+    check("an invalid base is still one number token",
+          kindsOf("37#0"),
+          "number 0:0:4 [37#0]");
     # The dots sit against the digits on purpose. With a space on either side -- "1 . 5" -- the
     # float arm is never reached, so no change to its 'a digit must follow' test could fail this
     # check. ".5" holds the other half of the rule: a dot with no digit BEFORE it is an operator,
@@ -321,5 +332,56 @@ const proc: main is func
     check("a lone backslash at end of buffer is one char token and raises nothing",
           kindsOf("x := '\\"),
           "name 0:0:1 [x] | op 0:2:2 [:=] | char 0:5:2 ['\\]");
+    # ---- comments ----------------------------------------------------------
+    check("comments nest",
+          kindsOf("(* a (* b *) c *)"),
+          "comment 0:0:17 [(* a (* b *) c *)]");
+    # The token ends at the OUTER '*)' and the text after it is code again. 'comments nest' cannot
+    # see this: its comment runs to the end of the fixture either way, so without this check a close
+    # that never decrements is invisible.
+    check("the outer '*)' ends the comment, and what follows is code",
+          kindsOf("(* a (* b *) *) writeln(1);"),
+          "comment 0:0:15 [(* a (* b *) *)] | name 0:16:7 [writeln] | bracket 0:23:1 [(] " &
+          "| number 0:24:1 [1] | bracket 0:25:1 [)] | op 0:26:1 [;]");
+    check("a multi-line comment reports its first line only",
+          kindsOf("(* one\n   two *)"),
+          "comment 0:0:6 [(* one\n   two *)]");
+    check("the line comment starts at the hash and stops before the newline",
+          kindsOf("x := 1; # trailing\ny := 2;"),
+          "name 0:0:1 [x] | op 0:2:2 [:=] | number 0:5:1 [1] | op 0:6:1 [;] " &
+          "| lineComment 0:8:10 [# trailing] | name 1:0:1 [y] | op 1:2:2 [:=] " &
+          "| number 1:5:1 [2] | op 1:6:1 [;]");
+    check("an unclosed comment ends at EOF and raises nothing",
+          kindsOf("(* unclosed\nmore;"),
+          "comment 0:0:11 [(* unclosed\nmore;]");
+    # The width, not kindsOf, so the '\r' never reaches a printed string. Three units is "# c": a
+    # lone CR ends the comment because lineEnd -- not '\n' alone -- is this server's line model
+    # (doc_store.lineStarts), the same one the line-ending trio above holds every other arm to.
+    # A '\n'-only test reports four, having taken the CR into the comment.
+    check("a lone CR ends a line comment",
+          str(firstWidthOf("# c\r\ny")), "3");
+    check("a comment cannot open inside a string",
+          kindsOf("\"(* not a comment *)\" writeln(1);"),
+          "string 0:0:21 [\"(* not a comment *)\"] | name 0:22:7 [writeln] " &
+          "| bracket 0:29:1 [(] | number 0:30:1 [1] | bracket 0:31:1 [)] | op 0:32:1 [;]");
+    # The astral fixtures print numbers only, for the same reason as the ones above: a printed
+    # astral character kills the suite in writeln before the total line.
+    check("an astral character inside a comment counts two units",
+          str(firstWidthOf("(* \128169; *)")), "8");
+    # Two quantities at once: width16 is the four units of line 0, while the cursor is at unit 6
+    # for 'x' -- the astral character (0-1), a space (2), '*)' (3-4) and a space (5).
+    check("a multi-line comment with an astral character on its second line leaves an honest column",
+          positionsOf("(* a\n\128169; *) x"), "0:0 1:6");
+    # The two pair tests' bound guards, and both fixtures are typing states. Without the guard on
+    # the close, a '*' as the last character of the buffer indexes past the end; without the guard
+    # on the opener, a lone '(' does. Either RANGE_ERROR would reach stdout, which corrupts the
+    # protocol channel and leaves the suite without a graded line -- so these are the only proof
+    # those two terms can have, as Task 5 established for the char arm's guard.
+    check("a comment whose last character is its own '*' is unclosed, not a raise",
+          kindsOf("(* note *"),
+          "comment 0:0:9 [(* note *]");
+    check("a lone '(' at end of buffer is one bracket token and raises nothing",
+          kindsOf("x : ("),
+          "name 0:0:1 [x] | op 0:2:1 [:] | bracket 0:4:1 [(]");
     report("scan");
   end func;

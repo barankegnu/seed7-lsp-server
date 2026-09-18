@@ -283,6 +283,7 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
     var integer: j is 0;
     var integer: units is 0;
     var integer: before is 0;
+    var integer: depth is 0;
   begin
     ch := text[cur.offset];
     out.kind := TK_ILLEGAL;
@@ -347,6 +348,46 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
         j := succ(j);
       end if;
       out.kind := TK_CHAR;
+    elsif ch = '(' and succ(cur.offset) <= length(text) and
+          text[succ(cur.offset)] = '*' then
+      # scan_comment, whose nesting scanner.c does with recursion and this does with depth: EOF
+      # inside a comment is UNCLOSED_COMMENT for the ANALYZER, so here it is only the end of the
+      # token and nothing is raised. A '(' that reaches no '*' is just another character of the
+      # comment, which is why both pair tests look at two characters. The two quantities are the
+      # string arm's -- countUnit keeps width16 on the line the comment started on and
+      # scanLineBreak hands every later line to the cursor -- so a licence header reports a real
+      # width and the token after a closing '*)' reports an honest column.
+      depth := 1;
+      j := succ(succ(cur.offset));
+      units := 2;
+      while j <= length(text) and depth > 0 do
+        if text[j] = '(' and succ(j) <= length(text) and text[succ(j)] = '*' then
+          depth +:= 1;
+          countUnit(out.line0, cur, units, 2);
+          j := succ(succ(j));
+        elsif text[j] = '*' and succ(j) <= length(text) and text[succ(j)] = ')' then
+          depth := pred(depth);
+          countUnit(out.line0, cur, units, 2);
+          j := succ(succ(j));
+        elsif lineEnd(text[j]) then
+          scanLineBreak(text, j, cur, units);
+        else
+          countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end if;
+      end while;
+      out.kind := TK_COMMENT;
+    elsif ch = '#' then
+      # scan_line_comment: the hash to, but not including, the break. lineEnd -- '\n' and '\r'
+      # alike -- closes it and skipWhitespace takes the cursor over the break, so a CR-only or
+      # CRLF buffer puts the next token on the same line diagnostics use. At EOF the bound on j,
+      # not the break test, is what ends the loop; a comment that runs off the end of a buffer is
+      # the normal state while typing.
+      while j <= length(text) and not lineEnd(text[j]) do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_LINE_COMMENT;
     elsif ch in DIGITS then
       j := pastNumber(text, cur.offset);
       # digits, base markers and signs are all ASCII, so a number is as wide in units as in
