@@ -213,26 +213,50 @@ const proc: countUnit (in integer: startLine0, inout scanCursor: cur, inout inte
     end if;
   end func;
 
-# literal.c's escape_sequence in index terms, from the BACKSLASH at j. Three shapes: a
-# continuation ('\' + blanks/newlines/'#'-comment + '\'), a numeric escape ('\123;' or
-# '\16#ff;' -- an integer literal then ';'), and a one-character escape ('\"', '\\', '\''
-# -- the quote character --, '\a'..'\v', '\A'..'\Z'). An escape that matches none of them is the
-# analyzer's error to report; this only has to not lose the rest of the line. The continuation
-# shape is nextToken's own job while it scans a string, because only the arm can move the cursor;
-# this stays for the callers that want the index alone.
+# The continuation, in the one place that knows it: '\' + blanks/newlines/'#'-comment + '\', which
+# literal.c's skip_lines ignores entirely so the string goes on. j arrives AT the opening backslash
+# and leaves one past the closing one; every character in between still occupies a column on the
+# line it sits on -- including the opening backslash -- which is why this walk owns the cursor: the
+# two quantities are counted by countUnit, and each break is crossed by scanLineBreak.
+const proc: skipContinuation (in string: text, inout integer: j, in integer: startLine0,
+                              inout scanCursor: cur, inout integer: units) is func
+  begin
+    countUnit(startLine0, cur, units, 1);
+    j := succ(j);
+    while j <= length(text) and text[j] <> BACKSLASH and text[j] <> '"' do
+      if lineEnd(text[j]) then
+        scanLineBreak(text, j, cur, units);
+      elsif text[j] = '#' then
+        # a line comment inside the ignored region may hold a double quote, so only a break ends
+        # it. The radix question doc_store.isRadixHash settles cannot arise in here.
+        while j <= length(text) and not lineEnd(text[j]) do
+          countUnit(startLine0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end while;
+      else
+        countUnit(startLine0, cur, units, utf16CharLength(text[j]));
+        j := succ(j);
+      end if;
+    end while;
+    if j <= length(text) and text[j] = BACKSLASH then
+      countUnit(startLine0, cur, units, 1);
+      j := succ(j);
+    end if;
+  end func;
+
+# literal.c's escape_sequence in index terms, from the BACKSLASH at j, for the two shapes that need
+# no cursor: a numeric escape ('\123;' or '\16#ff;' -- an integer literal then ';') and a
+# one-character escape ('\"', '\\', '\'' -- the quote character --, '\a'..'\v', '\A'..'\Z'). An
+# escape that matches neither is the analyzer's error to report; this only has to not lose the rest
+# of the line. The third shape, the continuation, is deliberately not here: it crosses newlines, so
+# honouring the two-quantity rule needs a cursor, and a func that returns only an index cannot
+# honour it. skipContinuation is that one copy, called by the arm that has the cursor.
 const func integer: pastEscape (in string: text, in integer: j) is func
   result
     var integer: out is 0;
   begin
     out := succ(j);
     if out > length(text) then
-    elsif text[out] = '\n' or text[out] in SPACES then
-      while out <= length(text) and text[out] <> BACKSLASH and text[out] <> '"' do
-        out := succ(out);
-      end while;
-      if out <= length(text) and text[out] = BACKSLASH then
-        out := succ(out);
-      end if;
     elsif text[out] in DIGITS then
       skipDigits(text, out);
       if out <= length(text) and text[out] = '#' then
@@ -279,30 +303,7 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
       while j <= length(text) and text[j] <> '"' and not lineEnd(text[j]) do
         if text[j] = BACKSLASH and succ(j) <= length(text) and
               (text[succ(j)] = '\n' or text[succ(j)] in SPACES) then
-          # The continuation: '\' + blanks/newlines/'#'-comment + '\' is ignored by the analyzer,
-          # so the string goes on, but every one of those characters still occupies a column on
-          # the line it sits on -- including this first backslash.
-          countUnit(out.line0, cur, units, 1);
-          j := succ(j);
-          while j <= length(text) and text[j] <> BACKSLASH and text[j] <> '"' do
-            if lineEnd(text[j]) then
-              scanLineBreak(text, j, cur, units);
-            elsif text[j] = '#' then
-              # a line comment inside the ignored region may hold a double quote, so only a break
-              # ends it. The radix question doc_store.isRadixHash settles cannot arise in here.
-              while j <= length(text) and not lineEnd(text[j]) do
-                countUnit(out.line0, cur, units, utf16CharLength(text[j]));
-                j := succ(j);
-              end while;
-            else
-              countUnit(out.line0, cur, units, utf16CharLength(text[j]));
-              j := succ(j);
-            end if;
-          end while;
-          if j <= length(text) and text[j] = BACKSLASH then
-            countUnit(out.line0, cur, units, 1);
-            j := succ(j);
-          end if;
+          skipContinuation(text, j, out.line0, cur, units);
         elsif text[j] = BACKSLASH then
           before := j;
           j := pastEscape(text, j);

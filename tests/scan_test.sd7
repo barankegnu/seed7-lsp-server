@@ -268,10 +268,22 @@ const proc: main is func
     # pastEscape's contract, pinned directly. Inside a string body the ';' of a numeric escape is
     # just another body character, so NO kindsOf fixture can tell whether pastEscape swallowed it --
     # the widths come out the same either way. What the function owes its callers is the index, and
-    # the char-literal arm that follows needs exactly that.
+    # the char-literal arm that follows needs exactly that. The last term is the deleted branch: a
+    # continuation now leaves pastEscape at its own one-character arm, so it stops AT the closing
+    # backslash (3) instead of running the region (4) -- which is the duplication this check keeps
+    # from creeping back, and the region's real rules are asserted by the checks above.
     check("pastEscape lands just past the escape body",
           str(pastEscape("\\9;x", 1)) & "/" & str(pastEscape("\\16#ff;", 1)) & "/" &
           str(pastEscape("\\nx", 1)) & "/" & str(pastEscape("\\ \\", 1)),
-          "4/8/3/4");
+          "4/8/3/3");
+    # Minor #1: the hand-off across MORE than one break, with content on the lines in between.
+    # width16 stays 4 ('"', 'a', 'b', the opening backslash); each break restarts cur.col16 from
+    # 0 - units, so the two comment lines -- 8 columns each, counted on their own line and then
+    # abandoned -- cannot leak into line 3, where 3 spaces (0-2), the closing backslash (3), 'c' (4),
+    # 'd' (5) and the terminating '"' (6) put ';' at 7. Get the reset wrong (carry the old column
+    # instead of starting from 0 - units) and this is the check that says so.
+    check("two commented lines inside the continuation still put ';' at the derived column",
+          kindsOf("\"ab\\\n   # one\n   # two\n   \\cd\";"),
+          "string 0:0:4 [\"ab\\\n   # one\n   # two\n   \\cd\"] | op 3:7:1 [;]");
     report("scan");
   end func;
