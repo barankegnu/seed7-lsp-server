@@ -1,0 +1,150 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "scan.sd7";
+
+const func string: kindName (in integer: kind) is func
+  result
+    var string: out is "?";
+  begin
+    if kind = TK_NAME then
+      out := "name";
+    elsif kind = TK_OP then
+      out := "op";
+    elsif kind = TK_BRACKET then
+      out := "bracket";
+    elsif kind = TK_NUMBER then
+      out := "number";
+    elsif kind = TK_STRING then
+      out := "string";
+    elsif kind = TK_CHAR then
+      out := "char";
+    elsif kind = TK_COMMENT then
+      out := "comment";
+    elsif kind = TK_LINE_COMMENT then
+      out := "lineComment";
+    else
+      out := "illegal";
+    end if;
+  end func;
+
+# ASCII-only views of a scan, for the fixtures that involve non-ASCII characters. A check whose
+# got or expected string contains an astral character raises RANGE_ERROR in writeln and the suite
+# dies without a graded line -- which reads as a broken rule rather than a broken print.
+const func integer: firstKindOf (in string: text) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+  begin
+    skipWhitespace(text, cur);
+    if cur.offset <= length(text) then
+      tk := nextToken(text, cur);
+      out := tk.kind;
+    end if;
+  end func;
+
+const func integer: firstWidthOf (in string: text) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+  begin
+    skipWhitespace(text, cur);
+    if cur.offset <= length(text) then
+      tk := nextToken(text, cur);
+      out := tk.width16;
+    end if;
+  end func;
+
+# The column of the token covering UTF-16 unit `col16` of line 0, or -1. Linear: a test helper
+# does not need tokenAt, which only arrives with Task 8.
+const func integer: tokenColOf (in string: text, in integer: col16) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var boolean: more is TRUE;
+  begin
+    while more and cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+        more := FALSE;
+      else
+        tk := nextToken(text, cur);
+        if tk.col16 <= col16 and col16 <= tk.col16 + tk.width16 then
+          out := tk.col16;
+          more := FALSE;
+        end if;
+      end if;
+    end while;
+  end func;
+
+# "kind line:col:width [text]" joined by " | " -- the shape every check below pins.
+const func string: kindsOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var string: piece is "";
+  begin
+    while cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        piece := kindName(tk.kind) & " " & str(tk.line0) & ":" & str(tk.col16) & ":" &
+                 str(tk.width16) & " [" & text[tk.start .. tk.stop] & "]";
+        if out <> "" then
+          out := out & " | ";
+        end if;
+        out := out & piece;
+      end if;
+    end while;
+  end func;
+
+const proc: main is func
+  begin
+    check("name, op, bracket",
+          kindsOf("a := (b)"),
+          "name 0:0:1 [a] | op 0:2:2 [:=] | bracket 0:5:1 [(] | name 0:6:1 [b] " &
+          "| bracket 0:7:1 [)]");
+    check("an operator run is maximal, brackets cut it",
+          kindsOf("c<&d[e]"),
+          "name 0:0:1 [c] | op 0:1:2 [<&] | name 0:3:1 [d] | bracket 0:4:1 [[] " &
+          "| name 0:5:1 [e] | bracket 0:6:1 []]");
+    check("a '<' does not absorb the name after it",
+          kindsOf("if a<b then"),
+          "name 0:0:2 [if] | name 0:3:1 [a] | op 0:4:1 [<] | name 0:5:1 [b] " &
+          "| name 0:7:4 [then]");
+    check("a name may start with an underscore",
+          kindsOf("_end x5"),
+          "name 0:0:4 [_end] | name 0:5:2 [x5]");
+    # An astral character must never reach a check's expected or got string: lsp_tst prints with
+    # writeln on plain stdout, which raises RANGE_ERROR on non-ASCII. Assert the numbers instead
+    # -- that is all "counts UTF-16 units, not characters" actually claims.
+    check("an astral character is one illegal token two units wide",
+          str(firstKindOf("\128169;")) & "/" & str(firstWidthOf("\128169;")),
+          str(TK_ILLEGAL) & "/2");
+    # The old expectation here asked for unit 2, but the space occupies unit 2: the astral
+    # character covers units 0-1 and the name sits at 3. Querying 2 resolves to the illegal token
+    # that ENDS there -- the left-of-character rule doc_store.wordAt uses -- so 3 is the unit that
+    # names the token after it. If the astral character counted as one unit, 'a' would sit at 2.
+    check("the name after an astral character and a space sits at unit 3",
+          str(tokenColOf("\128169; a", 3)), "3");
+    check("a newline resets line and column",
+          kindsOf("a\n  b"),
+          "name 0:0:1 [a] | name 1:2:1 [b]");
+    check("an unknown character is one illegal token and advances",
+          kindsOf("a " & "\8;" & " b"),
+          "name 0:0:1 [a] | illegal 0:2:1 [" & "\8;" & "] | name 0:4:1 [b]");
+    # a control character prints nothing, so the check above cannot be reviewed by eye; this one
+    # asserts the shape that matters -- that exactly one token was produced and it advanced.
+    checkTrue("an illegal token is one character wide",
+              length(kindsOf("\8;\8;")) > 0 and
+              kindsOf("\8;\8;") = "illegal 0:0:1 [\8;] | illegal 0:1:1 [\8;]");
+    report("scan");
+  end func;

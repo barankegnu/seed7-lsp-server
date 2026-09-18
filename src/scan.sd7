@@ -1,0 +1,119 @@
+$ include "seed7_05.s7i";
+  include "utf8bytes.sd7";
+
+# Seed7's lexical grammar -- the one machine in this server that knows what a token is.
+# Rules follow scanner.c's scan_symbol, and manual/tokens.htm 10 is the prose. It returns
+# Seed7 data only: no positions (doc_store owns those), no jsonValue, no LSP shape.
+#
+# A token may span lines -- only (* *) does, and a string continued with '\' + newline. Such
+# a token reports the line and column it STARTS on and a width16 of 0; a consumer that needs
+# the end takes 'stop'. semanticTokens clips to that first line, which is what a client
+# without multilineTokenSupport would do anyway (spec 6.2).
+
+const integer: TK_ILLEGAL is 0;
+const integer: TK_NAME is 1;
+const integer: TK_OP is 2;
+const integer: TK_BRACKET is 3;
+const integer: TK_NUMBER is 4;
+const integer: TK_STRING is 5;
+const integer: TK_CHAR is 6;
+const integer: TK_COMMENT is 7;
+const integer: TK_LINE_COMMENT is 8;
+
+const type: tok is new struct
+    var integer: kind is 0;
+    var integer: line0 is 0;
+    var integer: col16 is 0;
+    var integer: width16 is 0;
+    var integer: start is 0;
+    var integer: stop is 0;
+  end struct;
+
+const type: scanCursor is new struct
+    var integer: offset is 1;
+    var integer: line0 is 0;
+    var integer: col16 is 0;
+  end struct;
+
+const char: BACKSLASH is chr(92);
+const char: APOSTROPHE is chr(39);
+
+const set of char: OP_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
+                                ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
+const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};
+const set of char: DIGITS is {'0','1','2','3','4','5','6','7','8','9'};
+const set of char: SPACES is {' ', '\9;', '\r'};
+const set of char: LETTERS is {'a','b','c','d','e','f','g','h','i','j','k','l','m',
+                               'n','o','p','q','r','s','t','u','v','w','x','y','z',
+                               'A','B','C','D','E','F','G','H','I','J','K','L','M',
+                               'N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
+
+# ASCII letters only. Seed7 can widen names with the pragma "$ names unicode;", which the
+# library and programs here never use (measured across 213 lib/*.s7i and every prg/*.sd7),
+# so a non-ASCII character is an illegal token -- the same answer scanner.c gives it.
+const func boolean: nameStart (in char: ch) is
+  return ch in LETTERS or ch = '_';
+
+const func boolean: nameMore (in char: ch) is
+  return ch in LETTERS or ch in DIGITS or ch = '_';
+
+# Whitespace is not a token: the cursor walks over it, updating line and column.
+const proc: skipWhitespace (in string: text, inout scanCursor: cur) is func
+  local
+    var char: ch is ' ';
+    var boolean: more is TRUE;
+  begin
+    while more and cur.offset <= length(text) do
+      ch := text[cur.offset];
+      if ch = '\n' then
+        cur.line0 := succ(cur.line0);
+        cur.col16 := 0;
+        cur.offset := succ(cur.offset);
+      elsif ch in SPACES then
+        cur.col16 +:= utf16CharLength(ch);
+        cur.offset := succ(cur.offset);
+      else
+        more := FALSE;
+      end if;
+    end while;
+  end func;
+
+# One token, starting where the cursor sits: valid only when cur.offset <= length(text) and
+# the character there is not whitespace, and it leaves the cursor one character past the
+# token. An unrecognised character is one illegal token, one character wide -- that
+# single-character advance is what stops a malformed document from looping.
+const func tok: nextToken (in string: text, inout scanCursor: cur) is func
+  result
+    var tok: out is tok.value;
+  local
+    var char: ch is ' ';
+    var integer: j is 0;
+    var integer: units is 0;
+  begin
+    ch := text[cur.offset];
+    out.kind := TK_ILLEGAL;
+    out.line0 := cur.line0;
+    out.col16 := cur.col16;
+    out.start := cur.offset;
+    units := utf16CharLength(ch);
+    j := succ(cur.offset);
+    if nameStart(ch) then
+      while j <= length(text) and nameMore(text[j]) do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_NAME;
+    elsif ch in BRACKETS then
+      out.kind := TK_BRACKET;
+    elsif ch in OP_CHARS then
+      while j <= length(text) and text[j] in OP_CHARS do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_OP;
+    end if;
+    out.stop := pred(j);
+    out.width16 := units;
+    cur.col16 +:= units;
+    cur.offset := j;
+  end func;
