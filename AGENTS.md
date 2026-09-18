@@ -148,8 +148,8 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `EXCEPTION`s in `seed7_05.s7i:277-291` are a different set (15 names, one of them
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
-  `doc_store.isRadixHash` decides by context, and `codeText` is the only place that
-  decides. `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
+  The scanner decides, because it knows whether it is inside a number token.
+  `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
 
 ## Do not "fix" these
 

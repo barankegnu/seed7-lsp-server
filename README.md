@@ -79,16 +79,11 @@ declarations and the base keywords, and `signatureHelp` with the active paramete
 from the call site.
 
 Requests stay silent inside a string literal, a char literal or a comment:
-`doc_store.codeText` masks those regions, so a position inside `"..."` reports nothing rather
+`scan.sd7`'s `maskOf` projects those regions — same length as the text, newlines preserved,
+every non-code character a space — so a position inside `"..."` reports nothing rather
 than the signature of some unrelated call — a real risk in files like `prg/calc7.sd7`, whose
 continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
 string in any rule that does not know char literals exist.
-
-One hole in that mask: a char literal whose content is a numeric escape (`'\9;`, `'\16#ff;`)
-is counted as two characters, so the mask loses the two that follow its closing quote. There a
-request may answer nothing, or answer a name spelled out of the escape's tail (`ff`). The
-fixed-count state predates this branch and `scan.sd7` replaces the machine; `lib/jpeg.s7i` is
-where the based form clusters.
 
 Ranges are line-based. Reflection reports a declaration's line and never a column, so a
 definition range is the whole line and `selectionRange` equals `range`. A symbol's
@@ -104,9 +99,8 @@ hierarchy for nested and local declarations, completion of local variables, pull
 diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
 and completion as well as stale diagnostics, because a library is analysed through a driver
 that reads the file back from disk, which also breaks the spec's rule that an open
-document must not be read through its uri), a based literal
-answering as a name (`16#be|ef` hovers `beef`) until `scan.sd7` separates number tokens
-from name tokens, `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
+document must not be read through its uri), `utf-8` position negotiation,
+`workspace/configuration`, and Windows. Asking
 for an unimplemented method returns `-32601 Method not found`, which editors display as
 "no data" rather than as a failure — and a capability is advertised only once its method
 is answered.
