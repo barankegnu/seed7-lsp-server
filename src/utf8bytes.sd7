@@ -1,0 +1,57 @@
+$ include "seed7_05.s7i";
+
+# Code-point widths. The only place in this server that knows how wide a character is:
+# utf8Length for the bytes a Content-Length must count, utf16Length for the units an LSP
+# position counts under the negotiated "utf-16" encoding. transport.sd7 owns every outbound
+# byte count; doc_store.sd7 owns every position conversion; both call here rather than
+# re-deriving a threshold, because the two rules differ on purpose (2048 and 65536 are not
+# the same boundary) and a copy of one of them is a bug waiting for the other to move.
+
+const func integer: utf8CharLength (in char: ch) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: cp is 0;
+  begin
+    cp := ord(ch);
+    if cp < 128 then
+      n := 1;
+    elsif cp < 2048 then
+      n := 2;
+    elsif cp < 65536 then
+      n := 3;
+    else
+      n := 4;
+    end if;
+  end func;
+
+const func integer: utf16CharLength (in char: ch) is func
+  result
+    var integer: units is 1;
+  begin
+    if ord(ch) >= 65536 then
+      units := 2;
+    end if;
+  end func;
+
+const func integer: utf8Length (in string: stri) is func
+  result
+    var integer: n is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(stri) do
+      n +:= utf8CharLength(stri[i]);
+    end for;
+  end func;
+
+const func integer: utf16Length (in string: stri) is func
+  result
+    var integer: units is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(stri) do
+      units +:= utf16CharLength(stri[i]);
+    end for;
+  end func;

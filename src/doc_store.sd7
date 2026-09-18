@@ -1,5 +1,5 @@
 $ include "seed7_05.s7i";
-  include "transport.sd7";
+  include "utf8bytes.sd7";
 
 const type: lsDoc is new struct
     var string: text is "";
@@ -52,10 +52,8 @@ const func integer: utf16Before (in string: text, in integer: stop) is func
     for i range 1 to pred(stop) do
       if i > length(text) then
         units +:= 0;
-      elsif ord(text[i]) >= 65536 then
-        units +:= 2;
       else
-        units +:= 1;
+        units +:= utf16CharLength(text[i]);
       end if;
     end for;
   end func;
@@ -303,11 +301,7 @@ const func integer: charIndexOf (in lsDoc: doc, in integer: line0,
       units := 0;
       while i <= length(doc.text) and units < character0 and
             doc.text[i] <> '\n' and doc.text[i] <> '\r' do
-        if ord(doc.text[i]) >= 65536 then
-          units +:= 2;
-        else
-          units +:= 1;
-        end if;
+        units +:= utf16CharLength(doc.text[i]);
         i +:= 1;
       end while;
       idx := i;

@@ -81,14 +81,14 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    one line. Feature files receive `symRec` records; the temptation to read a `reference`
    directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
-3. Only `src/transport.sd7` owns UTF-8 byte widths: it holds the width table
-   (`utf8CharLength`) and computes or consumes every outbound byte count.
-   `src/doc_store.sd7` may consume a byte-valued column only to convert it into a
-   character column (`charColumnForBytes`/`lspRangeBytes`), and never emits a byte count.
-   `doc_store` includes `transport.sd7` to reach that one helper, which inverts the
-   layering — a merge-time decision, not an accident: §2 of the design spec lists the
-   intended module layout, and the helper's next consumer is `scan.sd7` in the milestone
-   after this one, so the `src/utf8bytes.sd7` extraction belongs to the `scan.sd7` plan.
+3. Only `src/utf8bytes.sd7` knows code-point widths: it holds the UTF-8 byte table
+   (`utf8CharLength`/`utf8Length`) and the UTF-16 unit rule
+   (`utf16CharLength`/`utf16Length`), and nothing else re-derives either threshold.
+   `src/transport.sd7` owns every outbound byte count — `Content-Length` is its arithmetic
+   and no other file emits one. `src/doc_store.sd7` owns position conversion and may consume
+   a byte-valued column only to turn it into a character column
+   (`charColumnForBytes`/`lspRangeBytes`), never to emit a byte count. A later `scan.sd7`
+   may consume the widths and emits none of its own.
 4. Only `src/*.sd7` and `src/features/*.sd7` build LSP response shapes; `analysis.sd7`
    returns Seed7-shaped data and knows nothing about LSP.
 5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
@@ -181,8 +181,8 @@ Masking already exists — `doc_store.codeText` blanks string literals, char lit
 "does this position mean anything" but token *spans*: foldingRange, selectionRange and
 semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
 reflection API yields declarations only, never use sites, which is why references and
-rename stay M5. Settle two things first, or M4 makes them permanent: `scan.sd7` is the
-third consumer of the UTF-8 byte-width table, so extracting it out of `transport.sd7` is
-step 1 (see invariant 3); and `utf16Before` scans from index 1 per call — tolerable
+rename stay M5. Settle two things first, or M4 makes them permanent: the UTF-8 byte-width
+table now lives in `src/utf8bytes.sd7`, which `scan.sd7` may consume (step 1, done — see
+invariant 3); and `utf16Before` scans from index 1 per call — tolerable
 for a hundred capped diagnostics, unusable for a token stream — so give each document
 a cumulative UTF-16 column table in `setVersion` before semanticTokens exists.

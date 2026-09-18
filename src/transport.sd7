@@ -1,5 +1,6 @@
 $ include "seed7_05.s7i";
   include "utf8.s7i";
+  include "utf8bytes.sd7";
 
 const integer: MAX_FRAME_BYTES is 67108864;
 
@@ -39,37 +40,9 @@ const func integer: headerNumber (in string: text) is func
     end if;
   end func;
 
-# The UTF-8 byte width of one code point. The only place the thresholds live:
-# `utf8Length` below counts a whole string with it, and `doc_store` needs it to read the
-# analyzer's byte-valued column back as a character.
-const func integer: utf8CharLength (in char: ch) is func
-  result
-    var integer: n is 0;
-  local
-    var integer: cp is 0;
-  begin
-    cp := ord(ch);
-    if cp < 128 then
-      n := 1;
-    elsif cp < 2048 then
-      n := 2;
-    elsif cp < 65536 then
-      n := 3;
-    else
-      n := 4;
-    end if;
-  end func;
-
-const func integer: utf8Length (in string: stri) is func
-  result
-    var integer: n is 0;
-  local
-    var integer: i is 0;
-  begin
-    for i range 1 to length(stri) do
-      n +:= utf8CharLength(stri[i]);
-    end for;
-  end func;
+# The width rules live in utf8bytes.sd7: this file counts the bytes it writes into a frame,
+# and the analyzer's byte-valued columns are read back as characters by doc_store. Both need
+# the same thresholds, so neither of them owns them.
 
 const proc: writeMessage (in string: body) is func
   begin
