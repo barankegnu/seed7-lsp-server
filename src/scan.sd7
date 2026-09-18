@@ -323,6 +323,29 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
         j := succ(j);
       end if;
       out.kind := TK_STRING;
+    elsif ch = APOSTROPHE then
+      # one element, then the closing quote. The element is an escape (variable length), the
+      # quote character itself ('''), or any single character (which may be two UTF-16 units).
+      # lit_char reads exactly one element and the element says how long it was, so the width is
+      # never a constant -- a fixed count is what lost the mask the characters after the closing
+      # quote. No countUnit: a char literal never spans a line (doc_store says the same), so width
+      # and cursor advance are the same number here.
+      if j <= length(text) and text[j] = BACKSLASH then
+        before := j;
+        j := pastEscape(text, j);
+        units +:= j - before;
+      elsif j <= length(text) and text[j] = APOSTROPHE then
+        units +:= 1;
+        j := succ(j);
+      elsif j <= length(text) then
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end if;
+      if j <= length(text) and text[j] = APOSTROPHE then
+        units +:= 1;
+        j := succ(j);
+      end if;
+      out.kind := TK_CHAR;
     elsif ch in DIGITS then
       j := pastNumber(text, cur.offset);
       # digits, base markers and signs are all ASCII, so a number is as wide in units as in
