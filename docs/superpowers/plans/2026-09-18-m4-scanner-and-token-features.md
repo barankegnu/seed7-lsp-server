@@ -287,6 +287,61 @@ const func string: kindName (in integer: kind) is func
     end if;
   end func;
 
+# ASCII-only views of a scan, for the fixtures that involve non-ASCII characters. A check whose
+# got or expected string contains an astral character raises RANGE_ERROR in writeln and the suite
+# dies without a graded line -- which reads as a broken rule rather than a broken print.
+const func integer: firstKindOf (in string: text) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+  begin
+    skipWhitespace(text, cur);
+    if cur.offset <= length(text) then
+      tk := nextToken(text, cur);
+      out := tk.kind;
+    end if;
+  end func;
+
+const func integer: firstWidthOf (in string: text) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+  begin
+    skipWhitespace(text, cur);
+    if cur.offset <= length(text) then
+      tk := nextToken(text, cur);
+      out := tk.width16;
+    end if;
+  end func;
+
+# The column of the token covering UTF-16 unit `col16` of line 0, or -1. Linear: a test helper
+# does not need tokenAt, which only arrives with Task 8.
+const func integer: tokenColOf (in string: text, in integer: col16) is func
+  result
+    var integer: out is -1;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var boolean: more is TRUE;
+  begin
+    while more and cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+        more := FALSE;
+      else
+        tk := nextToken(text, cur);
+        if tk.col16 <= col16 and col16 <= tk.col16 + tk.width16 then
+          out := tk.col16;
+          more := FALSE;
+        end if;
+      end if;
+    end while;
+  end func;
+
 # "kind line:col:width [text]" joined by " | " -- the shape every check below pins.
 const func string: kindsOf (in string: text) is func
   result
@@ -328,9 +383,14 @@ const proc: main is func
     check("a name may start with an underscore",
           kindsOf("_end x5"),
           "name 0:0:4 [_end] | name 0:5:2 [x5]");
-    check("columns count UTF-16 units, not characters",
-          kindsOf("\128169; a"),
-          "illegal 0:0:2 [" & "\128169;" & "] | name 0:2:1 [a]");
+    # An astral character must never reach a check's expected or got string: lsp_tst prints with
+    # writeln on plain stdout, which raises RANGE_ERROR on non-ASCII. Assert the numbers instead
+    # -- that is all "counts UTF-16 units, not characters" actually claims.
+    check("an astral character is one illegal token two units wide",
+          str(firstKindOf("\128169;")) & "/" & str(firstWidthOf("\128169;")),
+          str(TK_ILLEGAL) & "/2");
+    check("the name after an astral character sits at unit 2",
+          str(tokenColOf("\128169; a", 2)), "2");
     check("a newline resets line and column",
           kindsOf("a\n  b"),
           "name 0:0:1 [a] | name 1:2:1 [b]");
@@ -681,9 +741,9 @@ can occupy several lines.
           kindsOf("const string: s is \"abc"),
           "name 0:0:5 [const] | name 0:6:6 [string] | op 0:12:1 [:] | name 0:14:1 [s] " &
           "| name 0:16:2 [is] | string 0:19:4 [\"abc]");
+    # same reason as Task 2's astral checks: the character stays out of the printed strings
     check("an astral character inside a string counts two units",
-          kindsOf("\"x" & "\128169;" & "y\""),
-          "string 0:0:6 [\"x" & "\128169;" & "y\"]");
+          str(firstWidthOf("\"x\128169;y\"")), "6");
 ```
 
 The continuation check expects `width16` of **0**, because the token ends on a later line and a
@@ -1005,8 +1065,9 @@ that ever shows up in a profile.
 
 **Files:**
 - Modify: `src/scan.sd7` (add `maskOf`)
-- Modify: `src/doc_store.sd7` (`lsDoc` gains `mask`; `setVersion` fills it; `codeText` returns it;
-  delete the old state machine, `isRadixHash` and `nextIs`)
+- Modify: `src/doc_store.sd7` (add `include "scan.sd7"` — `setVersion` calls `maskOf`, so the
+  include lands *here*, not in Task 8; `lsDoc` gains `mask`; `codeText` returns it; delete the old
+  state machine, `isRadixHash` and `nextIs`)
 - Modify: `tests/doc_store_test.sd7`, `Makefile` if a suite name changes
 - Modify: `AGENTS.md` (the `#`-is-both entry, the mask-hole entry), `README.md` (the hole
   paragraph)
@@ -1155,9 +1216,9 @@ a big file (the mask always scans the whole document; this one does not).
 
 **Files:**
 - Modify: `src/scan.sd7` (add `tokenAt`)
-- Modify: `src/doc_store.sd7` (add `include "scan.sd7"` — this is the second module that includes
-  it and the direction is still one way, since `scan.sd7` includes only `utf8bytes.sd7`;
-  `wordAt` reads tokens; drop `tokenChar`, `codeKindAt` and `onLine` if nothing calls them)
+- Modify: `src/doc_store.sd7` (`wordAt` reads tokens through `tokenAt`; drop `tokenChar`,
+  `codeKindAt` and `onLine` if nothing calls them). No new include — `include "scan.sd7"` arrived
+  with Task 7, and `scan.sd7` still includes only `utf8bytes.sd7`, so the direction stays one way.
 - Modify: `tests/scan_test.sd7`, `tests/doc_store_test.sd7`
 
 **Interfaces:**
@@ -1186,7 +1247,8 @@ a big file (the mask always scans the whole document; this one does not).
     check("a position past the line answers nothing",
           tokenTextOf("ab", 0, 9), "");
 ```
-with the helper beside `kindsOf`, so the checks read as questions about one position:
+`tokenTextOf` joins the helpers Task 2 already put in this same file — Tasks 3–6 and 8 all
+extend `tests/scan_test.sd7`, which is why nothing is redefined here:
 ```seed7
 # The text of the token an LSP position resolves to, or "" for nothing.
 const func string: tokenTextOf (in string: text, in integer: line0,
@@ -2014,8 +2076,10 @@ serialiser and one level the region list does not carry — the token itself.
   `Makefile` (`TESTS += selection_range`), `tests/transcript.py`
 
 **Interfaces:**
-- Consumes: `blockRegions` (Task 10), `tokenAt` (Task 8), `skipWhitespace`/`nextToken` for the
-  token level, `lspRangePair` from `doc_store.sd7`.
+- Consumes: `enclosingRegions(text, line0, lastLine)` (Task 10) for the chain, `tokenAt` (Task 8)
+  for the innermost level, and `lspRangePair`/`lspRange`/`lineWidth`/`lineCount` from
+  `doc_store.sd7`. `blockRegions` is Task 10's other export and this feature does not call it: a
+  chain wants the regions *containing a line*, innermost first, which is `enclosingRegions`.
 - Produces: `selectionResult (in lsDoc: doc, in jsonValue: positions) → string`, a
   `SelectionRange[]` with `parent` chains, one entry per requested position, in the order asked.
 
