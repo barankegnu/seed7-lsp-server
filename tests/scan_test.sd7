@@ -383,5 +383,115 @@ const proc: main is func
     check("a lone '(' at end of buffer is one bracket token and raises nothing",
           kindsOf("x : ("),
           "name 0:0:1 [x] | op 0:2:1 [:] | bracket 0:4:1 [(]");
+    # ---- mask ---------------------------------------------------------------
+    # The mask is a projection of the scan: same length as the text, newlines preserved,
+    # every non-code character a space. These fixtures pin the exact output of maskOf so
+    # that doc_store's codeText contract -- and the three holes the old machine had --
+    # are enforced from the scanner side.
+    # measured: len 22/22  a_:=______;_________b$NL
+    check("the mask keeps length and newlines and blanks the literals",
+          maskOf("a := \"x\ty\"; (* c *) b\n"),
+          "a :=      ;         b\n");
+    # the literal '\9;' is FIVE characters; the old fixed-count machine masked seven, which is
+    # the hole README records. measured: len 54/54
+    #   const_char:_q_is______;_const_integer:_afterThis_is_1;
+    check("a numeric-escape char literal masks exactly itself",
+          maskOf("const char: q is '\\9;'; const integer: afterThis is 1;"),
+          "const char: q is      ; const integer: afterThis is 1;");
+    # a based literal is code and survives; only the comment goes.
+    # measured: len 43/43  const_integer:_c_is_16#beef;_______$NLx_:=_1;
+    check("a based literal is code, its comment tail is not",
+          maskOf("const integer: c is 16#beef; # tail\nx := 1;"),
+          "const integer: c is 16#beef;       \nx := 1;");
+    check("length never changes",
+          str(length(maskOf("s := \"a\\\"b\"; # c\n"))),
+          "17");
+    # The three ordering fixtures: a projection is where the scanner's token ordering
+    # becomes load-bearing for the mask. Each names the mutation that would break it.
+    # A ')' after '*' inside a line comment must not close a block comment that was
+    # never opened; dropping the 'line comment wins over block-comment close' rule
+    # would leave the '\n' and 'x' masked.
+    check("'*)' inside a line comment does not open or close a block comment",
+          maskOf("# *)\nx"),
+          "    \nx");
+    # A '#' inside a block comment is just comment text; without the 'block comment
+    # wins over line comment' rule the scanner would end the comment at the newline
+    # and the '*)' would be code.
+    check("'#' inside a block comment is just comment text",
+          maskOf("(* # *)\nx"),
+          "       \nx");
+    # A bare '(*' at EOF is one unclosed comment token whose stop is length(text);
+    # without the 'unclosed runs to EOF' rule the mask would leave the '(' visible.
+    check("a bare '(*' at EOF masks to the end of the buffer",
+          maskOf("x (*"),
+          "x   ");
+    # ---- the mask ----------------------------------------------------------
+    # The mask is a projection of the scan (Task 7), so every expectation below is MEASURED
+    # output of maskOf, annotated with `_` for a space, `$NL` for a newline and `$TAB` for a
+    # tab: a run of spaces in a literal cannot be reviewed by eye. Each mask is the length of
+    # its input, which is the contract doc_store.codeText has always had.
+    # measured: len 22/22  a_:=______;_________b$NL
+    check("the mask keeps length and newlines and blanks the literals",
+          maskOf("a := \"x\ty\"; (* c *) b\n"),
+          "a :=      ;         b\n");
+    # Row 2 is the hole README records: the old fixed-count machine spent SEVEN characters on
+    # a five-character literal -- its own closing quote opened a second one -- so the ';' and
+    # the space after it went too and 'const' below it was unreachable. Five characters of
+    # literal, five blanks. measured: len 54/54  const_char:_q_is______;_const_integer:_afterThis_is_1;
+    check("a numeric-escape char literal masks exactly itself",
+          maskOf("const char: q is '\\9;'; const integer: afterThis is 1;"),
+          "const char: q is      ; const integer: afterThis is 1;");
+    # A based literal is code and survives; only the comment goes. doc_store.isRadixHash used to
+    # guess that from the two neighbouring characters; scan.sd7 knows 16#beef is one number
+    # token. measured: len 43/43  const_integer:_c_is_16#beef;_______$NLx_:=_1;
+    check("a based literal is code, its comment tail is not",
+          maskOf("const integer: c is 16#beef; # tail\nx := 1;"),
+          "const integer: c is 16#beef;       \nx := 1;");
+    check("length never changes",
+          str(length(maskOf("s := \"a\\\"b\"; # c\n"))),
+          "17");
+    # All four hidden kinds in one document: a nested comment, a string, a char literal with a
+    # numeric escape and a line comment. Only the three spaces between them and the final
+    # newline survive, so this is the check that goes red if any one kind stops being hidden.
+    # The plan's table counts this fixture 33/33; measured it is 32 characters.
+    # measured: len 32/32  _______________________________$NL
+    check("every hidden kind at once, and only they are blanked",
+          maskOf("(* a (* b *) c *) \"x\" '\\9;' # c\n"),
+          "                               \n");
+    # The two cross-boundary cases, which had no fixture anywhere before this task and are the
+    # two arm-order questions of nextToken: a '#' must not open a line comment inside a (* *)
+    # comment -- the comment arm runs to its own '*)' and everything in between is ordinary
+    # content -- and a '*)' must not close anything inside a '#' comment, which runs to the
+    # break. Each fixture keeps code on the SAME line after the construct, so a wrong answer
+    # is visible in the mask and not only in a length.
+    # measured: len 25/25  _____________writeln(1);$NL
+    check("a hash inside a (* *) comment does not end it early",
+          maskOf("(* # hash *) writeln(1);\n"),
+          "             writeln(1);\n");
+    # measured: len 26/26  x_:=_1;_________$NLy_:=_2;$NL
+    check("a closing *) inside a # comment does not end it early",
+          maskOf("x := 1; # *) here\ny := 2;\n"),
+          "x := 1;          \ny := 2;\n");
+    # A truncated buffer is the normal state while typing and the mask runs on every request
+    # path, so an unterminated string, char literal or comment must end at EOF: no raise -- one
+    # reaching stdout corrupts the protocol channel -- and no loop that never terminates.
+    # measured: s_:=_____ (9/9), x_:=___ (7/7), _______________ (15/15)
+    check("an unterminated construct at EOF masks to the end and raises nothing",
+          maskOf("s := \"abc") & "/" & maskOf("x := 'a") & "/" & maskOf("(* never closed"),
+          "s :=     /x :=   /               ");
+    # maskOf's own bounds. skipWhitespace may walk the cursor PAST the end of the text and
+    # nextToken is only defined with a character under the cursor: delete the guard after
+    # skipWhitespace and this fixture dies with INDEX_ERROR -- no graded line, which is how a
+    # raise shows up here -- rather than printing a FAIL. The empty document is the while bound.
+    check("a buffer of nothing but whitespace masks to itself",
+          maskOf("   ") & "/" & str(length(maskOf(""))), "   /0");
+    # The tail append, which is what keeps a line break that no token covers: drop the copy of
+    # text[copied .. length(text)] and the mask loses the newline, which shifts every later line
+    # of a document that has one.
+    # measured: len 8/8  x_:=_1;$NL
+    check("a document that is pure code masks to itself, trailing newline included",
+          maskOf("x := 1;\n"),
+          "x := 1;\n");
+
     report("scan");
   end func;

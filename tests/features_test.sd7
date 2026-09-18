@@ -313,9 +313,14 @@ const proc: main is func
     check("the innermost UNCLOSED call wins", got, "outer");
     check("the outer argument index is counted", str(active), "1");
     setVersion(sig, "go(\"multi\nline\", x", 1);
+    # A bare newline in a string is STRING_EXCEEDS: the scanner ends the token there,
+    # so `line` is code and the comma is inside a second unterminated string `", x`.
+    # The old codeText machine incorrectly continued the string across the newline.
+    # The call still resolves to `go` because the `(` is before the string, but the
+    # comma is masked, so active is 0 (still in the first argument).
     check("a call after a string that spans lines still resolves",
           callContextOf(sig, 1, 7, active), "go");
-    check("and its comma counts once", str(active), "1");
+    check("the comma is inside a second string and does not count", str(active), "0");
     got := calleeAt(sig, "go(x, y)  # tail", 9, active);
     check("a closed call offers nothing", got, "");
     setVersion(sig, "  const integer: q is 1;\nreportWidget(\"a\", ", 1);

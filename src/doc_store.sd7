@@ -1,10 +1,12 @@
 $ include "seed7_05.s7i";
   include "utf8bytes.sd7";
+  include "scan.sd7";
 
 const type: lsDoc is new struct
     var string: text is "";
     var integer: version is 0;
     var array integer: lineStart is 1 times 1;
+    var string: mask is "";
   end struct;
 
 # The token under an LSP position. line1/column1 are 1-based and measured from the start
@@ -71,11 +73,14 @@ const func integer: lineWidth (in string: text, in integer: start) is func
     end while;
   end func;
 
+# ponytail: mask rebuilt on every didChange (measured ~130 ms on the stdlib's largest file);
+# upgrade path is a version stamp and a lazy fill if a change burst ever shows it.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
   begin
     doc.text := text;
     doc.version := version;
     doc.lineStart := lineStarts(text);
+    doc.mask := maskOf(text);
   end func;
 
 const func integer: lineCount (in lsDoc: doc) is
@@ -166,19 +171,6 @@ const func boolean: isAlpha (in char: ch) is
 const func boolean: isDigit (in char: ch) is
   return ch >= '0' and ch <= '9';
 
-# TRUE when the '#' at index `i` of the document is the radix separator of a based literal.
-# Seed7's '#'-terminated line comment and its `16#beef` share a character, and the
-# grammar decides by what surrounds it: a digit before, an extended digit (0-9, A-Z,
-# a-z) after. Its own function because a mixed and/or chain of these comparisons can
-# fail to match at analysis time.
-const func boolean: isRadixHash (in string: text, in integer: i) is func
-  result
-    var boolean: out is FALSE;
-  begin
-    out := i > 1 and i < length(text) and isDigit(text[pred(i)]) and
-           (isAlpha(text[succ(i)]) or isDigit(text[succ(i)]));
-  end func;
-
 const func boolean: nameChar (in char: ch) is
   return ch = '_' or isAlpha(ch) or isDigit(ch);
 
@@ -188,92 +180,15 @@ const set of char: OP_CHARS is {'+', '-', '*', '/', '<', '>', '=', ',', ':', ';'
 const func boolean: opChar (in char: ch) is
   return ch in OP_CHARS;
 
-# Seed7's own escape character, spelled with chr() because the char literal 'backslash'
-# does not parse -- the escape consumes the closing quote.
-const char: BACKSLASH is chr(92);
-
-# Same problem as the escape character: the char literal for a single quote does not parse.
-const char: SINGLE_QUOTE is chr(39);
-
-const func boolean: nextIs (in string: text, in integer: i, in char: c) is func
-  result
-    var boolean: out is FALSE;
-  begin
-    out := succ(i) <= length(text) and text[succ(i)] = c;
-  end func;
-
 # Every non-code character replaced by a space: string literals, char literals,
 # (* *) comments (nesting aware) and # line comments. Newlines are kept and the length is
 # unchanged, so an offset into the result is the same offset into the document.
-#
-# This is the server's ONLY lexical state machine. It is not a lexer -- no token model, that
-# is scan.sd7's job (M4) -- and it answers one question: is this character code? wordAt and
-# signature_help both need it, and a second copy is how the two drift apart. Char literals
-# are in it because `{'"'}` silently opens a string in any machine that does not know the
-# form, which masks every declaration after it -- measured on lib/chartype.s7i.
+# The mask is built eagerly in setVersion by scan.sd7's maskOf; this function returns it.
 const func string: codeText (in lsDoc: doc) is func
   result
     var string: out is "";
-  local
-    var integer: i is 0;
-    var integer: depth is 0;
-    var boolean: inStr is FALSE;
-    var boolean: inLine is FALSE;
-    var boolean: esc is FALSE;
-    var integer: skipCount is 0;
-    var char: ch is ' ';
   begin
-    for i range 1 to length(doc.text) do
-      ch := doc.text[i];
-      if skipCount > 0 then
-        # the rest of a char literal after its opening quote: one content item (an escape
-        # pair or a single character, which is how Seed7 spells the quote character) and the
-        # closing quote. A char literal never spans a line, so nothing carries over.
-        out &:= " ";
-        skipCount := pred(skipCount);
-      elsif ch = '\n' or ch = '\r' then
-        inLine := FALSE;
-        out &:= ch;
-      elsif inStr then
-        out &:= " ";
-        if esc then
-          esc := FALSE;
-        elsif ch = BACKSLASH then
-          esc := TRUE;
-        elsif ch = '"' then
-          inStr := FALSE;
-        end if;
-      elsif depth > 0 then
-        out &:= " ";
-        if ch = '(' and nextIs(doc.text, i, '*') then
-          depth +:= 1;
-        elsif ch = '*' and nextIs(doc.text, i, ')') then
-          depth := pred(depth);
-        end if;
-      elsif inLine then
-        out &:= " ";
-      elsif ch = '"' then
-        out &:= " ";
-        inStr := TRUE;
-      elsif ch = SINGLE_QUOTE then
-        # the only char-literal state: consume its content (an escape pair, or one
-        # character -- which is how Seed7 writes the quote as ''') and its closing quote.
-        out &:= " "; 
-        if nextIs(doc.text, i, BACKSLASH) then
-          skipCount := 3;
-        else
-          skipCount := 2;
-        end if;
-      elsif ch = '(' and nextIs(doc.text, i, '*') then
-        out &:= " ";
-        depth +:= 1;
-      elsif ch = '#' and not isRadixHash(doc.text, i) then
-        out &:= " ";
-        inLine := TRUE;
-      else
-        out &:= doc.text[i .. i];
-      end if;
-    end for;
+    out := doc.mask;
   end func;
 
 const func boolean: tokenChar (in char: ch) is

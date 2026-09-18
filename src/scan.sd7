@@ -408,3 +408,63 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
     cur.col16 +:= units;
     cur.offset := j;
   end func;
+
+# TRUE when a token kind is not code: strings, char literals and comments (both shapes).
+# One boolean per comparison because a long or/and chain of them can fail to match.
+const func boolean: hiddenKind (in integer: kind) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := FALSE;
+    if kind = TK_STRING then
+      out := TRUE;
+    elsif kind = TK_CHAR then
+      out := TRUE;
+    elsif kind = TK_COMMENT then
+      out := TRUE;
+    elsif kind = TK_LINE_COMMENT then
+      out := TRUE;
+    end if;
+  end func;
+
+# The same text with every string, char and comment character replaced by a space. Newlines and
+# length survive, so an offset into the result is an offset into the document -- that is
+# doc_store's contract for codeText, and this is the only place the machine that implements it
+# lives. An unclosed comment's stop is length(text), so the mask covers the rest of the buffer
+# without trusting width16 (which only spans the first line of a multi-line token).
+const func string: maskOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var integer: copied is 0;
+    var integer: i is 0;
+  begin
+    copied := 1;
+    while cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        if tk.start > copied then
+          out := out & text[copied .. pred(tk.start)];
+        end if;
+        if hiddenKind(tk.kind) then
+          for i range tk.start to tk.stop do
+            if text[i] = '\n' or text[i] = '\r' then
+              out := out & text[i .. i];
+            else
+              out := out & " ";
+            end if;
+          end for;
+        else
+          out := out & text[tk.start .. tk.stop];
+        end if;
+        copied := succ(tk.stop);
+      end if;
+    end while;
+    if copied <= length(text) then
+      out := out & text[copied .. length(text)];
+    end if;
+  end func;
