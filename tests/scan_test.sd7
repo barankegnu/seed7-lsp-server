@@ -207,5 +207,71 @@ const proc: main is func
     check("an e that starts no exponent ends the number",
           kindsOf("1e; 2"),
           "number 0:0:1 [1] | name 0:1:1 [e] | op 0:2:1 [;] | number 0:4:1 [2]");
+    # ---- strings ---------------------------------------------------------------
+    # The fixture holds real backslashes: Seed7 reads '\\' as one backslash, so the scanned text
+    # is the nine characters " a \ n \ 9 ; b " -- an escape pair and a numeric escape that must
+    # not end the string, which is what the name says.
+    check("escapes do not end a string",
+          kindsOf("\"a\\n\\9;b\""),
+          "string 0:0:9 [\"a\\n\\9;b\"]");
+    check("a based numeric escape is one token",
+          kindsOf("\"\\16#ff;\""),
+          "string 0:0:9 [\"\\16#ff;\"]");
+    # Two quantities, deliberately different. width16 is 4 because that is what the token occupies
+    # on the line it STARTS on: '"', 'a', 'b' and the continuation's opening backslash. The ';' is
+    # at line 1 column 12 because the cursor keeps counting every line of the span even though the
+    # width stopped: eight spaces (0-7), the closing backslash (8), 'c' (9), 'd' (10), the
+    # terminating '"' (11). A ';' measured at 3 is a cursor that stopped counting with the width.
+    check("a continuation crosses the newline and stays one token",
+          kindsOf("\"ab\\\n        \\cd\";"),
+          "string 0:0:4 [\"ab\\\n        \\cd\"] | op 1:12:1 [;]");
+    check("an unterminated string ends at EOF and raises nothing",
+          kindsOf("const string: s is \"abc"),
+          "name 0:0:5 [const] | name 0:6:6 [string] | op 0:12:1 [:] | name 0:14:1 [s] " &
+          "| name 0:16:2 [is] | string 0:19:4 [\"abc]");
+    # same reason as Task 2's astral checks: the character stays out of the printed strings
+    check("an astral character inside a string counts two units",
+          str(firstWidthOf("\"x\128169;y\"")), "6");
+    # A bare break is STRING_EXCEEDS for the analyzer, so the token ends at its line and the
+    # newline is left for the caller's skipWhitespace: 'cd' is code again, which is the only way
+    # the rest of a typed-out document keeps honest columns.
+    check("a bare newline ends the string token on its own line",
+          kindsOf("\"ab\ncd\""),
+          "string 0:0:3 [\"ab] | name 1:0:2 [cd] | string 1:2:1 [\"]");
+    # The line model of a span is doc_store.lineStarts', the one skipWhitespace uses: '\n', a lone
+    # '\r' and a '\r\n' pair each count as ONE break, so all three fixtures put ';' on line 1 at
+    # column 12. The CR and CRLF cases name the two mutations of the break arm separately: a
+    # missing '\r' arm leaves ';' on line 0, a missing lookahead puts it on line 2.
+    check("a continuation gives the same positions under LF, CRLF and CR",
+          positionsOf("\"ab\\\n        \\cd\";") & "/" &
+          positionsOf("\"ab\\\r\n        \\cd\";") & "/" &
+          positionsOf("\"ab\\\r        \\cd\";"),
+          "0:0 1:12/0:0 1:12/0:0 1:12");
+    # manual/tokens.htm 10.3.4 lets a '#'-comment sit between the two backslashes, and its text
+    # may hold a double quote -- which is why the ignored region cannot simply run to the next
+    # quote.
+    check("a '#'-comment inside the continuation region does not end the string",
+          kindsOf("\"ab\\ # says \"x\"\n   \\cd\";"),
+          "string 0:0:15 [\"ab\\ # says \"x\"\n   \\cd\"] | op 1:7:1 [;]");
+    # skip_lines runs over ANY number of blank lines, so the span can be three lines long -- and
+    # each break resets cur.col16 the same way, so ';' lands at line 2 column 7 (3 spaces 0-2, the
+    # closing backslash 3, 'c' 4, 'd' 5, the terminating '"' 6).
+    check("two blank lines inside the continuation still leave one token",
+          kindsOf("\"ab\\\n\n   \\cd\";"),
+          "string 0:0:4 [\"ab\\\n\n   \\cd\"] | op 2:7:1 [;]");
+    # Two strings on one line is what a document actually looks like, and it is the case the body
+    # loop's stop-at-the-closing-quote test earns its keep for: drop that test and the quote is
+    # consumed as a body character, taking the rest of the line with it.
+    check("a quote ends its string, so the next one starts a new token",
+          kindsOf("\"a\" & \"b\""),
+          "string 0:0:3 [\"a\"] | op 0:4:1 [&] | string 0:6:3 [\"b\"]");
+    # pastEscape's contract, pinned directly. Inside a string body the ';' of a numeric escape is
+    # just another body character, so NO kindsOf fixture can tell whether pastEscape swallowed it --
+    # the widths come out the same either way. What the function owes its callers is the index, and
+    # the char-literal arm that follows needs exactly that.
+    check("pastEscape lands just past the escape body",
+          str(pastEscape("\\9;x", 1)) & "/" & str(pastEscape("\\16#ff;", 1)) & "/" &
+          str(pastEscape("\\nx", 1)) & "/" & str(pastEscape("\\ \\", 1)),
+          "4/8/3/4");
     report("scan");
   end func;

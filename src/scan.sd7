@@ -5,10 +5,13 @@ $ include "seed7_05.s7i";
 # Rules follow scanner.c's scan_symbol, and manual/tokens.htm 10 is the prose. It returns
 # Seed7 data only: no positions (doc_store owns those), no jsonValue, no LSP shape.
 #
-# A token may span lines -- only (* *) does, and a string continued with '\' + newline. Such
-# a token reports the line and column it STARTS on and a width16 of 0; a consumer that needs
-# the end takes 'stop'. semanticTokens clips to that first line, which is what a client
-# without multilineTokenSupport would do anyway (spec 6.2).
+# A token may span lines -- (* *) does, and a string continued with '\' + newline. Such a token
+# reports the line and column it STARTS on, and a width16 of the units it occupies ON THAT LINE:
+# never 0, never the whole span; a consumer that needs the end takes 'stop'. The cursor is the
+# other quantity and it does not stop: cur.col16 advances one unit per character across every line
+# of the span, resetting at each break, so a token after a multi-line one reports an honest column.
+# semanticTokens clips to that first line, which is what a client without
+# multilineTokenSupport would do anyway (spec 6.2).
 
 const integer: TK_ILLEGAL is 0;
 const integer: TK_NAME is 1;
@@ -173,6 +176,77 @@ const func integer: pastNumber (in string: text, in integer: first) is func
     out := j;
   end func;
 
+# A line break in the text. doc_store.lineStarts counts '\n', a lone '\r' and a '\r\n' pair each
+# as ONE break, and a bare one inside a string is STRING_EXCEEDS for the analyzer, so it ends the
+# token and the caller's skipWhitespace takes the cursor over it.
+const func boolean: lineEnd (in char: ch) is
+  return ch = '\n' or ch = '\r';
+
+# The cursor crosses one break INSIDE a token that spans lines, which is the only place the two
+# line-model rules meet: the same '\n' / lone '\r' / '\r\n'-as-one rule skipWhitespace follows, and
+# the width rule. 'units' holds the width taken on the line being left and nextToken's tail adds it
+# back to cur.col16, so the new line starts live at 0 by leaving cur.col16 at 0 - units; from here
+# on every unit belongs to the cursor and not to the token's width, which is what countUnit does.
+const proc: scanLineBreak (in string: text, inout integer: j, inout scanCursor: cur,
+                           in integer: units) is func
+  begin
+    cur.line0 := succ(cur.line0);
+    cur.col16 := 0 - units;
+    if text[j] = '\r' and succ(j) <= length(text) and text[succ(j)] = '\n' then
+      j := j + 2;
+    else
+      j := succ(j);
+    end if;
+  end func;
+
+# Where a unit of a token that may span lines goes: to its width while the cursor is still on the
+# line the token started on, to cur.col16 once it has crossed a break. Two different quantities --
+# tok.width16 never covers more than the start line, the cursor never stops counting the span --
+# and one guard, so neither can be updated without the other.
+const proc: countUnit (in integer: startLine0, inout scanCursor: cur, inout integer: units,
+                       in integer: n) is func
+  begin
+    if cur.line0 = startLine0 then
+      units +:= n;
+    else
+      cur.col16 +:= n;
+    end if;
+  end func;
+
+# literal.c's escape_sequence in index terms, from the BACKSLASH at j. Three shapes: a
+# continuation ('\' + blanks/newlines/'#'-comment + '\'), a numeric escape ('\123;' or
+# '\16#ff;' -- an integer literal then ';'), and a one-character escape ('\"', '\\', '\''
+# -- the quote character --, '\a'..'\v', '\A'..'\Z'). An escape that matches none of them is the
+# analyzer's error to report; this only has to not lose the rest of the line. The continuation
+# shape is nextToken's own job while it scans a string, because only the arm can move the cursor;
+# this stays for the callers that want the index alone.
+const func integer: pastEscape (in string: text, in integer: j) is func
+  result
+    var integer: out is 0;
+  begin
+    out := succ(j);
+    if out > length(text) then
+    elsif text[out] = '\n' or text[out] in SPACES then
+      while out <= length(text) and text[out] <> BACKSLASH and text[out] <> '"' do
+        out := succ(out);
+      end while;
+      if out <= length(text) and text[out] = BACKSLASH then
+        out := succ(out);
+      end if;
+    elsif text[out] in DIGITS then
+      skipDigits(text, out);
+      if out <= length(text) and text[out] = '#' then
+        out := succ(out);
+        skipExtDigits(text, out);
+      end if;
+      if out <= length(text) and text[out] = ';' then
+        out := succ(out);
+      end if;
+    else
+      out := succ(out);
+    end if;
+  end func;
+
 # One token, starting where the cursor sits: valid only when cur.offset <= length(text) and
 # the character there is not whitespace, and it leaves the cursor one character past the
 # token. An unrecognised character is one illegal token, one character wide -- that
@@ -184,6 +258,7 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
     var char: ch is ' ';
     var integer: j is 0;
     var integer: units is 0;
+    var integer: before is 0;
   begin
     ch := text[cur.offset];
     out.kind := TK_ILLEGAL;
@@ -198,6 +273,55 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
         j := succ(j);
       end while;
       out.kind := TK_NAME;
+    elsif ch = '"' then
+      # lit_string's body. units stops growing the moment the cursor leaves the start line and
+      # cur.col16 takes over (countUnit), which is the whole multi-line rule in one guard.
+      while j <= length(text) and text[j] <> '"' and not lineEnd(text[j]) do
+        if text[j] = BACKSLASH and succ(j) <= length(text) and
+              (text[succ(j)] = '\n' or text[succ(j)] in SPACES) then
+          # The continuation: '\' + blanks/newlines/'#'-comment + '\' is ignored by the analyzer,
+          # so the string goes on, but every one of those characters still occupies a column on
+          # the line it sits on -- including this first backslash.
+          countUnit(out.line0, cur, units, 1);
+          j := succ(j);
+          while j <= length(text) and text[j] <> BACKSLASH and text[j] <> '"' do
+            if lineEnd(text[j]) then
+              scanLineBreak(text, j, cur, units);
+            elsif text[j] = '#' then
+              # a line comment inside the ignored region may hold a double quote, so only a break
+              # ends it. The radix question doc_store.isRadixHash settles cannot arise in here.
+              while j <= length(text) and not lineEnd(text[j]) do
+                countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+                j := succ(j);
+              end while;
+            else
+              countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+              j := succ(j);
+            end if;
+          end while;
+          if j <= length(text) and text[j] = BACKSLASH then
+            countUnit(out.line0, cur, units, 1);
+            j := succ(j);
+          end if;
+        elsif text[j] = BACKSLASH then
+          before := j;
+          j := pastEscape(text, j);
+          # An escape body is ASCII by construction -- one character, or digits and a ';' -- so
+          # its character count is its unit count. What is not ASCII there is ILLEGAL_STRING_ESCAPE
+          # for the analyzer, whose business that is, not the scanner's.
+          countUnit(out.line0, cur, units, j - before);
+        else
+          countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end if;
+      end while;
+      if j <= length(text) and text[j] = '"' then
+        # the closing quote: on the span's last line if the string was continued, so counted like
+        # every other character there.
+        countUnit(out.line0, cur, units, 1);
+        j := succ(j);
+      end if;
+      out.kind := TK_STRING;
     elsif ch in DIGITS then
       j := pastNumber(text, cur.offset);
       # digits, base markers and signs are all ASCII, so a number is as wide in units as in
