@@ -173,7 +173,13 @@ const proc: main is func
     check("a hash that opens the line is still a comment",
           str(pos(codeText(doc), "hashFirst")), "0");
     check("and the next line is still code", wordAt(doc, 1, 21).word, "keepMe");
-    # Two guards inside isRadixHash that no fixture above reaches. The first is the one
+    # The astral character inside the string literal is two UTF-16 units but one character;
+    # the old masked computation flattened it to one space, so the column of 'zzz' was wrong.
+    # The scanner-based wordAt reports the real UTF-16 column from the token.
+    setVersion(doc, "\"x\128169;y\" zzz", 1);
+    check("a name after an astral string keeps its real UTF-16 column",
+          str(wordAt(doc, 0, 7).character1), "7");
+    # Two guards in the scanner's pastNumber that no fixture above reaches. The first is the one
     # standing between this rule and a comment leak: '#' after a non-digit must comment,
     # and only the left-neighbour test says so. The second is the truncated buffer a
     # typist actually has -- '#' as the last character of the document -- where reading

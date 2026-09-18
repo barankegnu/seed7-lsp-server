@@ -1175,7 +1175,7 @@ const func string: maskOf (in string: text) is func
         tk := nextToken(text, cur);
         out := out & text[copied .. pred(tk.start)];
         if hiddenKind(tk.kind) then
-          for i range tk.start .. tk.stop do
+          for i range tk.start to tk.stop do
             if text[i] = '\n' or text[i] = '\r' then
               out := out & text[i .. i];
             else

@@ -427,6 +427,52 @@ const func boolean: hiddenKind (in integer: kind) is func
     end if;
   end func;
 
+# The token an LSP position resolves to. Positions sit between characters, so the rule is
+# left-of-character: the position before character n names the token ENDING at n, and only if
+# nothing ends there does it name the token starting at n. doc_store.wordAt owned this rule
+# when it derived runs from characters; now the run comes from the scanner and only the
+# preference is decided here.
+#
+# idx is a 1-based character index into text. Returns a tok with start = 0 when the position
+# is outside every token, including inside a comment or a literal.
+const func tok: tokenAt (in string: text, in integer: idx) is func
+  result
+    var tok: out is tok.value;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var boolean: done is FALSE;
+  begin
+    out.start := 0;
+    out.stop := 0;
+    out.kind := TK_ILLEGAL;
+    done := FALSE;
+    while cur.offset <= length(text) and not done do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+        done := TRUE;
+      else
+        tk := nextToken(text, cur);
+        if tk.start > idx then
+          done := TRUE;
+        elsif idx >= tk.start and idx <= tk.stop then
+          if idx = tk.start and out.start > 0 then
+            (* left-of-character: a previous token already ends here *)
+            done := TRUE;
+          elsif hiddenKind(tk.kind) then
+            out.start := 0;
+            done := TRUE;
+          else
+            out := tk;
+            done := TRUE;
+          end if;
+        elsif idx = succ(tk.stop) and not hiddenKind(tk.kind) and out.start = 0 then
+          out := tk;
+        end if;
+      end if;
+    end while;
+  end func;
+
 # The same text with every string, char and comment character replaced by a space. Newlines and
 # length survive, so an offset into the result is an offset into the document -- that is
 # doc_store's contract for codeText, and this is the only place the machine that implements it

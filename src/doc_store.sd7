@@ -191,9 +191,6 @@ const func string: codeText (in lsDoc: doc) is func
     out := doc.mask;
   end func;
 
-const func boolean: tokenChar (in char: ch) is
-  return nameChar(ch) or opChar(ch);
-
 # The character AT an LSP position -- positions sit between characters, so this is
 # the character to the RIGHT of the cursor. A position at or past the end of its
 # line yields the index of that line's terminator; an out-of-range line yields one
@@ -223,32 +220,13 @@ const func integer: charIndexOf (in lsDoc: doc, in integer: line0,
     end if;
   end func;
 
-const func boolean: onLine (in lsDoc: doc, in integer: lineIdx,
-                            in integer: idx) is func
-  result
-    var boolean: out is FALSE;
-  begin
-    out := idx >= doc.lineStart[lineIdx] and
-           idx < doc.lineStart[lineIdx] + lineWidth(doc.text, doc.lineStart[lineIdx]);
-  end func;
-
-const func boolean: codeKindAt (in string: code, in integer: idx,
-                                in boolean: wantOp) is func
-  result
-    var boolean: out is FALSE;
-  begin
-    if idx >= 1 and idx <= length(code) then
-      if wantOp then
-        out := opChar(code[idx]);
-      else
-        out := nameChar(code[idx]);
-      end if;
-    end if;
-  end func;
-
-# The token under a cursor, taken from masked text: nothing inside a string, a char literal
-# or a comment can be answered with. What is still unsolved is the shape of a token --
-# `a<b' reads as one operator run -- which is scan.sd7's job (M4).
+# The token under an LSP position, as the shape the symbol features have always taken.
+# The column is a CHARACTER column and the width counts characters, so completion's
+# prefixOf and hover's range need no change. The token comes from the scanner, not a
+# character run, which is what closes the a<b and 16#beef defects.
+# For operators, only those whose characters are in OP_CHARS are returned: the scanner's
+# SPECIAL_CHARS also holds '$', '.' and '`', which are directive markers or punctuation,
+# not meaningful symbols for hover/definition/completion.
 const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
                             in integer: character0) is func
   result
@@ -256,42 +234,24 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
   local
     var integer: lineIdx is 0;
     var integer: start is 1;
-    var integer: right is 0;
-    var integer: at is 0;
-    var integer: first is 0;
-    var integer: lastIdx is 0;
-    var boolean: opRun is FALSE;
-    var string: code is "";
+    var integer: idx is 1;
+    var tok: tk is tok.value;
   begin
     lineIdx := line0 + 1;
     if lineIdx >= 1 and lineIdx <= lineCount(doc) then
       start := doc.lineStart[lineIdx];
-      code := codeText(doc);
-      right := charIndexOf(doc, line0, character0);
-      at := 0;
-      # right > start already keeps the character to the left on this line; the bound is
-      # on pred(right) because a document whose last line has no terminator reports one
-      # past its end, and that is exactly where a truncated buffer leaves the cursor.
-      if right > start and pred(right) <= length(code) and tokenChar(code[pred(right)]) then
-        at := pred(right);
-      elsif right >= start and onLine(doc, lineIdx, right) and tokenChar(code[right]) then
-        at := right;
-      end if;
-      if at <> 0 then
-        opRun := opChar(code[at]);
-        first := at;
-        while pred(first) >= start and codeKindAt(code, pred(first), opRun) do
-          first := pred(first);
-        end while;
-        lastIdx := at;
-        while codeKindAt(code, succ(lastIdx), opRun) do
-          lastIdx := succ(lastIdx);
-        end while;
-        out.word := code[first .. lastIdx];
-        out.line1 := lineIdx;
-        out.column1 := first - start + 1;
-        out.character1 := utf16Before(code, first) - utf16Before(code, start);
-        out.width := lastIdx - first + 1;
+      idx := charIndexOf(doc, line0, character0);
+      tk := tokenAt(doc.text, idx);
+      if tk.start > 0 and not hiddenKind(tk.kind) and tk.line0 = line0 then
+        if tk.kind = TK_OP and not opChar(doc.text[tk.start]) then
+          (* Operator not in OP_CHARS (e.g. '$', '.', '`'): not a meaningful symbol *)
+        else
+          out.word := doc.text[tk.start .. tk.stop];
+          out.line1 := succ(tk.line0);
+          out.column1 := tk.start - start + 1;
+          out.character1 := tk.col16;
+          out.width := tk.stop - tk.start + 1;
+        end if;
       end if;
     end if;
   end func;

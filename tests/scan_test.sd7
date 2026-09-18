@@ -128,6 +128,61 @@ const func string: kindsOf (in string: text) is func
     end while;
   end func;
 
+# The 1-based character index for (line0, col16) in a text. Walks line breaks to find
+# the line, then counts UTF-16 units along it.
+const func integer: indexOf (in string: text, in integer: line0,
+                             in integer: col16) is func
+  result
+    var integer: idx is 1;
+  local
+    var integer: curLine is 0;
+    var integer: i is 1;
+    var integer: units is 0;
+  begin
+    curLine := 0;
+    i := 1;
+    while curLine < line0 and i <= length(text) do
+      if text[i] = '\n' then
+        curLine := succ(curLine);
+        i := succ(i);
+      elsif text[i] = '\r' then
+        curLine := succ(curLine);
+        i := succ(i);
+        if i <= length(text) and text[i] = '\n' then
+          i := succ(i);
+        end if;
+      else
+        i := succ(i);
+      end if;
+    end while;
+    units := 0;
+    while units < col16 and i <= length(text) and
+          text[i] <> '\n' and text[i] <> '\r' do
+      units +:= utf16CharLength(text[i]);
+      i := succ(i);
+    end while;
+    (* If col16 is past the line end, keep advancing the index so tokenAt sees an out-of-range position *)
+    while units < col16 do
+      units +:= 1;
+      i := succ(i);
+    end while;
+    idx := i;
+  end func;
+
+# The text of the token an LSP position resolves to, or "" for nothing.
+const func string: tokenTextOf (in string: text, in integer: line0,
+                                in integer: col16) is func
+  result
+    var string: out is "";
+  local
+    var tok: tk is tok.value;
+  begin
+    tk := tokenAt(text, indexOf(text, line0, col16));
+    if tk.start > 0 then
+      out := text[tk.start .. tk.stop];
+    end if;
+  end func;
+
 const proc: main is func
   begin
     check("name, op, bracket",
@@ -453,6 +508,23 @@ const proc: main is func
     check("a document that is pure code masks to itself, trailing newline included",
           maskOf("x := 1;\n"),
           "x := 1;\n");
+    # ---- tokenAt ---------------------------------------------------------------
+    # The text of the token an LSP position resolves to, or "" for nothing.
+    # Converts (line0, col16) to a 1-based character index for tokenAt.
+    check("left-of-character wins over the token that starts here",
+          tokenTextOf("ab + cd", 0, 4), "+");
+    check("a position that ends nothing falls back to the token starting there",
+          tokenTextOf("ab + cd", 0, 5), "cd");
+    check("a '<' is not part of the name on either side of it",
+          tokenTextOf("a<b", 0, 1), "a");
+    check("a position one past a name's last character still names it",
+          tokenTextOf("writeln(1)", 0, 7), "writeln");
+    check("the middle of a based literal is a number, not a name",
+          tokenTextOf("16#beef", 0, 4), "16#beef");
+    check("inside a comment there is no token",
+          tokenTextOf("(* hidden *)", 0, 5), "");
+    check("a position past the line answers nothing",
+          tokenTextOf("ab", 0, 9), "");
 
     report("scan");
   end func;
