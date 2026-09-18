@@ -324,20 +324,21 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
       end if;
       out.kind := TK_STRING;
     elsif ch = APOSTROPHE then
-      # one element, then the closing quote. The element is an escape (variable length), the
-      # quote character itself ('''), or any single character (which may be two UTF-16 units).
-      # lit_char reads exactly one element and the element says how long it was, so the width is
-      # never a constant -- a fixed count is what lost the mask the characters after the closing
-      # quote. No countUnit: a char literal never spans a line (doc_store says the same), so width
-      # and cursor advance are the same number here.
-      if j <= length(text) and text[j] = BACKSLASH then
+      # lit_char reads exactly ONE char_literal_element and the element says how long it was
+      # ('\16#ff;' is seven characters of element), so the width is never a constant -- a fixed
+      # count is what lost the mask the characters after the closing quote. The quote character
+      # (''') needs no arm of its own: a quote is just an ordinary single character, which the
+      # last branch reads. Neither the element nor the closing quote may be a line break, which is
+      # lit_char's CHAR_EXCEEDS ("Character literal exceeds source line"): an unterminated literal
+      # -- the normal state mid-typing -- ends AT its line and leaves the break to skipWhitespace.
+      # Crossing it would report every later token of the document on the wrong line, and with the
+      # line never crossed width and cursor advance stay the same number, so there is no countUnit.
+      if j <= length(text) and text[j] = BACKSLASH and succ(j) <= length(text) and
+         not lineEnd(text[succ(j)]) then
         before := j;
         j := pastEscape(text, j);
         units +:= j - before;
-      elsif j <= length(text) and text[j] = APOSTROPHE then
-        units +:= 1;
-        j := succ(j);
-      elsif j <= length(text) then
+      elsif j <= length(text) and not lineEnd(text[j]) then
         units +:= utf16CharLength(text[j]);
         j := succ(j);
       end if;

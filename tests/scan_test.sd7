@@ -299,5 +299,27 @@ const proc: main is func
           "| name 0:14:2 [is] | char 0:17:5 ['\\9;'] | op 0:22:1 [;] " &
           "| name 0:24:5 [const] | name 0:30:7 [integer] | op 0:37:1 [:] " &
           "| name 0:39:9 [afterThis] | name 0:49:2 [is] | number 0:52:1 [1] | op 0:53:1 [;]");
+    # The hole README describes is about what follows the closing quote, and a char literal that
+    # never gets one is the same case while typing. lit_char refuses a line break as its element
+    # AND as its closing quote (CHAR_EXCEEDS, "Character literal exceeds source line"), so the
+    # token ends AT its line and skipWhitespace takes the break. Follow the break instead and every
+    # later token of the document reports line 0 -- which is what these two checks measure: the
+    # line of the name that FOLLOWS, not just the width of the literal.
+    check("a bare newline ends an unterminated char literal on its own line",
+          kindsOf("x := '\nwriteln(1);"),
+          "name 0:0:1 [x] | op 0:2:2 [:=] | char 0:5:1 ['] | name 1:0:7 [writeln] " &
+          "| bracket 1:7:1 [(] | number 1:8:1 [1] | bracket 1:9:1 [)] | op 1:10:1 [;]");
+    # The backslash form reaches pastEscape, whose one-character arm would otherwise read the
+    # newline as the escape's body and land the closing-quote test on the NEXT line.
+    check("a lone backslash at the end of a line does not take the line with it",
+          kindsOf("x := '\\\nwriteln(1);"),
+          "name 0:0:1 [x] | op 0:2:2 [:=] | char 0:5:2 ['\\] | name 1:0:7 [writeln] " &
+          "| bracket 1:7:1 [(] | number 1:8:1 [1] | bracket 1:9:1 [)] | op 1:10:1 [;]");
+    # The bound term of the escape arm's condition. '\\' at the very end of the buffer is what a
+    # user has typed before the second backslash of a continuation arrives, and indexing past the
+    # end there would raise RANGE_ERROR inside the suite (no graded line) rather than print a FAIL.
+    check("a lone backslash at end of buffer is one char token and raises nothing",
+          kindsOf("x := '\\"),
+          "name 0:0:1 [x] | op 0:2:2 [:=] | char 0:5:2 ['\\]");
     report("scan");
   end func;
