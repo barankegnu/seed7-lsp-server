@@ -213,6 +213,15 @@ never open a region.
 `end func` closes both the body and, with its terminating `;`, the declaration — so a nested
 pair of regions, which is what an editor wants: fold the body, or fold the whole declaration.
 
+Where the construct rules live: `src/blocks.sd7`, not `scan.sd7` and not a feature. Design §2
+lists `scan.sd7` as owning "tokens, comments, blocks, token-at-offset", and that line is amended
+here. Which names open a block is a claim about Seed7's *constructs*; `scan.sd7` is the lexicon,
+and §3.3's "this is not a parser" is only true while construct keywords never appear in it.
+Folding, selection ranges and the deferred local-scope spec all ask one question — what encloses
+this line — and a single module answering it is what stops the three from disagreeing the way the
+mask and the scanner were about to. `blocks.sd7` consumes tokens and exports line pairs: it takes
+no position, converts nothing and builds no LSP shape, so invariants 2, 3 and 4 are untouched.
+
 ## 6. `textDocument/selectionRange` and `textDocument/semanticTokens`
 
 ### 6.1 selectionRange
