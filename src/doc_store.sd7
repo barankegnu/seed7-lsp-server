@@ -242,7 +242,7 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
       start := doc.lineStart[lineIdx];
       idx := charIndexOf(doc, line0, character0);
       tk := tokenAt(doc.text, idx);
-      if tk.start > 0 and not hiddenKind(tk.kind) and tk.line0 = line0 then
+      if tk.start > 0 and not hiddenKind(tk.kind) then
         if tk.kind = TK_OP and not opChar(doc.text[tk.start]) then
           (* Operator not in OP_CHARS (e.g. '$', '.', '`'): not a meaningful symbol *)
         else
