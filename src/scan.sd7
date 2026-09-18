@@ -38,8 +38,14 @@ const type: scanCursor is new struct
 const char: BACKSLASH is chr(92);
 const char: APOSTROPHE is chr(39);
 
-const set of char: OP_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
-                                ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
+# The special-character class -- manual/tokens.htm 10.2.2, and what seed7's scanner grows into
+# an operator run. doc_store.sd7 carries its own, SMALLER OP_CHARS on purpose, and it is not the
+# same set: this one also holds '$', '.' and '`', which doc_store's 18 members lack (doc_store's
+# set is a subset of this one). doc_store's list is the character-run logic behind codeText and
+# wordAt; Task 8 replaces that with these tokens and doc_store's copy goes with it. Until then,
+# do not merge the two -- renaming or shrinking either one moves the mask under existing checks.
+const set of char: SPECIAL_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
+                                     ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
 const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};
 const set of char: DIGITS is {'0','1','2','3','4','5','6','7','8','9'};
 const set of char: SPACES is {' ', '\9;', '\r'};
@@ -57,7 +63,12 @@ const func boolean: nameStart (in char: ch) is
 const func boolean: nameMore (in char: ch) is
   return ch in LETTERS or ch in DIGITS or ch = '_';
 
-# Whitespace is not a token: the cursor walks over it, updating line and column.
+# Whitespace is not a token: the cursor walks over it, updating line and column. The line model
+# is doc_store.lineStarts, the authority every position conversion already uses: '\n', a lone
+# '\r', and a '\r\n' pair each count as ONE break, so a CRLF or CR-only buffer and an LF buffer
+# put the same token on the same line0 and col16. That agreement is what keeps folding,
+# selectionRange and semanticTokens on the lines diagnostics use. A '\r' is still in SPACES for
+# the blank-only case; the newline arm below decides first, so a pair is never counted twice.
 const proc: skipWhitespace (in string: text, inout scanCursor: cur) is func
   local
     var char: ch is ' ';
@@ -69,6 +80,14 @@ const proc: skipWhitespace (in string: text, inout scanCursor: cur) is func
         cur.line0 := succ(cur.line0);
         cur.col16 := 0;
         cur.offset := succ(cur.offset);
+      elsif ch = '\r' then
+        cur.line0 := succ(cur.line0);
+        cur.col16 := 0;
+        if cur.offset < length(text) and text[succ(cur.offset)] = '\n' then
+          cur.offset := cur.offset + 2;
+        else
+          cur.offset := succ(cur.offset);
+        end if;
       elsif ch in SPACES then
         cur.col16 +:= utf16CharLength(ch);
         cur.offset := succ(cur.offset);
@@ -105,8 +124,8 @@ const func tok: nextToken (in string: text, inout scanCursor: cur) is func
       out.kind := TK_NAME;
     elsif ch in BRACKETS then
       out.kind := TK_BRACKET;
-    elsif ch in OP_CHARS then
-      while j <= length(text) and text[j] in OP_CHARS do
+    elsif ch in SPECIAL_CHARS then
+      while j <= length(text) and text[j] in SPECIAL_CHARS do
         units +:= utf16CharLength(text[j]);
         j := succ(j);
       end while;

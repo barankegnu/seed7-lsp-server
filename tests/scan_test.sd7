@@ -82,6 +82,28 @@ const func integer: tokenColOf (in string: text, in integer: col16) is func
     end while;
   end func;
 
+# "line0:col16" for every token, joined by " ". The three line-ending fixtures below hold the
+# same five tokens and differ only in how their lines end, so their strings must be equal.
+const func string: positionsOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+  begin
+    while cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        if out <> "" then
+          out := out & " ";
+        end if;
+        out := out & str(tk.line0) & ":" & str(tk.col16);
+      end if;
+    end while;
+  end func;
+
 # "kind line:col:width [text]" joined by " | " -- the shape every check below pins.
 const func string: kindsOf (in string: text) is func
   result
@@ -146,5 +168,19 @@ const proc: main is func
     checkTrue("an illegal token is one character wide",
               length(kindsOf("\8;\8;")) > 0 and
               kindsOf("\8;\8;") = "illegal 0:0:1 [\8;] | illegal 0:1:1 [\8;]");
+    # The line-ending trio. doc_store.lineStarts counts '\n', a lone '\r' and a '\r\n' pair each
+    # as ONE break, so all three fixtures below have line starts at 1, at the 'c' and at the ' '
+    # before 'd' -- which puts a/:=/b on line 0 at columns 0/2/5, c on line 1 at column 0 and d on
+    # line 2 at column 1. Each fixture names its own mutation: the LF one the '\n' arm, the CR one
+    # a missing '\r' arm (with '\r' merely blank, 'c' lands at 0:7), the CRLF one a '\r\n' counted
+    # as two breaks (with the lookahead gone, 'c' lands at 2:0). The CR fixture ends in a lone
+    # '\r', which is what reaches the 'cur.offset < length(text)' bound guard: without it the
+    # lookahead indexes past the end and the suite dies without a graded line.
+    check("an LF document puts its tokens on lines 0, 1 and 2",
+          positionsOf("a := b\nc\n d"), "0:0 0:2 0:5 1:0 2:1");
+    check("a CRLF document gives the same lines and columns",
+          positionsOf("a := b\r\nc\r\n d"), "0:0 0:2 0:5 1:0 2:1");
+    check("a lone-CR document gives the same lines and columns",
+          positionsOf("a := b\rc\r d\r"), "0:0 0:2 0:5 1:0 2:1");
     report("scan");
   end func;
