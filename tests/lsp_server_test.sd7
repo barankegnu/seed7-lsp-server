@@ -52,6 +52,8 @@ const func string: firstMissing is func
   end func;
 
 const proc: main is func
+  local
+    var rpcMsg: msg is rpcMsg.value;
   begin
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
@@ -71,5 +73,23 @@ const proc: main is func
           str(length(symbolsOfDocument("file:///tmp/never/opened.sd7"))), "0");
     check("every advertised capability has a handler", firstMissing(), "");
     check("no capability is advertised for an unhandled method", firstUnhandled(), "");
+    # The analysis entry beside openDocs, and who is allowed to remove it. A document reopened
+    # at version 1 after a close would otherwise be answered from the records its version number
+    # now collides with, and the same is true of any change whose version a client did not send:
+    # invalidation is a drop at the mutation site, not a comparison of client-supplied numbers.
+    checkTrue("an open document holds its analysis entry",
+              "file:///tmp/seed7_lsp_syms.sd7" in analysisCache);
+    msg := parseMessage("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didClose\"," <&
+                        "\"params\":{\"textDocument\":{\"uri\":\"" <&
+                        "file:///tmp/seed7_lsp_syms.sd7\"}}}");
+    handle(msg);
+    # The didClose branch publishes an empty-diagnostic frame to the protocol channel, and a
+    # frame does not end with a line break: without this, the suite's graded line would be
+    # glued to the tail of that JSON and the Makefile recipe would find no verdict at all.
+    # (`newLine` is not available in this distribution; `writeln` with no argument is.)
+    writeln;
+    checkTrue("didClose drops the document", not ("file:///tmp/seed7_lsp_syms.sd7" in openDocs));
+    checkTrue("didClose drops the analysis entry",
+              not ("file:///tmp/seed7_lsp_syms.sd7" in analysisCache));
     report("lsp_server");
   end func;

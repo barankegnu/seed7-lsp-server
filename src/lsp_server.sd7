@@ -25,14 +25,14 @@ var boolean: gotShutdown is FALSE;
 # One analysis of one document version: the diagnostics the push channel publishes and the
 # symbol records every textDocument feature answers from. It cannot live in `lsDoc`, because
 # `symRec` is declared in analysis.sd7 and doc_store.sd7 must not come to include that.
-const type: docCache is new struct
+const type: cachedAnalysis is new struct
     var docAnalysis: analyzed is docAnalysis.value;
     var integer: version is -1;
   end struct;
 
-const type: docCacheHash is hash [string] docCache;
+const type: analysisMap is hash [string] cachedAnalysis;
 
-var docCacheHash: analysisCache is docCacheHash.EMPTY_HASH;
+var analysisMap: analysisCache is analysisMap.EMPTY_HASH;
 
 const proc: note (in string: text) is func
   begin
@@ -112,14 +112,17 @@ const func string: textToAnalyze (in string: uri) is func
   end func;
 
 # The single place a document is analysed. Every reader below goes through it, so one version
-# costs one parseStri and a hover arriving after a change costs none. The version stamp is the
-# invalidation: `setVersion` is the only writer of `openDocs[uri].version`, and didClose drops
-# the entry so a document reopened at the same version cannot inherit the last session's
-# records. The `analyzed ` line on stderr is what tests/transcript.py counts -- the log is the
-# observable, so no counter variable enters the product.
+# costs one parseStri and a hover arriving after a change costs none. THE DROPS ARE THE
+# MECHANISM: didOpen, didChange and didClose each delete the entry, because a version a client
+# did not send is defaulted by `intAt' and a version a client reused is not a new document --
+# invalidation may not rest on either. The stamp is a second opinion behind them: an entry whose
+# version differs from its document's is refused even by a caller that forgot its drop, which
+# costs one integer comparison and no wrong answer. The `seed7-lsp: analyzed ' line on stderr is
+# what tests/transcript.py counts -- the log is the observable, so no counter variable enters
+# the product.
 const proc: ensureAnalyzed (in string: uri) is func
   local
-    var docCache: fresh is docCache.value;
+    var cachedAnalysis: fresh is cachedAnalysis.value;
   begin
     if uri in openDocs and
        not (uri in analysisCache and
@@ -216,6 +219,11 @@ const proc: handleChange (in rpcMsg: msg) is func
                    intAt(atKey(msg.params, "textDocument"), "version",
                          openDocs[uri].version));
       end if;
+      # The version above may be the one intAt invented: LSP 3.18 REQUIRES `version' on
+      # VersionedTextDocumentIdentifier, so a frame without it is malformed, and this server
+      # answers it instead of rejecting it. A change we tolerate is a change we must not cache
+      # past, so the entry is dropped here rather than left to a number comparison.
+      excl(analysisCache, uri);
       refresh(uri);
     end if;
   end func;
@@ -247,6 +255,9 @@ const proc: handle (in rpcMsg: msg) is func
         openDocs @:= [uri] lsDoc.value;
         setVersion(openDocs[uri], strAt(atKey(msg.params, "textDocument"), "text", ""),
                    intAt(atKey(msg.params, "textDocument"), "version", 0));
+        # A didOpen with no didClose in between is another frame a client must not send and this
+        # server answers. The document was just replaced, whatever its version number says.
+        excl(analysisCache, uri);
         refresh(uri);
       end if;
     elsif msg.method = "textDocument/documentSymbol" then
@@ -300,8 +311,10 @@ const proc: handle (in rpcMsg: msg) is func
       if uri in openDocs then
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
-        # The records belong to the session, not to the uri: a reopen that starts at version 1
-        # again must not be answered from the version-1 analysis it is about to collide with.
+        # Two reasons, one line: the records belong to the session and not to the uri, so a
+        # reopen that starts at version 1 again must not be answered from the version-1 analysis
+        # it is about to collide with; and this is what bounds the cache at one entry per OPEN
+        # document, which matters at ~1.4 MiB an entry.
         excl(analysisCache, uri);
       end if;
     else

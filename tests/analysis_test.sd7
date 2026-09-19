@@ -108,6 +108,30 @@ const func string: diagPin (in analysisResult: a, in integer: i) is func
     end if;
   end func;
 
+# Test-only narrowing. analyzeAll is production's only analysis entry point, so these checks
+# characterise IT; reading one half of its result is a convenience for the assertions, not a
+# second path the server can take. Each call costs one parseStri -- which is what analyzeText and
+# analyzeSymbols used to cost between them, two.
+const func analysisResult: parsedOf (in string: text, in array string: libraryDirs) is func
+  result
+    var analysisResult: out is analysisResult.value;
+  local
+    var docAnalysis: d is docAnalysis.value;
+  begin
+    d := analyzeAll(text, libraryDirs);
+    out := d.parsed;
+  end func;
+
+const func array symRec: symsOf (in string: text, in array string: libraryDirs) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var docAnalysis: d is docAnalysis.value;
+  begin
+    d := analyzeAll(text, libraryDirs);
+    out := d.syms;
+  end func;
+
 const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
@@ -120,20 +144,20 @@ const proc: main is func
   begin
     # Empty libraryDirs is enough: the interpreter resolves its own stdlib,
     # so the test does not depend on where Seed7 happens to be installed.
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1 + \"a\");\n  end func;\n", dirs);
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1 + \"a\");\n  end func;\n", dirs);
     check("semantic error count", str(length(a.diags)), "2");
     check("first error has no column", str(a.diags[1].column1), "0");
     check("not flagged as EOF", str(a.diags[1].atEof), "FALSE");
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n", dirs);
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n", dirs);
     check("truncated file has EOF class", str(a.diags[length(a.diags)].atEof), "TRUE");
     # The EOF class cannot be keyed on errorType: it also surfaces inside the
     # message of EXPECTED_SYMBOL. "no main yet" does have its own member though,
     # and an empty buffer -- the first state of a new file -- really reports it.
-    a := analyzeText("", dirs);
+    a := parsedOf("", dirs);
     checkTrue("empty buffer is not silent", length(a.diags) <> 0);
     check("main-missing kind survives into the result",
           str(a.diags[length(a.diags)].errKind), "SYSTEM_MAIN_MISSING");
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(\"ok\");\n  end func;\n", dirs);
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(\"ok\");\n  end func;\n", dirs);
     check("valid file is clean", str(length(a.diags)), "0");
     checkTrue("driver wraps a library", pos(driverFor(libPath), "include \"/tmp/seed7_lsp_probe.s7i\";") <> 0);
 
@@ -143,11 +167,11 @@ const proc: main is func
     out := open(libPath, "w");
     write(out, "const func integer: probeDouble (in integer: n) is\n  return n * 2;\n");
     close(out);
-    a := analyzeText(driverFor(libPath), dirs);
+    a := parsedOf(driverFor(libPath), dirs);
     check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
-    a := analyzeText(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
+    a := parsedOf(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
     checkTrue("missing include is reported", length(a.diags) <> 0);
-    syms := analyzeSymbols(readAll(fixPath), dirs);
+    syms := symsOf(readAll(fixPath), dirs);
     checkTrue("fixture yields symbols", length(syms) <> 0);
     check("own struct is listed", symsNamed(syms, "Widget")[1].cat, "TYPEOBJECT");
     check("a buffer's own declarations carry the STRING file",
@@ -164,7 +188,7 @@ const proc: main is func
     checkTrue("nothing keeps the ? file", pos(allFiles(syms), "?") = 0);
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than
     # a name; buildSign must not paste that marker into text the user reads.
-    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\n" <&
+    syms := symsOf("$ include \"seed7_05.s7i\";\n" <&
                              "const set of char: letters is {'a'};" <& chr(10), dirs);
     checkTrue("a marker type is not printed as a signature",
               pos(symsNamed(syms, "letters")[1].sign, "*") = 0);
@@ -173,7 +197,7 @@ const proc: main is func
     # marker rather than "set of char", and that text lands in every hover of it.
     # a generic parameter is what reports the marker -- `pos' takes a set whose type is
     # anonymous -- so the parameter has to be a set for this to reach the guard at all.
-    syms := analyzeSymbols("$ include \"seed7_05.s7i\";\n" &
+    syms := symsOf("$ include \"seed7_05.s7i\";\n" &
                            "const func integer: countSet (in set of char: chSet) is func\n" &
                            "  result\n    var integer: n is 0;\n  begin\n" &
                            "  end func;\n", dirs);
@@ -188,18 +212,18 @@ const proc: main is func
     # The reproduction for the rule AGENTS.md and spec §4.4 state. Two documents whose
     # character positions differ report the SAME column, because both escape sequences end
     # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"ππ\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst string: s is \"ππ\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
     check("escape after two 2-byte chars: one diagnostic at byte column 26",
           diagPin(a, 1), "1|26@ILLEGAL_STRING_ESCAPE@line2|Illegal string escape \"\\z\"");
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst string: s is \"\128169;\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst string: s is \"\128169;\\z\";\nconst proc: main is func begin noop; end func;\n", dirs);
     check("escape after one 4-byte char: same column at a different character",
           diagPin(a, 1), "1|26@ILLEGAL_STRING_ESCAPE@line2|Illegal string escape \"\\z\"");
-    a := analyzeText("$ include \"seed7_05.s7i\";\nconst proc: main is func\n" &
+    a := parsedOf("$ include \"seed7_05.s7i\";\nconst proc: main is func\n" &
                      "  begin\n    writeln(1) writeln(2);\n  end func;\n", dirs);
     check("a token-level error names the position just after its token",
           diagPin(a, 1),
           "7|23@EXPECTED_SYMBOL@line4|\"end\" expected found \"writeln\"");
     check("an unanalysable buffer yields nothing",
-          str(length(analyzeSymbols("", dirs))), "0");
+          str(length(symsOf("", dirs))), "0");
     report("analysis");
   end func;

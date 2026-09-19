@@ -19,9 +19,9 @@ const type: analysisResult is new struct
 const func string: driverFor (in string: path) is
   return "$ include \"seed7_05.s7i\";\n  include " <& literal(path) <& ";\n";
 
-# The diagnostics half of an already-parsed `program`. Written as a separate step because the
-# parse is the expensive part (it builds the whole stdlib) and one parse can also answer the
-# symbol half -- see analyzeAll, which a document version pays for once.
+# The diagnostics half of an already-parsed `program`. Split from the parse because the parse is
+# the expensive part (it builds the whole stdlib) and one parse can also answer the symbol half
+# -- analyzeAll is the only caller and the only entry point this server has.
 const proc: collectDiags (in program: prog, inout analysisResult: res) is func
   local
     var parseError: err is parseError.value;
@@ -38,17 +38,6 @@ const proc: collectDiags (in program: prog, inout analysisResult: res) is func
       diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
       res.diags &:= diag;
     end for;
-  end func;
-
-const func analysisResult: analyzeText (in string: text,
-                                        in array string: libraryDirs) is func
-  result
-    var analysisResult: out is analysisResult.value;
-  local
-    var program: prog is program.EMPTY;
-  begin
-    prog := parseStri(text, parseOptions.value, libraryDirs);
-    collectDiags(prog, out);
   end func;
 
 # Reflection's file for anything declared in the text handed to parseStri -- every buffer
@@ -193,8 +182,8 @@ const func boolean: listed (in array string: texts, in string: one) is func
 
 const type: symSeen is hash [string] integer;
 
-# The symbol half of an already-parsed `program`, appended to `syms`. Both collectors are
-# separate from the parse so analyzeAll can pay for one parseStri and answer both questions.
+# The symbol half of an already-parsed `program`, appended to `syms`. Same reason as
+# collectDiags: one parseStri, both answers.
 const proc: collectSyms (in program: prog, inout array symRec: syms) is func
   local
     var ref_list: objs is ref_list.EMPTY;
@@ -222,33 +211,20 @@ const proc: collectSyms (in program: prog, inout array symRec: syms) is func
     end for;
   end func;
 
-const func array symRec: analyzeSymbols (in string: text,
-                                         in array string: libraryDirs) is func
-  result
-    var array symRec: out is 0 times symRec.value;
-  local
-    var program: prog is program.EMPTY;
-  begin
-    block
-      prog := parseStri(text, parseOptions.value, libraryDirs);
-      collectSyms(prog, out);
-    exception
-      # Every accessor above is total, so reaching here means the walk itself is
-      # unreliable. Report nothing rather than a half-truth.
-      catch RANGE_ERROR:
-        out := 0 times symRec.value;
-      catch INDEX_ERROR:
-        out := 0 times symRec.value;
-      catch ILLEGAL_ACTION:
-        out := 0 times symRec.value;
-    end block;
-  end func;
-
-# Diagnostics and symbols from ONE parse. The dispatcher holds one of these per open document
-# (spec §4.2): analyzeText and analyzeSymbols each build and throw away a `program`, so a
-# didChange followed by a hover would otherwise cost two parses whose records are identical.
-# The error containment is analyzeSymbols' own -- diagnostics are reported whether or not the
-# reflection walk survives, because that is what analyzeText has always done.
+# Diagnostics and symbols from ONE parse, and the only analysis entry point this server has: the
+# dispatcher holds one of these per open document (spec §4.2), so a didChange followed by a hover
+# costs one parseStri rather than the two analyzeText and analyzeSymbols each paid for
+# themselves. Error containment is deliberately asymmetric, and it is a behaviour change from
+# those two functions, which this one replaces:
+# - the parse is OUTSIDE the guard. Wrapping it would turn a raise into an EMPTY diagnostic
+#   list, which publishes a falsely clean document -- the class of lie this branch deletes. The
+#   cost is that a raise from `parseStri' now escapes to main.sd7's -32603 net on all six paths
+#   that reach here (five symbol branches and refresh), where analyzeSymbols used to answer
+#   "no records" for its own and analyzeText never guarded it at all. AGENTS.md's claim that the
+#   net is unreachable is now WIDER than it was: no input this server can be given produces one,
+#   but MEMORY_ERROR territory exists, and nothing can check for it.
+# - the reflection walk keeps the guard it always had: a raise there loses the records and keeps
+#   the diagnostics, because `globalObjects' and its accessors are the unreliable half.
 const type: docAnalysis is new struct
     var analysisResult: parsed is analysisResult.value;
     var array symRec: syms is 0 times symRec.value;
@@ -266,6 +242,8 @@ const func docAnalysis: analyzeAll (in string: text,
     block
       collectSyms(prog, out.syms);
     exception
+      # Every accessor above is total, so reaching here means the walk itself is
+      # unreliable. Report nothing rather than a half-truth.
       catch RANGE_ERROR:
         out.syms := 0 times symRec.value;
       catch INDEX_ERROR:

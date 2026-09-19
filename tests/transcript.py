@@ -94,6 +94,17 @@ def changed(uri, text, version):
                   dict(td(uri, version), contentChanges=[{"text": text}]))
 
 
+def changed_no_version(uri, text):
+    """A didChange whose `textDocument` has no `version` member at all.
+
+    LSP 3.18 makes `version` REQUIRED on VersionedTextDocumentIdentifier (the type didChange
+    names), so this is a malformed frame. The server answers it rather than rejecting it, and
+    `intAt` invents a default for the missing number -- which is why the analysis cache may not
+    key its invalidation on that number."""
+    return notify("textDocument/didChange",
+                  dict(td(uri), contentChanges=[{"text": text}]))
+
+
 def closed(uri):
     return notify("textDocument/didClose", td(uri))
 
@@ -108,8 +119,10 @@ def exit_():
 
 def analyses(err):
     """How many analyses the server logged. `note()` writes to stderr, so the log line in
-    the miss path is the observable and no counter variable enters the product."""
-    return err.count("analyzed ")
+    the miss path is the observable and no counter variable enters the product. Counted by
+    its full prefix: this number is the exit criterion, and a uri or a later phrasing is free
+    to contain the shorter "analyzed "."""
+    return err.count("seed7-lsp: analyzed ")
 
 BROKEN = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln(1 + "a");\n  end func;\n'
 FIXED = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln("日本");\n  end func;\n'
@@ -526,6 +539,40 @@ by_id = {r.get("id"): r for r in replies if "id" in r}
 reopen_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
 expect("reopenedMarker" in reopen_names,
        "a document reopened after close re-analyses (%s)" % reopen_names)
+
+# --- round 1, finding 1: invalidation may not depend on a client-supplied number ---
+# A versionless didChange. The document opens broken, the change replaces it with a valid
+# program that declares something new, and the frame carries no version. Answering it from the
+# previous entry would publish the old file's errors and an outline missing the new declaration.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, BROKEN, 1)),
+                                frame(changed_no_version(CACHE_URI, SYMS + CACHE_TAIL)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+vless_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+               and r["params"]["uri"] == CACHE_URI]
+expect(analyses(err) == 2,
+       "a didChange with no version is a new version (saw %d analyses)" % analyses(err))
+vless_last = vless_notes[-1]["params"]["diagnostics"] if vless_notes else None
+expect(bool(vless_notes) and vless_last == [],
+       "the versionless change publishes the NEW text's diagnostics (%s)" % vless_last)
+vless_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("onlyAfterChange" in vless_names,
+       "the versionless change's declaration reaches the outline (%s)" % vless_names)
+
+# A didOpen with no didClose in between, same version number. Also malformed (LSP says a client
+# must not), also answered here -- so the entry the first open left must not survive it.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS, 1)),
+                                frame(opened(CACHE_URI, SYMS +
+                                             "\nconst integer: reopenedWithoutClose is 1;\n", 1)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+reopen2 = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("reopenedWithoutClose" in reopen2,
+       "a didOpen that follows no didClose re-analyses (%s)" % reopen2)
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)
