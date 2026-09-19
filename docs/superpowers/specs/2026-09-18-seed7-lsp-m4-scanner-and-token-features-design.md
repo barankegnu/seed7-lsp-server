@@ -125,7 +125,43 @@ which is what makes it one machine rather than two.
 
 Cost: ~1 byte per character with copy-on-write, so the worst measured document costs 375 KB.
 
-### 4.2 Held, beside `openDocs`, per version
+### 4.2 Held, beside `openDocs`, one entry per document
+
+Amended during Task 9, because this section's original shape — an entry stamped with the
+document's version and compared against it — turned out to contain a dead arm, and the ruling
+that removed the arm was mine.
+
+One entry per open document holding **both** products of one analysis: the diagnostics and the
+`array symRec`. Not one entry per version: at a measured ~1.4 MiB per copy, retention keyed to
+versions is a leak that grows with typing.
+
+**Validity is presence, and invalidation is explicit.** Every path that changes a document's text
+or version — `didOpen`, `didChange` — drops the entry before `refresh`, and `didClose` drops it to
+hold memory to O(open documents). A version comparison was kept as a second mechanism until Task
+9's review showed that with those drops in place it can never be the reason anything is
+re-analysed: presence already implies currency, so the arm is unreachable and each of the three
+drops is pinned by its own check. That is the AGENTS.md rule about unreachable safety nets,
+applied to a design decision of my own rather than somebody else's.
+
+The version is also the wrong key on its own merits. `handleChange` tolerates a missing
+`version` by defaulting it to the document's current version, so a client that omits the field
+gets a cache hit on stale text: a hole this server creates by choosing to answer a malformed
+frame rather than reject it, since LSP 3.18 makes `version` required on
+`VersionedTextDocumentIdentifier` and `didChange` uses that type. Once a default is invented for
+a field, that field must not be the key for anything.
+
+Why the win is big enough to be worth the care: every symbol feature reparsed on its own.
+`lsp_server.sd7` calls `symbolsOfDocument(uri)` inside the `documentSymbol`, `definition`,
+`hover`, `completion` and `signatureHelp` branches, and that function was
+`analyzeSymbols(textToAnalyze(uri), libraryDirs)` — one `parseStri` each. Measured at 41 ms a
+parse, a hover followed by a definition on one version spent 82 ms building the same 1 060
+records twice, and a `didChange` spent more. Task 9 measured the combined effect on six symbol
+requests: **251.1 ms before, 28.5 ms after**, with 21 versions of one document costing
+1.5 MiB in total rather than 21 entries.
+
+The cache cannot live in `lsDoc`, because `symRec` is declared in `analysis.sd7` and
+`doc_store.sd7` must not come to include it: that would drag `progs.s7i` into the position
+module through a side door and break invariant 1's intent.
 
 The **`array symRec`**, one per document, replaced on each version. The saving is bigger than
 "one double parse": today *every* symbol feature re-parses, because `lsp_server.sd7` calls
