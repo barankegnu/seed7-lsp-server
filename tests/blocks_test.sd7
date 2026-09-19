@@ -64,6 +64,33 @@ const func string: chainOf (in string: text, in integer: line0) is func
     end for;
   end func;
 
+# Invariant check: every region satisfies startLine >= 0, endLine <= lastLine, endLine > startLine.
+# Returns "" if valid, otherwise the first violation found.
+const func string: regionsValid (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: lastLine is 0;
+    var integer: i is 0;
+  begin
+    lastLine := pred(linesIn(text));
+    rs := blockRegions(text, lastLine);
+    for i range 1 to length(rs) do
+      if rs[i].startLine < 0 then
+        out := "region " <& str(i) <& " has startLine < 0";
+      elsif rs[i].endLine > lastLine then
+        out := "region " <& str(i) <& " has endLine > lastLine";
+      elsif rs[i].endLine <= rs[i].startLine then
+        out := "region " <& str(i) <& " has endLine <= startLine";
+      end if;
+      if out <> "" then
+        # Exit early on first violation
+        i := length(rs) + 1;
+      end if;
+    end for;
+  end func;
+
 const proc: main is func
   begin
     check("an empty text folds nothing", regionsOf(""), "");
@@ -86,6 +113,12 @@ const proc: main is func
           "0-1:imports");
     check("a keyword inside a comment opens no region",
           regionsOf("(* if\n  still comment\n *)\nwriteln(1);\n"), "0-2:comment");
+    check("an unclosed comment at the end of the buffer yields no region",
+          regionsOf("(* unclosed"), "");
+    check("an unclosed comment with trailing newline yields no region",
+          regionsOf("(* unclosed\n"), "");
+    check("an unclosed comment clamped to lastLine yields a valid region",
+          regionsOf("(* unclosed\nwriteln(1);\n"), "0-1:comment");
     check("an unclosed construct ends on the last line",
           regionsOf("const proc: a is func\nbegin\n  if TRUE then\n"), "0-2 1-2");
     check("a struct type body is a region",
@@ -95,5 +128,20 @@ const proc: main is func
                   3), "2-4 1-5 0-5");
     check("a line outside every construct has no chain",
           chainOf("writeln(1);\n", 0), "");
+    # Invariant: every region satisfies startLine >= 0, endLine <= lastLine, endLine > startLine.
+    # This is the contract the region producer must uphold; per-fixture expectations sample it.
+    checkTrue("invariant holds for empty text", regionsValid("") = "");
+    checkTrue("invariant holds for one-line body", regionsValid("const proc: a is func\nbegin\n  noop;\nend func;\n") = "");
+    checkTrue("invariant holds for nested if", regionsValid("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n") = "");
+    checkTrue("invariant holds for repeat", regionsValid("repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n") = "");
+    checkTrue("invariant holds for clauses", regionsValid("if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n") = "");
+    checkTrue("invariant holds for comment", regionsValid("(* one\n   two *)\nwriteln(1);\n") = "");
+    checkTrue("invariant holds for line comments", regionsValid("# a\n# b\n# c\nwriteln(1);\n") = "");
+    checkTrue("invariant holds for includes", regionsValid("$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n") = "");
+    checkTrue("invariant holds for unclosed comment (no region)", regionsValid("(* unclosed") = "");
+    checkTrue("invariant holds for unclosed comment with newline (no region)", regionsValid("(* unclosed\n") = "");
+    checkTrue("invariant holds for unclosed comment clamped", regionsValid("(* unclosed\nwriteln(1);\n") = "");
+    checkTrue("invariant holds for unclosed construct", regionsValid("const proc: a is func\nbegin\n  if TRUE then\n") = "");
+    checkTrue("invariant holds for struct", regionsValid("const type: t is new struct\n  var integer: a is 0;\nend struct;\n") = "");
     report("blocks");
   end func;
