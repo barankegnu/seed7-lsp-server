@@ -163,18 +163,6 @@ The cache cannot live in `lsDoc`, because `symRec` is declared in `analysis.sd7`
 `doc_store.sd7` must not come to include it: that would drag `progs.s7i` into the position
 module through a side door and break invariant 1's intent.
 
-The **`array symRec`**, one per document, replaced on each version. The saving is bigger than
-"one double parse": today *every* symbol feature re-parses, because `lsp_server.sd7` calls
-`symbolsOfDocument(uri)` inside the `documentSymbol`, `definition`, `hover`, `completion` and
-`signatureHelp` branches, and that function is `analyzeSymbols(textToAnalyze(uri), libraryDirs)`
-— one `parseStri` each. Measured at 41 ms a parse, a client that asks for a hover and a
-definition on the same version spends 82 ms building the same 1 060 records twice, and a
-`didChange` spends one more. The cache is the fix for all of them.
-
-The cache cannot live in `lsDoc`, because `symRec` is declared in `analysis.sd7` and
-`doc_store.sd7` must not come to include it: that would drag `progs.s7i` into the position
-module through a side door and break invariant 1's intent.
-
 ### 4.3 Streamed, never held
 
 `foldingRange`, `selectionRange` and `semanticTokens` each take **one fresh forward pass** and
