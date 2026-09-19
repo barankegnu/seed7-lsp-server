@@ -1996,8 +1996,11 @@ precision the data does not have.
 - [ ] **Step 5: Prove five rules.** (i) rule 6's `index := 0` → `index := 1` (a bare `end` pops
   the stack): expected FAIL `an unclosed construct ends on the last line`. (ii) rule 3 → drop
   rule 5's `topWithCloser(st, "until")` to `topWithCloser(st, "end repeat")`, a closer nothing
-  ever pushes: expected FAIL `repeat closes at until`. (iii) rule 7 → treat `begin` as a control
-  opener: expected FAIL `a one-line body is not a region`. (iv) rule 9's `succ(prevLine)` →
+  ever pushes: expected FAIL `repeat closes at until`. (iii) rule 7 → do not push a section
+  region for `begin`: expected FAIL `fixture 2 regions`, which loses its `1-3` region. (The
+  first draft of this instruction said "treat `begin` as a control opener" and Task 10 measured
+  that it fails nothing: an `end begin` closer never matches, so the region is closed by the
+  final flush at the same line and the output is identical. Non-discriminating, so replaced.) (iv) rule 9's `succ(prevLine)` →
   `prevLine`: expected FAIL `a run of line comments is one region, a single one is none` and FAIL
   `a lone line comment yields nothing`. (v) the `st.openLine[i] < endLine` guard in `closeFrom` →
   delete it: expected FAIL `an empty text folds nothing` stays green (no regions at all) — so the
