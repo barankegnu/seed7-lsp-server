@@ -114,11 +114,13 @@ const func string: textToAnalyze (in string: uri) is func
     end if;
   end func;
 
-# The single place a document is analysed. Every reader below goes through it, so one version
-# costs one parseStri and a symbol request arriving after a change costs none -- the change's own
-# refresh has already filled the entry. See `analysisCache' for why presence is the test and
-# where the drops live; the `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py
-# counts, because the log is the observable and no counter variable belongs in the product.
+# The single place a document is analysed. Every reader below goes through it, so a changed
+# document costs one parseStri and a symbol request arriving after that change costs none -- the
+# change's own refresh has already filled the entry. OBLIGATION: any path that changes a
+# document's text or version must delete its entry before refreshing; validity here is presence,
+# deliberately (see `analysisCache' above for why there is no second mechanism). The
+# `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py counts, because the log is
+# the observable and no counter variable belongs in the product.
 const proc: ensureAnalyzed (in string: uri) is func
   local
     var docAnalysis: fresh is docAnalysis.value;
