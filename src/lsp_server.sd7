@@ -22,15 +22,18 @@ var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
 
-# One analysis of one document version: the diagnostics the push channel publishes and the
-# symbol records every textDocument feature answers from. It cannot live in `lsDoc`, because
-# `symRec` is declared in analysis.sd7 and doc_store.sd7 must not come to include that.
-const type: cachedAnalysis is new struct
-    var docAnalysis: analyzed is docAnalysis.value;
-    var integer: version is -1;
-  end struct;
-
-const type: analysisMap is hash [string] cachedAnalysis;
+# One analysis per OPEN document, held beside openDocs rather than inside `lsDoc`: `symRec` is
+# declared in analysis.sd7 and doc_store.sd7 must not come to include that.
+#
+# The entry is valid by PRESENCE, deliberately, and that is the whole invalidation rule: any
+# path that changes a document's text or version must delete its entry first. The three drops
+# that exist today -- didOpen, didChange, didClose -- are each pinned by a check of their own (the
+# reopened-after-close and versionless-change wire checks, and the unit assertion that a close
+# empties the map). Do not add a second mechanism to "harden" this: a version stamp would have
+# saved only a forgotten drop that ALSO bumped the version, and would have failed silently on
+# exactly the bug this round fixed -- a version number a client did not send, which `intAt'
+# defaulted to the previous one. The version belongs to the log line, not to the key.
+const type: analysisMap is hash [string] docAnalysis;
 
 var analysisMap: analysisCache is analysisMap.EMPTY_HASH;
 
@@ -112,31 +115,24 @@ const func string: textToAnalyze (in string: uri) is func
   end func;
 
 # The single place a document is analysed. Every reader below goes through it, so one version
-# costs one parseStri and a hover arriving after a change costs none. THE DROPS ARE THE
-# MECHANISM: didOpen, didChange and didClose each delete the entry, because a version a client
-# did not send is defaulted by `intAt' and a version a client reused is not a new document --
-# invalidation may not rest on either. The stamp is a second opinion behind them: an entry whose
-# version differs from its document's is refused even by a caller that forgot its drop, which
-# costs one integer comparison and no wrong answer. The `seed7-lsp: analyzed ' line on stderr is
-# what tests/transcript.py counts -- the log is the observable, so no counter variable enters
-# the product.
+# costs one parseStri and a symbol request arriving after a change costs none -- the change's own
+# refresh has already filled the entry. See `analysisCache' for why presence is the test and
+# where the drops live; the `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py
+# counts, because the log is the observable and no counter variable belongs in the product.
 const proc: ensureAnalyzed (in string: uri) is func
   local
-    var cachedAnalysis: fresh is cachedAnalysis.value;
+    var docAnalysis: fresh is docAnalysis.value;
   begin
-    if uri in openDocs and
-       not (uri in analysisCache and
-            analysisCache[uri].version = openDocs[uri].version) then
-      fresh.analyzed := analyzeAll(textToAnalyze(uri), libraryDirs);
-      fresh.version := openDocs[uri].version;
-      # ponytail: one entry per document, REPLACED on every version -- never one entry per
-      # version, which would keep ~1.4 MiB of records per keystroke (spec §4.3 prices one
-      # 1 060-record array at +1.15 MiB). Measured here: 21 versions of one document raised
-      # the server's RSS by 1.5 MiB *in total*, so the replace really does drop the old entry.
-      # A `hash [string] struct` stores by value (probed), so this cannot alias `fresh`.
+    if uri in openDocs and not (uri in analysisCache) then
+      fresh := analyzeAll(textToAnalyze(uri), libraryDirs);
+      # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
+      # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
+      # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
+      # not 21 times). A `hash [string] struct` stores by value (probed), so this cannot alias
+      # `fresh`.
       analysisCache @:= [uri] fresh;
-      note("analyzed " <& uri <& " version " <& str(fresh.version) <&
-           " records " <& str(length(fresh.analyzed.syms)));
+      note("analyzed " <& uri <& " version " <& str(openDocs[uri].version) <&
+           " records " <& str(length(fresh.syms)));
     end if;
   end func;
 
@@ -146,7 +142,7 @@ const func analysisResult: analyzeDocument (in string: uri) is func
   begin
     ensureAnalyzed(uri);
     if uri in analysisCache then
-      out := analysisCache[uri].analyzed.parsed;
+      out := analysisCache[uri].parsed;
     end if;
   end func;
 
@@ -187,7 +183,7 @@ const func array symRec: symbolsOfDocument (in string: uri) is func
   begin
     ensureAnalyzed(uri);
     if uri in analysisCache then
-      out := analysisCache[uri].analyzed.syms;
+      out := analysisCache[uri].syms;
     end if;
   end func;
 
@@ -312,9 +308,9 @@ const proc: handle (in rpcMsg: msg) is func
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
         # Two reasons, one line: the records belong to the session and not to the uri, so a
-        # reopen that starts at version 1 again must not be answered from the version-1 analysis
-        # it is about to collide with; and this is what bounds the cache at one entry per OPEN
-        # document, which matters at ~1.4 MiB an entry.
+        # closed document leaves nothing behind that a later open could be answered from; and
+        # this is the drop that bounds the cache at one entry per OPEN document, which is the
+        # stated requirement -- spec §4.3 prices one 1 060-record array at +1.15 MiB.
         excl(analysisCache, uri);
       end if;
     else
