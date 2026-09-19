@@ -19,9 +19,9 @@ const type: analysisResult is new struct
 const func string: driverFor (in string: path) is
   return "$ include \"seed7_05.s7i\";\n  include " <& literal(path) <& ";\n";
 
-# The diagnostics half of an already-parsed `program`. Split from the parse because the parse is
-# the expensive part (it builds the whole stdlib) and one parse can also answer the symbol half
-# -- analyzeAll is the only caller and the only entry point this server has.
+# The diagnostics half of an already-parsed `program`. The parse is the expensive part
+# (it builds the whole stdlib), and one parse can also answer the symbol half.
+# analyzeAll is the only caller and the only entry point this server has.
 const proc: collectDiags (in program: prog, inout analysisResult: res) is func
   local
     var parseError: err is parseError.value;

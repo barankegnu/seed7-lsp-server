@@ -30,11 +30,8 @@ var boolean: gotShutdown is FALSE;
 # drops that exist today has its own pin: didOpen's by the didOpen-with-no-close wire check,
 # didChange's by the versionless-change wire check, didClose's by the unit assertion that a close
 # empties the map -- the reopen-after-close wire check CANNOT pin didClose, because didOpen's drop
-# would rescue it, which is why the unit suite holds that one. Do not add a second mechanism to
-# "harden" this: a version stamp would have saved only a forgotten drop that ALSO bumped the
-# version, and would have failed silently on exactly the bug this round fixed -- a version number a
-# client did not send, which `intAt' defaulted to the previous one. The version belongs to the log
-# line, not to the key.
+# would rescue it, which is why the unit suite holds that one. didClose's drop is the O(open
+# documents) memory bound, nothing more.
 const type: analysisMap is hash [string] docAnalysis;
 
 var analysisMap: analysisCache is analysisMap.EMPTY_HASH;
@@ -311,10 +308,7 @@ const proc: handle (in rpcMsg: msg) is func
       if uri in openDocs then
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
-        # Two reasons, one line: the records belong to the session and not to the uri, so a
-        # closed document leaves nothing behind that a later open could be answered from; and
-        # this is the drop that bounds the cache at one entry per OPEN document, which is the
-        # stated requirement -- spec §4.3 prices one 1 060-record array at +1.15 MiB.
+        # The drop that bounds the cache at one entry per OPEN document.
         excl(analysisCache, uri);
       end if;
     else
