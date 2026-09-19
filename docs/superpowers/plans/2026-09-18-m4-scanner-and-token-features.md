@@ -1961,9 +1961,10 @@ const func array blockRef: blockRegions (in string: text,
     walkRegions(text, out, lastLine);
   end func;
 
-# The chain containing a position, innermost first. A chain is a FILTER over regions, not a
-# second machine: walkRegions appends outermost-of-a-group first as it closes, so the sweep here
-# runs backwards to put the innermost first.
+# The chain containing a line, innermost first. A chain is a filter over regions, not a second
+# machine: it keeps walkRegions' rules, then selects and orders. Ordering is explicit --
+# descending by startLine -- because walk order alone does not give a stable answer across
+# constructs that close together.
 const func array blockRef: enclosingRegions (in string: text, in integer: line0,
                                              in integer: lastLine) is func
   result
@@ -1984,7 +1985,9 @@ const func array blockRef: enclosingRegions (in string: text, in integer: line0,
 ```
 
 `enclosingRegions` takes no column: a *line* is the unit of a block region, and the column matters
-only for the token level, which Task 11 gets from `tokenAt`. Passing a column here would imply a
+only for the token level, which Task 11 gets from `tokenAt`. Both exports sort with the same
+helper, so `blockRegions` is document order and `enclosingRegions` is innermost first by
+construction rather than by walk accident. Passing a column here would imply a
 precision the data does not have.
 
 - [ ] **Step 4: Run to green.** `make test-blocks` → `blocks: 14 checks, 0 failed`. Then
@@ -2268,19 +2271,24 @@ const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is f
           line0 := lastLine;
         end if;
         tk := tokenAt(doc.text, line0, character0);
-        if tk.start > 0 then
-          acc := wrapRange(lspRangePair(doc, succ(tk.line0),
-                                        tk.start - doc.lineStart[succ(tk.line0)] + 1,
-                                        tk.stop - tk.start + 1), "");
-        else
-          acc := wrapRange(singlePositionRange(line0, character0), "");
-        end if;
         chain := enclosingRegions(doc.text, line0, lastLine);
-        # enclosingRegions answers innermost first, and the wrap needs outermost first
+        # The chain is built OUTSIDE IN: the document level stands alone, each region then
+        # becomes the child of the level outside it, and the token is innermost of all.
+        # `enclosingRegions` answers innermost first, which is why this loop runs backwards
+        # through it. Wrapping the other way round produces a chain that nests inside-out --
+        # every `parent` pointing at something smaller than its child -- and it still parses,
+        # so only the shape of the JSON catches it.
+        acc := wrapRange(documentRange, "");
         for i range length(chain) downto 1 do
           acc := wrapRange(rangeOfRegion(doc, chain[i]), acc);
         end for;
-        acc := wrapRange(documentRange, acc);
+        if tk.start > 0 then
+          acc := wrapRange(lspRangePair(doc, succ(tk.line0),
+                                        tk.start - doc.lineStart[succ(tk.line0)] + 1,
+                                        tk.stop - tk.start + 1), acc);
+        else
+          acc := wrapRange(singlePositionRange(line0, character0), acc);
+        end if;
         raw(w, acc);
       end for;
       closeArray(w);
