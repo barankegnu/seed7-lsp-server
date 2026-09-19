@@ -26,13 +26,15 @@ var boolean: gotShutdown is FALSE;
 # declared in analysis.sd7 and doc_store.sd7 must not come to include that.
 #
 # The entry is valid by PRESENCE, deliberately, and that is the whole invalidation rule: any
-# path that changes a document's text or version must delete its entry first. The three drops
-# that exist today -- didOpen, didChange, didClose -- are each pinned by a check of their own (the
-# reopened-after-close and versionless-change wire checks, and the unit assertion that a close
-# empties the map). Do not add a second mechanism to "harden" this: a version stamp would have
-# saved only a forgotten drop that ALSO bumped the version, and would have failed silently on
-# exactly the bug this round fixed -- a version number a client did not send, which `intAt'
-# defaulted to the previous one. The version belongs to the log line, not to the key.
+# path that changes a document's text or version must delete its entry first. Each of the three
+# drops that exist today has its own pin: didOpen's by the didOpen-with-no-close wire check,
+# didChange's by the versionless-change wire check, didClose's by the unit assertion that a close
+# empties the map -- the reopen-after-close wire check CANNOT pin didClose, because didOpen's drop
+# would rescue it, which is why the unit suite holds that one. Do not add a second mechanism to
+# "harden" this: a version stamp would have saved only a forgotten drop that ALSO bumped the
+# version, and would have failed silently on exactly the bug this round fixed -- a version number a
+# client did not send, which `intAt' defaulted to the previous one. The version belongs to the log
+# line, not to the key.
 const type: analysisMap is hash [string] docAnalysis;
 
 var analysisMap: analysisCache is analysisMap.EMPTY_HASH;
