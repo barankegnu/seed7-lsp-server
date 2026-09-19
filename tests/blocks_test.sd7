@@ -1,27 +1,22 @@
 $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
+  include "doc_store.sd7";
   include "blocks.sd7";
 
 # Line count without a document, so the rules are testable without doc_store.
-# A trailing newline does not start a new line (matches doc_store.lineCount).
+# Matches doc_store.lineCount: a trailing newline counts as a phantom line.
+# Pinned by lineCountPin below.
 const func integer: linesIn (in string: text) is func
   result
     var integer: out is 1;
   local
     var integer: i is 0;
   begin
-    if length(text) = 0 then
-      out := 0;
-    else
-      for i range 1 to length(text) do
-        if text[i] = '\n' then
-          out +:= 1;
-        end if;
-      end for;
-      if text[length(text)] = '\n' then
-        out -:= 1;
+    for i range 1 to length(text) do
+      if text[i] = '\n' then
+        out +:= 1;
       end if;
-    end if;
+    end for;
   end func;
 
 # "start-end:kind" joined by " ", so a whole answer fits on one reviewable line.
@@ -65,7 +60,7 @@ const func string: chainOf (in string: text, in integer: line0) is func
   end func;
 
 # Invariant check: every region satisfies startLine >= 0, endLine <= lastLine, endLine > startLine.
-# Returns "" if valid, otherwise the first violation found.
+# Returns the first violation found, or "" if valid.
 const func string: regionsValid (in string: text) is func
   result
     var string: out is "";
@@ -91,57 +86,60 @@ const func string: regionsValid (in string: text) is func
     end for;
   end func;
 
-const proc: main is func
+# Shared fixture list: one source of truth for exact-output checks and property checks.
+# Each entry is "text\0expected" where \0 separates the text from its expected regionsOf output.
+const type: fixture is new struct
+    var string: text is "";
+    var string: expected is "";
+    var integer: minRegions is 0;
+  end struct;
+
+const func array fixture: allFixtures is func
+  result
+    var array fixture: out is 0 times fixture.value;
+  local
+    var fixture: f is fixture.value;
   begin
-    check("an empty text folds nothing", regionsOf(""), "");
-    check("a one-line body is not a region",
-          regionsOf("const proc: a is func\nbegin\n  noop;\nend func;\n"), "0-3 1-3");
-    check("if/end if nests inside the callable body",
-          regionsOf("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"),
-          "0-5 1-5 2-4");
-    check("repeat closes at until",
-          regionsOf("repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"), "0-2");
-    check("a clause region ends at its sibling",
-          regionsOf("if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"), "0-4 1-2 3-4");
-    check("a comment region is the comment",
-          regionsOf("(* one\n   two *)\nwriteln(1);\n"), "0-1:comment");
-    check("a run of line comments is one region, a single one is none",
-          regionsOf("# a\n# b\n# c\nwriteln(1);\n"), "0-2:comment");
-    check("a lone line comment yields nothing", regionsOf("# only one\nwriteln(1);\n"), "");
-    check("a run of includes is an imports region",
-          regionsOf("$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n"),
-          "0-1:imports");
-    check("a keyword inside a comment opens no region",
-          regionsOf("(* if\n  still comment\n *)\nwriteln(1);\n"), "0-2:comment");
-    check("an unclosed comment at the end of the buffer yields no region",
-          regionsOf("(* unclosed"), "");
-    check("an unclosed comment with trailing newline yields no region",
-          regionsOf("(* unclosed\n"), "");
-    check("an unclosed comment clamped to lastLine yields a valid region",
-          regionsOf("(* unclosed\nwriteln(1);\n"), "0-1:comment");
-    check("an unclosed construct ends on the last line",
-          regionsOf("const proc: a is func\nbegin\n  if TRUE then\n"), "0-2 1-2");
-    check("a struct type body is a region",
-          regionsOf("const type: t is new struct\n  var integer: a is 0;\nend struct;\n"), "0-2");
+    f.text := ""; f.expected := ""; f.minRegions := 0; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  noop;\nend func;\n"; f.expected := "0-3 1-3"; f.minRegions := 2; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"; f.expected := "0-5 1-5 2-4"; f.minRegions := 3; out &:= f;
+    f.text := "repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"; f.expected := "0-2"; f.minRegions := 1; out &:= f;
+    f.text := "if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"; f.expected := "0-4 1-2 3-4"; f.minRegions := 3; out &:= f;
+    f.text := "(* one\n   two *)\nwriteln(1);\n"; f.expected := "0-1:comment"; f.minRegions := 1; out &:= f;
+    f.text := "# a\n# b\n# c\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
+    f.text := "# only one\nwriteln(1);\n"; f.expected := ""; f.minRegions := 0; out &:= f;
+    f.text := "$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n"; f.expected := "0-1:imports"; f.minRegions := 1; out &:= f;
+    f.text := "(* if\n  still comment\n *)\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
+    f.text := "(* unclosed"; f.expected := ""; f.minRegions := 0; out &:= f;
+    f.text := "(* unclosed\n"; f.expected := "0-1:comment"; f.minRegions := 1; out &:= f;
+    f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; f.minRegions := 3; out &:= f;
+    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; f.minRegions := 1; out &:= f;
+  end func;
+
+const proc: main is func
+  local
+    var array fixture: fixtures is 0 times fixture.value;
+    var lsDoc: doc is lsDoc.value;
+    var integer: i is 0;
+    var string: violation is "";
+  begin
+    fixtures := allFixtures;
+    # Exact-output checks and property checks from the same list.
+    for i range 1 to length(fixtures) do
+      check("fixture " <& str(i) <& " regions", regionsOf(fixtures[i].text), fixtures[i].expected);
+      violation := regionsValid(fixtures[i].text);
+      check("fixture " <& str(i) <& " invariant", violation, "");
+      # Pin: linesIn matches lineCount for every fixture.
+      setVersion(doc, fixtures[i].text, 1);
+      check("fixture " <& str(i) <& " linesIn matches lineCount",
+            str(linesIn(fixtures[i].text)), str(lineCount(doc)));
+    end for;
+    # Chain checks (not in the fixture list because they test a different interface).
     check("the chain at a position runs innermost first",
           chainOf("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n",
                   3), "2-4 1-5 0-5");
     check("a line outside every construct has no chain",
           chainOf("writeln(1);\n", 0), "");
-    # Invariant: every region satisfies startLine >= 0, endLine <= lastLine, endLine > startLine.
-    # This is the contract the region producer must uphold; per-fixture expectations sample it.
-    checkTrue("invariant holds for empty text", regionsValid("") = "");
-    checkTrue("invariant holds for one-line body", regionsValid("const proc: a is func\nbegin\n  noop;\nend func;\n") = "");
-    checkTrue("invariant holds for nested if", regionsValid("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n") = "");
-    checkTrue("invariant holds for repeat", regionsValid("repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n") = "");
-    checkTrue("invariant holds for clauses", regionsValid("if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n") = "");
-    checkTrue("invariant holds for comment", regionsValid("(* one\n   two *)\nwriteln(1);\n") = "");
-    checkTrue("invariant holds for line comments", regionsValid("# a\n# b\n# c\nwriteln(1);\n") = "");
-    checkTrue("invariant holds for includes", regionsValid("$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n") = "");
-    checkTrue("invariant holds for unclosed comment (no region)", regionsValid("(* unclosed") = "");
-    checkTrue("invariant holds for unclosed comment with newline (no region)", regionsValid("(* unclosed\n") = "");
-    checkTrue("invariant holds for unclosed comment clamped", regionsValid("(* unclosed\nwriteln(1);\n") = "");
-    checkTrue("invariant holds for unclosed construct", regionsValid("const proc: a is func\nbegin\n  if TRUE then\n") = "");
-    checkTrue("invariant holds for struct", regionsValid("const type: t is new struct\n  var integer: a is 0;\nend struct;\n") = "");
     report("blocks");
   end func;
