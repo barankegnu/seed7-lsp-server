@@ -153,17 +153,10 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
         tk := nextToken(text, cur);
         if tk.kind = TK_COMMENT then
           # rule 7: the cursor is left on the line the comment ended on, which is the
-          # only place a multi-line token's end is ever needed. Clamp to lastLine so
-          # unclosed comments don't emit regions past the document end.
+          # only place a multi-line token's end is ever needed.
           if cur.line0 > tk.line0 then
-            r.startLine := tk.line0; r.endLine := cur.line0;
-            if r.endLine > lastLine then
-              r.endLine := lastLine;
-            end if;
-            if r.endLine > r.startLine then
-              r.kind := "comment";
-              out &:= r;
-            end if;
+            r.startLine := tk.line0; r.endLine := cur.line0; r.kind := "comment";
+            out &:= r;
           end if;
         elsif tk.kind = TK_LINE_COMMENT then
           # rule 9: a run of consecutive # lines, one region.

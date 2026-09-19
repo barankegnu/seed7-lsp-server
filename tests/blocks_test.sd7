@@ -87,11 +87,9 @@ const func string: regionsValid (in string: text) is func
   end func;
 
 # Shared fixture list: one source of truth for exact-output checks and property checks.
-# Each entry is "text\0expected" where \0 separates the text from its expected regionsOf output.
 const type: fixture is new struct
     var string: text is "";
     var string: expected is "";
-    var integer: minRegions is 0;
   end struct;
 
 const func array fixture: allFixtures is func
@@ -100,21 +98,21 @@ const func array fixture: allFixtures is func
   local
     var fixture: f is fixture.value;
   begin
-    f.text := ""; f.expected := ""; f.minRegions := 0; out &:= f;
-    f.text := "const proc: a is func\nbegin\n  noop;\nend func;\n"; f.expected := "0-3 1-3"; f.minRegions := 2; out &:= f;
-    f.text := "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"; f.expected := "0-5 1-5 2-4"; f.minRegions := 3; out &:= f;
-    f.text := "repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"; f.expected := "0-2"; f.minRegions := 1; out &:= f;
-    f.text := "if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"; f.expected := "0-4 1-2 3-4"; f.minRegions := 3; out &:= f;
-    f.text := "(* one\n   two *)\nwriteln(1);\n"; f.expected := "0-1:comment"; f.minRegions := 1; out &:= f;
-    f.text := "# a\n# b\n# c\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
-    f.text := "# only one\nwriteln(1);\n"; f.expected := ""; f.minRegions := 0; out &:= f;
-    f.text := "$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n"; f.expected := "0-1:imports"; f.minRegions := 1; out &:= f;
-    f.text := "(* if\n  still comment\n *)\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
-    f.text := "(* unclosed"; f.expected := ""; f.minRegions := 0; out &:= f;
-    f.text := "(* unclosed\n"; f.expected := "0-1:comment"; f.minRegions := 1; out &:= f;
-    f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; f.minRegions := 1; out &:= f;
-    f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; f.minRegions := 3; out &:= f;
-    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; f.minRegions := 1; out &:= f;
+    f.text := ""; f.expected := ""; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  noop;\nend func;\n"; f.expected := "0-3 1-3"; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"; f.expected := "0-5 1-5 2-4"; out &:= f;
+    f.text := "repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"; f.expected := "0-2"; out &:= f;
+    f.text := "if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"; f.expected := "0-4 1-2 3-4"; out &:= f;
+    f.text := "(* one\n   two *)\nwriteln(1);\n"; f.expected := "0-1:comment"; out &:= f;
+    f.text := "# a\n# b\n# c\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
+    f.text := "# only one\nwriteln(1);\n"; f.expected := ""; out &:= f;
+    f.text := "$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n"; f.expected := "0-1:imports"; out &:= f;
+    f.text := "(* if\n  still comment\n *)\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
+    f.text := "(* unclosed"; f.expected := ""; out &:= f;
+    f.text := "(* unclosed\n"; f.expected := "0-1:comment"; out &:= f;
+    f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
+    f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; out &:= f;
+    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; out &:= f;
   end func;
 
 const proc: main is func
