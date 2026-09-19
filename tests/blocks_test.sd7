@@ -1,0 +1,99 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "blocks.sd7";
+
+# Line count without a document, so the rules are testable without doc_store.
+# A trailing newline does not start a new line (matches doc_store.lineCount).
+const func integer: linesIn (in string: text) is func
+  result
+    var integer: out is 1;
+  local
+    var integer: i is 0;
+  begin
+    if length(text) = 0 then
+      out := 0;
+    else
+      for i range 1 to length(text) do
+        if text[i] = '\n' then
+          out +:= 1;
+        end if;
+      end for;
+      if text[length(text)] = '\n' then
+        out -:= 1;
+      end if;
+    end if;
+  end func;
+
+# "start-end:kind" joined by " ", so a whole answer fits on one reviewable line.
+const func string: regionsOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: lastLine is 0;
+    var string: tag is "";
+  begin
+    lastLine := pred(linesIn(text));
+    rs := blockRegions(text, lastLine);
+    for i range 1 to length(rs) do
+      tag := str(rs[i].startLine) & "-" & str(rs[i].endLine);
+      if rs[i].kind <> "" then
+        tag := tag & ":" & rs[i].kind;
+      end if;
+      if out <> "" then
+        out := out & " ";
+      end if;
+      out := out & tag;
+    end for;
+  end func;
+
+const func string: chainOf (in string: text, in integer: line0) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+  begin
+    rs := enclosingRegions(text, line0, pred(linesIn(text)));
+    for i range 1 to length(rs) do
+      if out <> "" then
+        out := out & " ";
+      end if;
+      out := out & str(rs[i].startLine) & "-" & str(rs[i].endLine);
+    end for;
+  end func;
+
+const proc: main is func
+  begin
+    check("an empty text folds nothing", regionsOf(""), "");
+    check("a one-line body is not a region",
+          regionsOf("const proc: a is func\nbegin\n  noop;\nend func;\n"), "0-3 1-3");
+    check("if/end if nests inside the callable body",
+          regionsOf("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"),
+          "0-5 1-5 2-4");
+    check("repeat closes at until",
+          regionsOf("repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"), "0-2");
+    check("a clause region ends at its sibling",
+          regionsOf("if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"), "0-4 1-2 3-4");
+    check("a comment region is the comment",
+          regionsOf("(* one\n   two *)\nwriteln(1);\n"), "0-1:comment");
+    check("a run of line comments is one region, a single one is none",
+          regionsOf("# a\n# b\n# c\nwriteln(1);\n"), "0-2:comment");
+    check("a lone line comment yields nothing", regionsOf("# only one\nwriteln(1);\n"), "");
+    check("a run of includes is an imports region",
+          regionsOf("$ include \"seed7_05.s7i\";\n  include \"stdio.s7i\";\nwriteln(1);\n"),
+          "0-1:imports");
+    check("a keyword inside a comment opens no region",
+          regionsOf("(* if\n  still comment\n *)\nwriteln(1);\n"), "0-2:comment");
+    check("an unclosed construct ends on the last line",
+          regionsOf("const proc: a is func\nbegin\n  if TRUE then\n"), "0-2 1-2");
+    check("a struct type body is a region",
+          regionsOf("const type: t is new struct\n  var integer: a is 0;\nend struct;\n"), "0-2");
+    check("the chain at a position runs innermost first",
+          chainOf("const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n",
+                  3), "2-4 1-5 0-5");
+    check("a line outside every construct has no chain",
+          chainOf("writeln(1);\n", 0), "");
+    report("blocks");
+  end func;

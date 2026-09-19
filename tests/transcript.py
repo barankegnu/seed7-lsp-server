@@ -481,6 +481,32 @@ expect(code2 == 0 and junk2 == 0,
        "exit after shutdown is status 0 and stdout held only frames for the second run (%d, junk=%d)"
        % (code2, junk2))
 
+# --- Task 10: foldingRange -------------------------------------------------
+FOLD_URI = "file:///tmp/tt_fold.sd7"
+FOLD_TEXT = "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(FOLD_URI, FOLD_TEXT)),
+                                frame(req(2, "textDocument/foldingRange",
+                                          {"textDocument": {"uri": FOLD_URI}})),
+                                frame(req(3, "textDocument/foldingRange",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"}})),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+folds = by_id.get(2, {}).get("result") or []
+expect(isinstance(folds, list) and len(folds) == 3,
+       "foldingRange returns 3 regions for the fixture, got %d" % len(folds))
+if len(folds) == 3:
+    expect(folds[0] == {"startLine": 0, "endLine": 5},
+           "first fold is the function body (%r)" % folds[0])
+    expect(folds[1] == {"startLine": 1, "endLine": 5},
+           "second fold is the begin block (%r)" % folds[1])
+    expect(folds[2] == {"startLine": 2, "endLine": 4},
+           "third fold is the if block (%r)" % folds[2])
+expect(by_id.get(3, {}).get("result") == [],
+       "foldingRange for an unopened uri is []")
+expect("foldingRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
+       "initialize advertises foldingRangeProvider")
+
 # --- Task 9 / spec §4.2: one analysis per document version -------------------
 CACHE_URI = "file:///tmp/tt_cache.sd7"
 CACHE_LINES = SYMS.split("\n")

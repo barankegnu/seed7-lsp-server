@@ -1,0 +1,29 @@
+$ include "seed7_05.s7i";
+  include "blocks.sd7";
+  include "doc_store.sd7";
+  include "jsonw.sd7";
+
+const func string: foldingResult (in lsDoc: doc) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: lastLine is 0;
+  begin
+    lastLine := pred(lineCount(doc));
+    rs := blockRegions(doc.text, lastLine);
+    openArray(w);
+    for i range 1 to length(rs) do
+      openObject(w);
+        field(w, "startLine"); addInt(w, rs[i].startLine);
+        field(w, "endLine"); addInt(w, rs[i].endLine);
+        if rs[i].kind <> "" then
+          field(w, "kind"); addStr(w, rs[i].kind);
+        end if;
+      closeObject(w);
+    end for;
+    closeArray(w);
+    out := finishJson(w);
+  end func;
