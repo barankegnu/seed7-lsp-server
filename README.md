@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 10 suites + transcript, 256 checks (203 unit + 53 wire), no editor required
+    make test          # 16 suites + transcript, 433 checks (350 unit + 83 wire), no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -114,8 +114,11 @@ only once its method is answered.
 ## Layout and further reading
 
 `src/` is one module per responsibility — transport, JSON-RPC, JSON writing, document
-store, analysis, diagnostics, dispatch, entry point — and `tests/` has one suite each,
-plus `tests/transcript.py`, which drives the real process over real frames.
+store, the lexical scanner and its construct regions (`scan.sd7`, `blocks.sd7`), the
+code-point width tables (`utf8bytes.sd7`), analysis, diagnostics, dispatch, entry point —
+with the LSP features themselves in `src/features/`, one file per method plus `kinds.sd7`
+for the shared symbol/type mappings. `tests/` has one suite each, plus
+`tests/transcript.py`, which drives the real process over real frames.
 
 - `AGENTS.md` — constraints for anyone editing this code, including the Seed7 traps.
 - `docs/superpowers/specs/` — the design, its measurements, and its risk register.

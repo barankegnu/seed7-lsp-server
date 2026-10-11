@@ -29,6 +29,15 @@ method: to prove an `include` is unused you must exercise the module's **own** i
 list from a standalone probe, with a positive control proving the probe can fail — a test
 file that already includes the same modules makes any deletion pass for the wrong reason.
 
+Two measurement rules, both bought with a wrong number that reached a document or a
+commit. A byte count must come from the artifact the product emits — the wire
+`Content-Length` — never from re-serialising a parsed copy: `json.dumps` writes `", "`
+between elements, which turned a 309 521-byte `semanticTokens` frame into a recorded
+"451 KB", a 46 % overstatement on a 142 005-element array. And a probe must print a
+sentinel that the harness requires before any payload is counted as a result — a fuzz
+whose entry point had never run reported fourteen inputs as "no raise" while printing
+nothing but the interpreter banner.
+
 ## Seed7 traps
 
 Each of these cost a debugging cycle. Seed7 is not Python and will not warn you first.
@@ -93,6 +102,16 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
   match for any `k` and any `array` type. The existing `x not in arr` entry names the
   struct-field-select case; the broader rule is that `in` has no array overload.
+- A slice whose low bound exceeds its high bound is the **empty string, silently** —
+  `text[3 .. 2]` has length 0. So "I deleted this bounds guard and every suite stayed
+  green" proves the guard is *harmless to remove*, never that its `FALSE` branch is
+  unreachable; `scan.maskOf`'s gap guard is exactly that case, and its `FALSE` branch is
+  ordinary adjacency (`(b`), firing more often than `TRUE` on `a := (b) + c[1];`.
+- `main` takes **no parameter** here. A parameterised `main` (probed with both
+  `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
+  missing`, exit 0, and the probe silently never ran — which is how one fuzz of mine
+  reported a result it had not computed. The idiom the standard library uses is a plain
+  `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
 
 ## Invariants — a violation is a defect, not a style preference
 
