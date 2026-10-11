@@ -1,0 +1,110 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "doc_store.sd7";
+  include "blocks.sd7";
+  include "features/kinds.sd7";
+  include "rpc.sd7";
+  include "features/selection_range.sd7";
+
+const func string: selOf (in string: text, in string: positionsJson) is func
+  result
+    var string: out is "";
+  local
+    var lsDoc: doc is lsDoc.value;
+    var jsonValue: positions is jsonValue.value;
+  begin
+    setVersion(doc, text, 1);
+    positions := readJson(positionsJson);
+    out := selectionResult(doc, positions);
+  end func;
+
+# A JSON array of n identical positions, each the whitespace position that
+# test (c) uses, so the payload stays small while the count gets large.
+const func string: manyPositions (in integer: n) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    out := "[";
+    for i range 1 to n do
+      if i > 1 then
+        out := out & ",";
+      end if;
+      out := out & "{\"line\":0,\"character\":2}";
+    end for;
+    out := out & "]";
+  end func;
+
+const func integer: answerCount (in string: text, in string: positionsJson) is func
+  result
+    var integer: n is 0;
+  local
+    var jsonValue: answers is jsonValue.value;
+  begin
+    answers := readJson(selOf(text, positionsJson));
+    if category(answers) = JSON_ARRAY then
+      n := length(answers);
+    end if;
+  end func;
+
+const proc: main is func
+  local
+    var string: text is "";
+    var string: expected is "";
+  begin
+    # (a) no positions -> []
+    check("no positions yields empty array",
+          selOf("writeln(1);\n", "[]"),
+          "[]");
+
+    # (b) position on a name inside nested constructs
+    # Buffer without trailing newline so the last line has content.
+    text := "$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;";
+    # Position (3, 4) is inside "writeln" on line 3.
+    # Line 4 is "  end func;" = 11 chars.
+    expected := "[{\"range\":{\"start\":{\"line\":3,\"character\":4},\"end\":{\"line\":3,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":4,\"character\":11}}}}}}]";
+    check("position on a name yields full chain",
+          selOf(text, "[{\"line\":3,\"character\":4}]"),
+          expected);
+
+    # (c) position on whitespace -> empty range at that position, parent = document
+    text := "a  b";
+    # Position (0, 2) is the second space between "a" and "b".
+    # No token ends or starts there, so empty range at (0,2).
+    expected := "[{\"range\":{\"start\":{\"line\":0,\"character\":2},\"end\":{\"line\":0,\"character\":2}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":4}}}}]";
+    check("position on whitespace yields empty range with document parent",
+          selOf(text, "[{\"line\":0,\"character\":2}]"),
+          expected);
+
+    # (d) two positions -> answers in request order
+    text := "$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;";
+    # Position 1: (3, 4) inside "writeln"
+    # Position 2: (3, 13) on "1" (left-of-character: position 13 names token ending at 13, which is "1")
+    expected := "[{\"range\":{\"start\":{\"line\":3,\"character\":4},\"end\":{\"line\":3,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":4,\"character\":11}}}}}}," <&
+                "{\"range\":{\"start\":{\"line\":3,\"character\":12},\"end\":{\"line\":3,\"character\":13}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":4,\"character\":11}}}}}}]";
+    check("two positions yield answers in request order",
+          selOf(text, "[{\"line\":3,\"character\":4},{\"line\":3,\"character\":13}]"),
+          expected);
+
+    # (e) MAX_SELECT_POSITIONS clamp: 33 requests answer 32, and 32 answer 32.
+    # The second is the boundary: a request count exactly at the limit must
+    # lose nothing. (">" and ">=" are equivalent here, because the clamp
+    # assigns the constant, so no check can separate them.)
+    text := "a  b";
+    check("33 positions clamp to 32 answers and 32 positions keep 32",
+          str(answerCount(text, manyPositions(33))) & "/" & str(answerCount(text, manyPositions(32))),
+          "32/32");
+
+    report("selection_range");
+  end func;

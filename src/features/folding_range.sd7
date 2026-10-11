@@ -1,0 +1,38 @@
+$ include "seed7_05.s7i";
+  include "blocks.sd7";
+  include "doc_store.sd7";
+  include "jsonw.sd7";
+
+# FoldingRange[] serialiser. startCharacter/endCharacter are omitted on purpose: they default
+# to whole lines, and that is all a lineFoldingOnly client honours (spec 6.0: "clients that
+# do not support startCharacter/endCharacter will use the whole line"). rangeLimit is ignored
+# because the spec calls it a hint, and the client that sets one is the client that can cope
+# without it; a server-side cap would silently drop folds the user asked for.
+# ponytail: no cap on regions; upgrade path is honouring rangeLimit from the client capability
+# if a real client ships one. Measured ceiling: 20,151 regions across 213 lib/*.s7i files
+# (~95 per file), so the O(n) serialisation is not the bottleneck.
+
+const func string: foldingResult (in lsDoc: doc) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: lastLine is 0;
+  begin
+    lastLine := pred(lineCount(doc));
+    rs := blockRegions(doc.text, lastLine);
+    openArray(w);
+    for i range 1 to length(rs) do
+      openObject(w);
+        field(w, "startLine"); addInt(w, rs[i].startLine);
+        field(w, "endLine"); addInt(w, rs[i].endLine);
+        if rs[i].kind <> "" then
+          field(w, "kind"); addStr(w, rs[i].kind);
+        end if;
+      closeObject(w);
+    end for;
+    closeArray(w);
+    out := finishJson(w);
+  end func;

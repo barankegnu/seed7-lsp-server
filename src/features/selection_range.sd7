@@ -1,0 +1,123 @@
+$ include "seed7_05.s7i";
+  include "json.s7i";
+  include "doc_store.sd7";
+  include "blocks.sd7";
+  include "rpc.sd7";
+
+# Ponytail: cap at 32 positions per request, the way folding_range caps regions.
+# A client that sends more is asking for a quadratic chain build; the cap keeps
+# the response bounded.
+const integer: MAX_SELECT_POSITIONS is 32;
+
+# Builds a SelectionRange JSON node: {"range":<rangeJson>,"parent":<parentJson>}
+# or {"range":<rangeJson>} if parentJson is "".
+# The parent is the enclosing (outer) range, so wrapRange(parent, childRange) creates
+# a node with childRange as its range and parent as its parent.
+const func string: wrapRange (in string: parentJson, in string: rangeJson) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "range"); raw(w, rangeJson);
+      if parentJson <> "" then
+        field(w, "parent"); raw(w, parentJson);
+      end if;
+    closeObject(w);
+    out := finishJson(w);
+  end func;
+
+# The SelectionRange chain for one position.
+const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
+                                      in integer: lastLine) is func
+  result
+    var string: out is "";
+  local
+    var integer: line0 is 0;
+    var integer: char0 is 0;
+    var integer: idx is 0;
+    var tok: tk is tok.value;
+    var array blockRef: regions is 0 times blockRef.value;
+    var string: chain is "";
+    var string: rangeJson is "";
+    var string: tokenRange is "";
+    var integer: i is 0;
+    var integer: endLine1 is 0;
+    var integer: endCol1 is 0;
+    var integer: docEndLine1 is 0;
+    var integer: docEndCol1 is 0;
+    var integer: lastLineStart is 0;
+    var integer: lastLineWidth is 0;
+  begin
+    line0 := intAt(posObj, "line", 0);
+    char0 := intAt(posObj, "character", 0);
+    idx := charIndexOf(doc, line0, char0);
+    tk := tokenAt(doc.text, idx);
+
+    # Build the token range (or empty range if no token).
+    if tk.start > 0 then
+      tokenRange := "{\"start\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16)) <&
+                    ",\"end\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16) + tk.width16) <& "}";
+    else
+      # Empty range at the position.
+      tokenRange := "{\"start\":" <& lspRange(doc, succ(line0), succ(char0)) <&
+                    ",\"end\":" <& lspRange(doc, succ(line0), succ(char0)) <& "}";
+    end if;
+
+    # Get enclosing regions (innermost first).
+    regions := enclosingRegions(doc.text, line0, lastLine);
+
+    # Start with the document range (outermost, no parent).
+    docEndLine1 := succ(lastLine);
+    lastLineStart := doc.lineStart[docEndLine1];
+    lastLineWidth := lineWidth(doc.text, lastLineStart);
+    docEndCol1 := lastLineWidth + 1;
+    rangeJson := "{\"start\":" <& lspRange(doc, 1, 1) <&
+                 ",\"end\":" <& lspRange(doc, docEndLine1, docEndCol1) <& "}";
+    chain := wrapRange("", rangeJson);
+
+    # Iterate backwards (outermost first from enclosingRegions) and wrap each region.
+    for i range length(regions) downto 1 do
+      endLine1 := succ(regions[i].endLine);
+      endCol1 := lineWidth(doc.text, doc.lineStart[endLine1]) + 1;
+      rangeJson := "{\"start\":" <& lspRange(doc, succ(regions[i].startLine), 1) <&
+                   ",\"end\":" <& lspRange(doc, endLine1, endCol1) <& "}";
+      chain := wrapRange(chain, rangeJson);
+    end for;
+
+    # Wrap with the token range (innermost).
+    chain := wrapRange(chain, tokenRange);
+
+    out := chain;
+  end func;
+
+const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var integer: n is 0;
+    var integer: i is 0;
+    var integer: lastLine is 0;
+    var jsonValue: posItem is jsonValue.value;
+    var string: chain is "";
+  begin
+    if category(positions) <> JSON_ARRAY then
+      out := "[]";
+    else
+      n := length(positions);
+      if n > MAX_SELECT_POSITIONS then
+        n := MAX_SELECT_POSITIONS;
+      end if;
+      lastLine := pred(lineCount(doc));
+      openArray(w);
+      for i range 1 to n do
+        posItem := itemAt(positions, i);
+        chain := chainForPosition(doc, posItem, lastLine);
+        raw(w, chain);
+      end for;
+      closeArray(w);
+      out := finishJson(w);
+    end if;
+  end func;

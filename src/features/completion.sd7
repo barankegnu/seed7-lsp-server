@@ -20,10 +20,11 @@ const array string: SEED7_KEYWORDS is
    "repeat", "result", "return", "struct", "then", "type", "until", "val", "var",
    "varfunc", "while");
 
-# The part of the token left of the cursor. Both sides count UTF-16 units: word.character1
-# comes from doc_store, the only file allowed to convert positions, so a line with an astral
-# character before the token cannot skew the count the way subtracting a character column
-# from a unit column would.
+# The part of the token left of the cursor. word.character1 is a UTF-16 unit column
+# from the scanner, and character0 is the request's UTF-16 column, so their difference
+# is the prefix width in UTF-16 units. word.width is a CHARACTER count from the scanner,
+# but names and numbers are ASCII, so for every visible token the character count equals
+# the UTF-16 unit count and the clamp is safe.
 const func string: prefixOf (in wordRef: word, in integer: character0) is func
   result
     var string: out is "";

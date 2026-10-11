@@ -55,6 +55,75 @@ def expect(cond, label):
     else:
         fails.append(label)
 
+
+# Frame builders, shared by every check that needs more than one request. Written once here
+# because Tasks 10-12 add foldingRange/selectionRange/semanticTokens checks on top of them.
+def req(rid, method, params):
+    return {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
+
+
+def notify(method, params):
+    return {"jsonrpc": "2.0", "method": method, "params": params}
+
+
+def pos(uri, line, character):
+    return {"textDocument": {"uri": uri},
+            "position": {"line": line, "character": character}}
+
+
+def td(uri, version=None):
+    """The `textDocument` member a notification or DocumentSymbol request carries."""
+    doc = {"uri": uri}
+    if version is not None:
+        doc["version"] = version
+    return {"textDocument": doc}
+
+
+def initialize(rid=1):
+    return req(rid, "initialize", {"capabilities": {}, "processId": None, "rootUri": None})
+
+
+def opened(uri, text, version=1):
+    return notify("textDocument/didOpen",
+                  {"textDocument": {"uri": uri, "languageId": "seed7",
+                                    "version": version, "text": text}})
+
+
+def changed(uri, text, version):
+    return notify("textDocument/didChange",
+                  dict(td(uri, version), contentChanges=[{"text": text}]))
+
+
+def changed_no_version(uri, text):
+    """A didChange whose `textDocument` has no `version` member at all.
+
+    LSP 3.18 makes `version` REQUIRED on VersionedTextDocumentIdentifier (the type didChange
+    names), so this is a malformed frame. The server answers it rather than rejecting it, and
+    `intAt` invents a default for the missing number -- which is why the analysis cache may not
+    key its invalidation on that number."""
+    return notify("textDocument/didChange",
+                  dict(td(uri), contentChanges=[{"text": text}]))
+
+
+def closed(uri):
+    return notify("textDocument/didClose", td(uri))
+
+
+def shutdown(rid):
+    return req(rid, "shutdown", {})
+
+
+def exit_():
+    return notify("exit", {})
+
+
+def analyses(err):
+    """How many analyses the server logged. `note()` writes to stderr, so the log line in
+    the miss path is the observable and no counter variable enters the product. Counted by
+    its full prefix: this number is the exit criterion, and a uri or a later phrasing is free
+    to contain the shorter "analyzed "."""
+    return err.count("seed7-lsp: analyzed ")
+
 BROKEN = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln(1 + "a");\n  end func;\n'
 FIXED = '$ include "seed7_05.s7i";\nconst proc: main is func\n  begin\n    writeln("日本");\n  end func;\n'
 
@@ -411,6 +480,219 @@ expect(len(defn2) == 1 and defn2[0]["range"]["start"]["line"] == 1,
 expect(code2 == 0 and junk2 == 0,
        "exit after shutdown is status 0 and stdout held only frames for the second run (%d, junk=%d)"
        % (code2, junk2))
+
+# --- Task 10: foldingRange -------------------------------------------------
+FOLD_URI = "file:///tmp/tt_fold.sd7"
+FOLD_TEXT = "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(FOLD_URI, FOLD_TEXT)),
+                                frame(req(2, "textDocument/foldingRange",
+                                          {"textDocument": {"uri": FOLD_URI}})),
+                                frame(req(3, "textDocument/foldingRange",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"}})),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+folds = by_id.get(2, {}).get("result") or []
+expect(isinstance(folds, list) and len(folds) == 3,
+       "foldingRange returns 3 regions for the fixture, got %d" % len(folds))
+if len(folds) == 3:
+    expect(folds[0] == {"startLine": 0, "endLine": 5},
+           "first fold is the function body (%r)" % folds[0])
+    expect(folds[1] == {"startLine": 1, "endLine": 5},
+           "second fold is the begin block (%r)" % folds[1])
+    expect(folds[2] == {"startLine": 2, "endLine": 4},
+           "third fold is the if block (%r)" % folds[2])
+expect(by_id.get(3, {}).get("result") == [],
+       "foldingRange for an unopened uri is []")
+expect("foldingRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
+       "initialize advertises foldingRangeProvider")
+
+# --- Task 11: selectionRange -------------------------------------------------
+SEL_URI = "file:///tmp/tt_sel.sd7"
+SEL_TEXT = "$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;"
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(SEL_URI, SEL_TEXT)),
+                                frame(req(2, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": SEL_URI},
+                                           "positions": [{"line": 3, "character": 4}]})),
+                                frame(req(3, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"},
+                                           "positions": [{"line": 0, "character": 0}]})),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+sel = by_id.get(2, {}).get("result") or []
+# The extraction loop indexes the result per position; an IndexError here is load-bearing —
+# a regression in dispatch/capability would otherwise pass silently.
+expect(isinstance(sel, list) and len(sel) == 1,
+       "selectionRange returns one result per position, got %d" % len(sel))
+if len(sel) == 1:
+    expect("range" in sel[0] and "parent" in sel[0],
+           "selectionRange result has range and parent keys")
+    # Walk the chain to verify it's nested correctly.
+    node = sel[0]
+    depth = 0
+    while "parent" in node:
+        depth += 1
+        node = node["parent"]
+    expect(depth == 3,
+           "selectionRange chain has 3 parent levels (token->region->region->document), got %d" % depth)
+    expect("parent" not in node,
+           "outermost selectionRange has no parent key")
+expect(by_id.get(3, {}).get("result") == [],
+       "selectionRange for an unopened uri is []")
+expect("selectionRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
+       "initialize advertises selectionRangeProvider")
+
+# --- Task 9 / spec §4.2: one analysis per document version -------------------
+CACHE_URI = "file:///tmp/tt_cache.sd7"
+CACHE_LINES = SYMS.split("\n")
+CACHE_LINE = CACHE_LINES.index("    writeln(totalSize(prototype, 2));")
+CACHE_CHAR = CACHE_LINES[CACHE_LINE].index("totalSize") + 4   # inside "totalSize"
+CACHE_TAIL = "\nconst integer: onlyAfterChange is 1;\n"
+
+# Hover and definition on the same version: both are served from one analysis.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(req(2, "textDocument/hover",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(3, "textDocument/definition",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(analyses(err) == 1,
+       "hover + definition on one version cost one analysis (saw %d)" % analyses(err))
+cache_hov = (by_id.get(2, {}).get("result") or {}).get("contents", {}).get("value", "")
+expect("totalSize" in cache_hov, "the cached records answer the hover (%r)" % cache_hov)
+cache_def = by_id.get(3, {}).get("result") or []
+expect(bool(cache_def) and cache_def[0]["range"]["start"]["line"] == 8,
+       "the cached records answer the definition (%s)" % cache_def[:1])
+
+# A didChange must cost exactly one more analysis, and the new version's own declaration must
+# reach the outline: the same assertion against a cache that never misses is the whole point.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(changed(CACHE_URI, SYMS + CACHE_TAIL, 2)),
+                                frame(req(3, "textDocument/hover",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(4, "textDocument/definition",
+                                          pos(CACHE_URI, CACHE_LINE, CACHE_CHAR))),
+                                frame(req(5, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(6)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(analyses(err) == 2,
+       "a didChange costs exactly one more analysis, not three (saw %d)" % analyses(err))
+before_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+after_names = [s["name"] for s in by_id.get(5, {}).get("result") or []]
+expect("onlyAfterChange" not in before_names, "the first outline is the first version's")
+expect("onlyAfterChange" in after_names,
+       "the changed version's own declaration reaches the outline (%s)" % after_names)
+
+# didClose drops the entry: reopened at the *same* version, the document must not inherit the
+# previous session's records. Version equality alone cannot save this one.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS)),
+                                frame(closed(CACHE_URI)),
+                                frame(opened(CACHE_URI, SYMS +
+                                             "\nconst integer: reopenedMarker is 1;\n")),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+reopen_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("reopenedMarker" in reopen_names,
+       "a document reopened after close re-analyses (%s)" % reopen_names)
+
+# --- round 1, finding 1: invalidation may not depend on a client-supplied number ---
+# A versionless didChange. The document opens broken, the change replaces it with a valid
+# program that declares something new, and the frame carries no version. Answering it from the
+# previous entry would publish the old file's errors and an outline missing the new declaration.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, BROKEN, 1)),
+                                frame(changed_no_version(CACHE_URI, SYMS + CACHE_TAIL)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+vless_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+               and r["params"]["uri"] == CACHE_URI]
+expect(analyses(err) == 2,
+       "a didChange with no version is a new version (saw %d analyses)" % analyses(err))
+vless_last = vless_notes[-1]["params"]["diagnostics"] if vless_notes else None
+expect(bool(vless_notes) and vless_last == [],
+       "the versionless change publishes the NEW text's diagnostics (%s)" % vless_last)
+vless_names = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("onlyAfterChange" in vless_names,
+       "the versionless change's declaration reaches the outline (%s)" % vless_names)
+
+# A didOpen with no didClose in between, same version number. Also malformed (LSP says a client
+# must not), also answered here -- so the entry the first open left must not survive it.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(CACHE_URI, SYMS, 1)),
+                                frame(opened(CACHE_URI, SYMS +
+                                             "\nconst integer: reopenedWithoutClose is 1;\n", 1)),
+                                frame(req(2, "textDocument/documentSymbol", td(CACHE_URI))),
+                                frame(shutdown(3)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+reopen2 = [s["name"] for s in by_id.get(2, {}).get("result") or []]
+expect("reopenedWithoutClose" in reopen2,
+       "a didOpen that follows no didClose re-analyses (%s)" % reopen2)
+
+# --- Task 12: semanticTokens -----------------------------------------------
+def decode_semantic_tokens(data):
+    """Turn the 5-int relative array back into absolute (line, col, length, type, mods)."""
+    out, line, col = [], 0, 0
+    for i in range(0, len(data), 5):
+        dline, dcol, length, ty, mods = data[i:i + 5]
+        line += dline
+        col = dcol if dline else col + dcol
+        out.append((line, col, length, ty, mods))
+    return out
+
+ST_URI = "file:///tmp/tt_sem.sd7"
+ST_TEXT = '$ include "seed7_05.s7i";\nconst integer: x is 0;\n"\U00010000" (x)\n'
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(ST_URI, ST_TEXT)),
+                                frame(req(2, "textDocument/semanticTokens/full",
+                                          {"textDocument": {"uri": ST_URI}})),
+                                frame(req(3, "textDocument/semanticTokens/range",
+                                          {"textDocument": {"uri": ST_URI},
+                                           "range": {"start": {"line": 1, "character": 0},
+                                                     "end": {"line": 1, "character": 10}}})),
+                                frame(req(4, "textDocument/semanticTokens/full",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"}})),
+                                frame(shutdown(5)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+init_caps = replies[0].get("result", {}).get("capabilities", {})
+expect("semanticTokensProvider" in init_caps,
+       "initialize advertises semanticTokensProvider")
+st_cap = init_caps.get("semanticTokensProvider", {})
+expect(st_cap.get("full") is True and st_cap.get("range") is True,
+       "semanticTokensProvider advertises full and range (%r)" % st_cap)
+legend = st_cap.get("legend", {})
+expect(legend.get("tokenTypes") == ["comment", "string", "number", "function", "type",
+       "variable", "enumMember"],
+       "legend tokenTypes are the seven types in index order (%r)" % legend.get("tokenTypes"))
+expect(legend.get("tokenModifiers") == ["declaration", "defaultLibrary"],
+       "legend tokenModifiers are the two modifiers (%r)" % legend.get("tokenModifiers"))
+
+full = by_id.get(2, {}).get("result") or {}
+full_data = full.get("data", [])
+full_decoded = decode_semantic_tokens(full_data)
+# Line 0: $ include "seed7_05.s7i"; -> include (function, defaultLibrary) + string
+# Line 1: const integer: x is 0; -> const (function,lib), integer (type,lib), x (variable,declaration), 0 (number)
+# Line 2: "\U00010000" (x) -> string width=4 (astral=2 UTF-16 units), x (variable, no mods)
+expect(full_decoded == [(0, 2, 7, 3, 2), (0, 10, 14, 1, 0),
+                        (1, 0, 5, 3, 2), (1, 6, 7, 4, 2), (1, 15, 1, 5, 1), (1, 20, 1, 2, 0),
+                        (2, 0, 4, 1, 0), (2, 6, 1, 5, 0)],
+       "semanticTokens/full decoded tuples with astral char (%r)" % full_decoded)
+
+rng = by_id.get(3, {}).get("result") or {}
+rng_data = rng.get("data", [])
+rng_decoded = decode_semantic_tokens(rng_data)
+expect(rng_decoded == [(1, 0, 5, 3, 2), (1, 6, 7, 4, 2), (1, 15, 1, 5, 1), (1, 20, 1, 2, 0)],
+       "semanticTokens/range decoded tuples for line 1 only (%r)" % rng_decoded)
+
+expect(by_id.get(4, {}).get("result") is None,
+       "semanticTokens/full for an unopened uri is null")
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)

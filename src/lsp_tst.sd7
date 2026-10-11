@@ -24,6 +24,10 @@ const proc: checkTrue (in string: title, in boolean: value) is func
 
 const proc: report (in string: suite) is func
   begin
+    # A leading line break, so no prior stdout (e.g. a didClose frame with no trailing
+    # newline) can glue the graded verdict to the tail of another output. Every suite
+    # that calls report gets this for free.
+    writeln("");
     writeln(suite & ": " <& checksRun <& " checks, " <& checksFailed <& " failed");
     if checksFailed <> 0 then
       exit(1);

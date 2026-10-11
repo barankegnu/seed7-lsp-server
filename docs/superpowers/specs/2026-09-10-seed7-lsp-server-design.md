@@ -20,22 +20,26 @@ Why the interpreter is not optional: Seed7's syntax is *declared*, not hard-code
 ## 2. Architecture
 
 One long-lived process: `s7 -q -l src src/main.sd7`. stdin/stdout is LSP; stderr is logs. `main.sd7` is the entry point and holds the read loop;
-`lsp_server.sd7` holds the dispatcher. The layout below is the intended one, and it differs from the tree in three ways: `server.sd7`
-was split into `main.sd7` and `lsp_server.sd7`; `diagnostics.sd7` sits directly in `src/` rather
-than under `features/`; and `jsonw.sd7`, `uris.sd7` and `lsp_tst.sd7` are not listed at all. Its
-remaining unbuilt entries — `scan.sd7`, `lsp_types.sd7` and the three token-backed feature files
-— belong to the M4 milestone.
+`lsp_server.sd7` holds the dispatcher. The layout below differs from the original plan in
+several ways: `server.sd7` was split into `main.sd7` and `lsp_server.sd7`; `diagnostics.sd7`
+sits directly in `src/` rather than under `features/`; `jsonw.sd7`, `uris.sd7`, `utf8bytes.sd7`,
+and `blocks.sd7` were not in the original list; and `lsp_types.sd7` was never built — each
+feature's own serialiser plus `jsonw.sd7` writer calls replaced the role it was meant to play.
 
 ```
-server.sd7        initialize, capability negotiation, dispatch, shutdown/exit
+main.sd7          entry point, read loop
+lsp_server.sd7    capability negotiation, dispatch, shutdown/exit
 transport.sd7     Content-Length framing; only file that counts bytes
 rpc.sd7           JSON-RPC objects, ids, error codes, cancellation
-lsp_types.sd7     LSP shapes we use, as Seed7 structs + declare_json_serde
+utf8bytes.sd7     UTF-8/UTF-16 width rules; only file that declares them
 doc_store.sd7     uri -> {version, text, line table}; only position converter
-scan.sd7          Seed7 lexical scanner (tokens, comments, blocks, token-at-offset)
+scan.sd7          Seed7 lexical scanner (tokens, comments, token-at-offset)
+blocks.sd7        construct recognition (what opens/closes a region)
 analysis.sd7      only file allowed to include "progs.s7i"
 doc_index.sd7     (** ... *) hover prose, keyed by lib + line
 diagnostics.sd7   analyzer errors mapped to publishDiagnostics
+jsonw.sd7         JSON writer; only outbound text path
+uris.sd7          URI encoding/decoding
 features/         definition, hover, signature_help, completion,
                   document_symbol, kinds, folding, semantic_tokens, selection_range
 tests/            per-module assert programs + golden transcript runner
@@ -45,7 +49,7 @@ Invariants — a violation of any of these is a defect, not a style preference:
 
 1. Only `analysis.sd7` imports `progs.s7i`.
 2. Only `doc_store.sd7` converts LSP positions to string offsets.
-3. Only `transport.sd7` owns the UTF-8 byte-width table and computes or consumes outbound byte lengths; `doc_store.sd7` may consume a byte-valued column only to convert it into a character column, and never emits a byte count.
+3. Only `utf8bytes.sd7` **declares** the width rules; `transport.sd7`, `scan.sd7`, and `doc_store.sd7` include it. `transport.sd7` owns every **outbound byte count** (`Content-Length`); `doc_store.sd7` may consume a byte-valued column only to convert it into a character column, and never emits a byte count.
 4. Only `src/*.sd7` and `src/features/*.sd7` build LSP responses; `analysis.sd7` returns Seed7-shaped data and knows nothing about LSP.
 5. No dynamic capability registration; everything is advertised statically in `InitializeResult`.
 
@@ -128,7 +132,13 @@ DATABASE_ERROR, GRAPHIC_ERROR, ILLEGAL_ACTION, CREATE_ERROR, DESTROY_ERROR, COPY
 IN_ERROR. There is no `SIZE_ERROR` and no catch-all clause, so `ILLEGAL_ACTION` must be
 listed explicitly — it is what `string(jsonValue)` raises on a non-string value.
 
-Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~25 ms; upgrade path is one cached `program` per document version if typing ever measurably lags.
+Caching: one analysis per document version. The dispatcher holds one `docAnalysis`
+(diagnostics + symbol records) per open document, keyed by URI. Every path that changes a
+document's text or version drops the entry before `refresh`, and `didClose` drops it to
+hold memory to O(open documents). Validity is presence: a cache hit means the entry is
+current, and no version comparison is needed. Measured: six symbol requests on one version
+cost 28.5 ms after caching vs 251.1 ms before; 21 versions of one document cost 1.5 MiB in
+total rather than 21 entries at ~1.4 MiB each.
 
 ## 5. Where each feature's data comes from
 
@@ -140,7 +150,7 @@ Caching: none. `ponytail:` the ceiling is a re-parse per keystroke-debounce at ~
 | hover | v1 realised: every overload's reconstructed signature + `doc_index` prose (`proseForText` when the declaration is in the buffer) | v2 (`match(prog, expr)` for the exact overload the cursor is in) is still unbuilt — v1 turned out to be good enough without it |
 | signatureHelp | candidates by name from `globalObjects`; callee and argument index from one walk over `doc_store.codeText`, so strings and comments contribute no parens or commas | **realised**; `match`-based overload disambiguation still unbuilt (v1 lists every overload, which reads well) |
 | completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`, plus a copied keyword list | **locals still missing:** the spec's "enclosing function found by line range" was dropped rather than guessed at; it needs its own short plan |
-| folding / selectionRange / semanticTokens | `scan.sd7` only, no interpreter | ours to maintain |
+| folding / selectionRange / semanticTokens | tokens from `scan.sd7`, name classes from the cached symbol table | no `keyword` or `parameter` token class (§6.2 of M4 spec) |
 | references / rename | **no source in the reflection API** | needs an occurrence index over `scan.sd7` tokens; that is the "later" milestone |
 
 `str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. Those reconstructed signatures are the single source for hover, completion detail, signatureHelp, and documentSymbol detail.
@@ -197,7 +207,7 @@ No editor is required to test any of this, which is the point of the module spli
 1. **Long-session memory.** Each analysis allocates a full `program`. Refcount destruction should make this a non-issue, but it is unmeasured over hours. Mitigation: `s7 -a` on a loop while watching RSS is an afternoon; if it grows, restart-on-idle is honest and invisible to the client.
 2. **Version skew with the interpreter.** `getError` fields and `errorType` names are the interface we depend on. Pinning a minimum 5.4.x and reporting the interpreter version in `serverInfo` makes mismatches visible instead of mysterious.
 3. **`globalObjects` is global to the program**, thousands of entries; per-keystroke filtering must stay cheap. Measure before optimising; a name-prefix hash is the obvious fix.
-4. **`scan.sd7` correctness** decides semanticTokens, folding, and the later reference index. It is the largest genuinely new code in the plan and the part `seed7-mode.el`'s regexes most directly inform.
+4. **`scan.sd7` correctness** decides semanticTokens, folding, and the later reference index. **Confirmed:** 65 unit checks in `scan_test.sd7` plus 56 in `features_test.sd7` and 83 in the wire transcript, each mutation-provable branch pinned by a check that goes FAIL when its rule is mutated.
 5. **Windows untested.** Seed7 builds there; `utf8File` and `getln` framing should follow, but nobody has tried.
 
 ## 10. Seed7 language notes (learned the slow way — keep them here)

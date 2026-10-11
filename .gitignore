@@ -59,3 +59,7 @@ dkms.conf
 
 # SDD scratch (ledger, briefs, review packages)
 .superpowers
+
+# Python bytecode from the transcript harness
+__pycache__/
+*.pyc

@@ -1,0 +1,517 @@
+$ include "seed7_05.s7i";
+  include "utf8bytes.sd7";
+
+# Seed7's lexical grammar -- the one machine in this server that knows what a token is.
+# Rules follow scanner.c's scan_symbol, and manual/tokens.htm 10 is the prose. It returns
+# Seed7 data only: no positions (doc_store owns those), no jsonValue, no LSP shape.
+#
+# A token may span lines -- (* *) does, and a string continued with '\' + newline. Such a token
+# reports the line and column it STARTS on, and a width16 of the units it occupies ON THAT LINE:
+# never 0, never the whole span; a consumer that needs the end takes 'stop'. The cursor is the
+# other quantity and it does not stop: cur.col16 advances one unit per character across every line
+# of the span, resetting at each break, so a token after a multi-line one reports an honest column.
+# semanticTokens clips to that first line, which is what a client without
+# multilineTokenSupport would do anyway (spec 6.2).
+
+const integer: TK_ILLEGAL is 0;
+const integer: TK_NAME is 1;
+const integer: TK_OP is 2;
+const integer: TK_BRACKET is 3;
+const integer: TK_NUMBER is 4;
+const integer: TK_STRING is 5;
+const integer: TK_CHAR is 6;
+const integer: TK_COMMENT is 7;
+const integer: TK_LINE_COMMENT is 8;
+
+const type: tok is new struct
+    var integer: kind is 0;
+    var integer: line0 is 0;
+    var integer: col16 is 0;
+    var integer: width16 is 0;
+    var integer: start is 0;
+    var integer: stop is 0;
+  end struct;
+
+const type: scanCursor is new struct
+    var integer: offset is 1;
+    var integer: line0 is 0;
+    var integer: col16 is 0;
+  end struct;
+
+const char: BACKSLASH is chr(92);
+const char: APOSTROPHE is chr(39);
+
+# The special-character class -- manual/tokens.htm 10.2.2, and what seed7's scanner grows into
+# an operator run. doc_store.sd7 carries its own, SMALLER OP_CHARS on purpose, and it is not the
+# same set: this one also holds '$', '.' and '`', which doc_store's 18 members lack (doc_store's
+# set is a subset of this one). doc_store's list is the character-run logic behind codeText and
+# wordAt; Task 8 replaces that with these tokens and doc_store's copy goes with it. Until then,
+# do not merge the two -- renaming or shrinking either one moves the mask under existing checks.
+const set of char: SPECIAL_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
+                                     ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
+const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};
+const set of char: DIGITS is {'0','1','2','3','4','5','6','7','8','9'};
+const set of char: SPACES is {' ', '\9;', '\r'};
+const set of char: LETTERS is {'a','b','c','d','e','f','g','h','i','j','k','l','m',
+                               'n','o','p','q','r','s','t','u','v','w','x','y','z',
+                               'A','B','C','D','E','F','G','H','I','J','K','L','M',
+                               'N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
+
+# ASCII letters only. Seed7 can widen names with the pragma "$ names unicode;", which the
+# library and programs here never use (measured across 213 lib/*.s7i and every prg/*.sd7),
+# so a non-ASCII character is an illegal token -- the same answer scanner.c gives it.
+const func boolean: nameStart (in char: ch) is
+  return ch in LETTERS or ch = '_';
+
+const func boolean: nameMore (in char: ch) is
+  return ch in LETTERS or ch in DIGITS or ch = '_';
+
+# Whitespace is not a token: the cursor walks over it, updating line and column. The line model
+# is doc_store.lineStarts, the authority every position conversion already uses: '\n', a lone
+# '\r', and a '\r\n' pair each count as ONE break, so a CRLF or CR-only buffer and an LF buffer
+# put the same token on the same line0 and col16. That agreement is what keeps folding,
+# selectionRange and semanticTokens on the lines diagnostics use. A '\r' is still in SPACES for
+# the blank-only case; the newline arm below decides first, so a pair is never counted twice.
+const proc: skipWhitespace (in string: text, inout scanCursor: cur) is func
+  local
+    var char: ch is ' ';
+    var boolean: more is TRUE;
+  begin
+    while more and cur.offset <= length(text) do
+      ch := text[cur.offset];
+      if ch = '\n' then
+        cur.line0 := succ(cur.line0);
+        cur.col16 := 0;
+        cur.offset := succ(cur.offset);
+      elsif ch = '\r' then
+        cur.line0 := succ(cur.line0);
+        cur.col16 := 0;
+        if cur.offset < length(text) and text[succ(cur.offset)] = '\n' then
+          cur.offset := cur.offset + 2;
+        else
+          cur.offset := succ(cur.offset);
+        end if;
+      elsif ch in SPACES then
+        cur.col16 +:= utf16CharLength(ch);
+        cur.offset := succ(cur.offset);
+      else
+        more := FALSE;
+      end if;
+    end while;
+  end func;
+
+const func boolean: extDigit (in char: ch) is
+  return ch in LETTERS or ch in DIGITS;
+
+# TRUE when index j holds the E/e that starts an exponent: a sign is optional, a digit is not.
+const func boolean: startsExponent (in string: text, in integer: j) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: k is 0;
+  begin
+    out := FALSE;
+    if j <= length(text) and (text[j] = 'E' or text[j] = 'e') then
+      k := succ(j);
+      if k <= length(text) and (text[k] = '+' or text[k] = '-') then
+        k := succ(k);
+      end if;
+      out := k <= length(text) and text[k] in DIGITS;
+    end if;
+  end func;
+
+const proc: skipDigits (in string: text, inout integer: j) is func
+  begin
+    while j <= length(text) and text[j] in DIGITS do
+      j := succ(j);
+    end while;
+  end func;
+
+const proc: skipExtDigits (in string: text, inout integer: j) is func
+  begin
+    while j <= length(text) and extDigit(text[j]) do
+      j := succ(j);
+    end while;
+  end func;
+
+const proc: skipExponent (in string: text, inout integer: j) is func
+  begin
+    j := succ(j);
+    if j <= length(text) and (text[j] = '+' or text[j] = '-') then
+      j := succ(j);
+    end if;
+    skipDigits(text, j);
+  end func;
+
+# lit_number's dispatch order, in index terms. Seed7 allows at most one of '.', '_', '#' or an
+# exponent after the decimal digits, which is why these are elsif arms and not a loop:
+# 16#1.5 is a based number and then a dot, not a float.
+const func integer: pastNumber (in string: text, in integer: first) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: j is 0;
+  begin
+    j := succ(first);
+    skipDigits(text, j);
+    if j <= length(text) and text[j] = '.' and succ(j) <= length(text) and
+       text[succ(j)] in DIGITS then
+      j := succ(j);
+      skipDigits(text, j);
+      if startsExponent(text, j) then
+        skipExponent(text, j);
+      end if;
+    elsif j <= length(text) and text[j] = '_' then
+      j := succ(j);
+    elsif j <= length(text) and text[j] = '#' and succ(j) <= length(text) and
+          extDigit(text[succ(j)]) then
+      j := succ(j);
+      skipExtDigits(text, j);
+      if j <= length(text) and text[j] = '_' then
+        j := succ(j);
+      end if;
+    elsif startsExponent(text, j) then
+      skipExponent(text, j);
+    end if;
+    out := j;
+  end func;
+
+# A line break in the text. doc_store.lineStarts counts '\n', a lone '\r' and a '\r\n' pair each
+# as ONE break, and a bare one inside a string is STRING_EXCEEDS for the analyzer, so it ends the
+# token and the caller's skipWhitespace takes the cursor over it.
+const func boolean: lineEnd (in char: ch) is
+  return ch = '\n' or ch = '\r';
+
+# The cursor crosses one break INSIDE a token that spans lines, which is the only place the two
+# line-model rules meet: the same '\n' / lone '\r' / '\r\n'-as-one rule skipWhitespace follows, and
+# the width rule. 'units' holds the width taken on the line being left and nextToken's tail adds it
+# back to cur.col16, so the new line starts live at 0 by leaving cur.col16 at 0 - units; from here
+# on every unit belongs to the cursor and not to the token's width, which is what countUnit does.
+const proc: scanLineBreak (in string: text, inout integer: j, inout scanCursor: cur,
+                           in integer: units) is func
+  begin
+    cur.line0 := succ(cur.line0);
+    cur.col16 := 0 - units;
+    if text[j] = '\r' and succ(j) <= length(text) and text[succ(j)] = '\n' then
+      j := j + 2;
+    else
+      j := succ(j);
+    end if;
+  end func;
+
+# Where a unit of a token that may span lines goes: to its width while the cursor is still on the
+# line the token started on, to cur.col16 once it has crossed a break. Two different quantities --
+# tok.width16 never covers more than the start line, the cursor never stops counting the span --
+# and one guard, so neither can be updated without the other.
+const proc: countUnit (in integer: startLine0, inout scanCursor: cur, inout integer: units,
+                       in integer: n) is func
+  begin
+    if cur.line0 = startLine0 then
+      units +:= n;
+    else
+      cur.col16 +:= n;
+    end if;
+  end func;
+
+# The continuation, in the one place that knows it: '\' + blanks/newlines/'#'-comment + '\', which
+# literal.c's skip_lines ignores entirely so the string goes on. j arrives AT the opening backslash
+# and leaves one past the closing one; every character in between still occupies a column on the
+# line it sits on -- including the opening backslash -- which is why this walk owns the cursor: the
+# two quantities are counted by countUnit, and each break is crossed by scanLineBreak.
+const proc: skipContinuation (in string: text, inout integer: j, in integer: startLine0,
+                              inout scanCursor: cur, inout integer: units) is func
+  begin
+    countUnit(startLine0, cur, units, 1);
+    j := succ(j);
+    while j <= length(text) and text[j] <> BACKSLASH and text[j] <> '"' do
+      if lineEnd(text[j]) then
+        scanLineBreak(text, j, cur, units);
+      elsif text[j] = '#' then
+        # a line comment inside the ignored region may hold a double quote, so only a break ends
+        # it. The radix question cannot arise in here: the scanner knows it is not inside a number.
+        while j <= length(text) and not lineEnd(text[j]) do
+          countUnit(startLine0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end while;
+      else
+        countUnit(startLine0, cur, units, utf16CharLength(text[j]));
+        j := succ(j);
+      end if;
+    end while;
+    if j <= length(text) and text[j] = BACKSLASH then
+      countUnit(startLine0, cur, units, 1);
+      j := succ(j);
+    end if;
+  end func;
+
+# literal.c's escape_sequence in index terms, from the BACKSLASH at j, for the two shapes that need
+# no cursor: a numeric escape ('\123;' or '\16#ff;' -- an integer literal then ';') and a
+# one-character escape ('\"', '\\', '\'' -- the quote character --, '\a'..'\v', '\A'..'\Z'). An
+# escape that matches neither is the analyzer's error to report; this only has to not lose the rest
+# of the line. The third shape, the continuation, is deliberately not here: it crosses newlines, so
+# honouring the two-quantity rule needs a cursor, and a func that returns only an index cannot
+# honour it. skipContinuation is that one copy, called by the arm that has the cursor.
+const func integer: pastEscape (in string: text, in integer: j) is func
+  result
+    var integer: out is 0;
+  begin
+    out := succ(j);
+    if out > length(text) then
+    elsif text[out] in DIGITS then
+      skipDigits(text, out);
+      if out <= length(text) and text[out] = '#' then
+        out := succ(out);
+        skipExtDigits(text, out);
+      end if;
+      if out <= length(text) and text[out] = ';' then
+        out := succ(out);
+      end if;
+    else
+      out := succ(out);
+    end if;
+  end func;
+
+# One token, starting where the cursor sits: valid only when cur.offset <= length(text) and
+# the character there is not whitespace, and it leaves the cursor one character past the
+# token. An unrecognised character is one illegal token, one character wide -- that
+# single-character advance is what stops a malformed document from looping.
+const func tok: nextToken (in string: text, inout scanCursor: cur) is func
+  result
+    var tok: out is tok.value;
+  local
+    var char: ch is ' ';
+    var integer: j is 0;
+    var integer: units is 0;
+    var integer: before is 0;
+    var integer: depth is 0;
+  begin
+    ch := text[cur.offset];
+    out.kind := TK_ILLEGAL;
+    out.line0 := cur.line0;
+    out.col16 := cur.col16;
+    out.start := cur.offset;
+    units := utf16CharLength(ch);
+    j := succ(cur.offset);
+    if nameStart(ch) then
+      while j <= length(text) and nameMore(text[j]) do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_NAME;
+    elsif ch = '"' then
+      # lit_string's body. units stops growing the moment the cursor leaves the start line and
+      # cur.col16 takes over (countUnit), which is the whole multi-line rule in one guard.
+      while j <= length(text) and text[j] <> '"' and not lineEnd(text[j]) do
+        if text[j] = BACKSLASH and succ(j) <= length(text) and
+              (text[succ(j)] = '\n' or text[succ(j)] in SPACES) then
+          skipContinuation(text, j, out.line0, cur, units);
+        elsif text[j] = BACKSLASH then
+          before := j;
+          j := pastEscape(text, j);
+          # An escape body is ASCII by construction -- one character, or digits and a ';' -- so
+          # its character count is its unit count. What is not ASCII there is ILLEGAL_STRING_ESCAPE
+          # for the analyzer, whose business that is, not the scanner's.
+          countUnit(out.line0, cur, units, j - before);
+        else
+          countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end if;
+      end while;
+      if j <= length(text) and text[j] = '"' then
+        # the closing quote: on the span's last line if the string was continued, so counted like
+        # every other character there.
+        countUnit(out.line0, cur, units, 1);
+        j := succ(j);
+      end if;
+      out.kind := TK_STRING;
+    elsif ch = APOSTROPHE then
+      # lit_char reads exactly ONE char_literal_element and the element says how long it was
+      # ('\16#ff;' is seven characters of element), so the width is never a constant -- a fixed
+      # count is what lost the mask the characters after the closing quote. The quote character
+      # (''') needs no arm of its own: a quote is just an ordinary single character, which the
+      # last branch reads. Neither the element nor the closing quote may be a line break, which is
+      # lit_char's CHAR_EXCEEDS ("Character literal exceeds source line"): an unterminated literal
+      # -- the normal state mid-typing -- ends AT its line and leaves the break to skipWhitespace.
+      # Crossing it would report every later token of the document on the wrong line, and with the
+      # line never crossed width and cursor advance stay the same number, so there is no countUnit.
+      if j <= length(text) and text[j] = BACKSLASH and succ(j) <= length(text) and
+         not lineEnd(text[succ(j)]) then
+        before := j;
+        j := pastEscape(text, j);
+        units +:= j - before;
+      elsif j <= length(text) and not lineEnd(text[j]) then
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end if;
+      if j <= length(text) and text[j] = APOSTROPHE then
+        units +:= 1;
+        j := succ(j);
+      end if;
+      out.kind := TK_CHAR;
+    elsif ch = '(' and succ(cur.offset) <= length(text) and
+          text[succ(cur.offset)] = '*' then
+      # scan_comment, whose nesting scanner.c does with recursion and this does with depth: EOF
+      # inside a comment is UNCLOSED_COMMENT for the ANALYZER, so here it is only the end of the
+      # token and nothing is raised. A '(' that reaches no '*' is just another character of the
+      # comment, which is why both pair tests look at two characters. The two quantities are the
+      # string arm's -- countUnit keeps width16 on the line the comment started on and
+      # scanLineBreak hands every later line to the cursor -- so a licence header reports a real
+      # width and the token after a closing '*)' reports an honest column.
+      depth := 1;
+      j := succ(succ(cur.offset));
+      units := 2;
+      while j <= length(text) and depth > 0 do
+        if text[j] = '(' and succ(j) <= length(text) and text[succ(j)] = '*' then
+          depth +:= 1;
+          countUnit(out.line0, cur, units, 2);
+          j := succ(succ(j));
+        elsif text[j] = '*' and succ(j) <= length(text) and text[succ(j)] = ')' then
+          depth := pred(depth);
+          countUnit(out.line0, cur, units, 2);
+          j := succ(succ(j));
+        elsif lineEnd(text[j]) then
+          scanLineBreak(text, j, cur, units);
+        else
+          countUnit(out.line0, cur, units, utf16CharLength(text[j]));
+          j := succ(j);
+        end if;
+      end while;
+      out.kind := TK_COMMENT;
+    elsif ch = '#' then
+      # scan_line_comment: the hash to, but not including, the break. lineEnd -- '\n' and '\r'
+      # alike -- closes it and skipWhitespace takes the cursor over the break, so a CR-only or
+      # CRLF buffer puts the next token on the same line diagnostics use. At EOF the bound on j,
+      # not the break test, is what ends the loop; a comment that runs off the end of a buffer is
+      # the normal state while typing.
+      while j <= length(text) and not lineEnd(text[j]) do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_LINE_COMMENT;
+    elsif ch in DIGITS then
+      j := pastNumber(text, cur.offset);
+      # digits, base markers and signs are all ASCII, so a number is as wide in units as in
+      # characters -- stated here because the next arms cannot say it.
+      units := j - cur.offset;
+      out.kind := TK_NUMBER;
+    elsif ch in BRACKETS then
+      out.kind := TK_BRACKET;
+    elsif ch in SPECIAL_CHARS then
+      while j <= length(text) and text[j] in SPECIAL_CHARS do
+        units +:= utf16CharLength(text[j]);
+        j := succ(j);
+      end while;
+      out.kind := TK_OP;
+    end if;
+    out.stop := pred(j);
+    out.width16 := units;
+    cur.col16 +:= units;
+    cur.offset := j;
+  end func;
+
+# TRUE when a token kind is not code: strings, char literals and comments (both shapes).
+# One boolean per comparison because a long or/and chain of them can fail to match.
+const func boolean: hiddenKind (in integer: kind) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := FALSE;
+    if kind = TK_STRING then
+      out := TRUE;
+    elsif kind = TK_CHAR then
+      out := TRUE;
+    elsif kind = TK_COMMENT then
+      out := TRUE;
+    elsif kind = TK_LINE_COMMENT then
+      out := TRUE;
+    end if;
+  end func;
+
+# The token an LSP position resolves to. Positions sit between characters, so the rule is
+# left-of-character: the position before character n names the token ENDING at n, and only if
+# nothing ends there does it name the token starting at n. doc_store.wordAt owned this rule
+# when it derived runs from characters; now the run comes from the scanner and only the
+# preference is decided here.
+#
+# idx is a 1-based character index into text. Returns a tok with start = 0 when the position
+# is outside every token, including inside a comment or a literal.
+const func tok: tokenAt (in string: text, in integer: idx) is func
+  result
+    var tok: out is tok.value;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var boolean: done is FALSE;
+  begin
+    out.start := 0;
+    out.stop := 0;
+    out.kind := TK_ILLEGAL;
+    done := FALSE;
+    while cur.offset <= length(text) and not done do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+        done := TRUE;
+      else
+        tk := nextToken(text, cur);
+        if tk.start > idx then
+          done := TRUE;
+        elsif idx >= tk.start and idx <= tk.stop then
+          if idx = tk.start and out.start > 0 then
+            (* left-of-character: a previous token already ends here *)
+            done := TRUE;
+          elsif hiddenKind(tk.kind) then
+            out.start := 0;
+            done := TRUE;
+          else
+            out := tk;
+            done := TRUE;
+          end if;
+        elsif idx = succ(tk.stop) and not hiddenKind(tk.kind) and out.start = 0 then
+          out := tk;
+        end if;
+      end if;
+    end while;
+  end func;
+
+# The same text with every string, char and comment character replaced by a space. Newlines and
+# length survive, so an offset into the result is an offset into the document -- that is
+# doc_store's contract for codeText, and this is the only place the machine that implements it
+# lives. An unclosed comment's stop is length(text), so the mask covers the rest of the buffer
+# without trusting width16 (which only spans the first line of a multi-line token).
+const func string: maskOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var integer: copied is 0;
+    var integer: i is 0;
+  begin
+    copied := 1;
+    while cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        # FALSE is adjacency ("(b"), not an error: tokens advance monotonically
+        if tk.start > copied then
+          out := out & text[copied .. pred(tk.start)];
+        end if;
+        if hiddenKind(tk.kind) then
+          for i range tk.start to tk.stop do
+            if text[i] = '\n' or text[i] = '\r' then
+              out := out & text[i .. i];
+            else
+              out := out & " ";
+            end if;
+          end for;
+        else
+          out := out & text[tk.start .. tk.stop];
+        end if;
+        copied := succ(tk.stop);
+      end if;
+    end while;
+    if copied <= length(text) then
+      out := out & text[copied .. length(text)];
+    end if;
+  end func;

@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 10 suites + transcript, 256 checks (203 unit + 53 wire), no editor required
+    make test          # 16 suites + transcript, 433 checks (350 unit + 83 wire), no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -78,44 +78,47 @@ overload plus the `(** … *)` comment the library author wrote, `completion` fo
 declarations and the base keywords, and `signatureHelp` with the active parameter counted
 from the call site.
 
+Scanner-backed features: `foldingRange` for declaration bodies, control blocks, comments,
+and include runs (no fold for a single-line construct); `selectionRange` enclosing by line
+(a position in a region's leading whitespace still nests inside it); and `semanticTokens`
+with seven name/literal types and no `keyword` or `parameter` class (the two authoritative
+word lists disagree by about forty words each way, and a parameter has no position because
+`paramsOf` returns strings).
+
 Requests stay silent inside a string literal, a char literal or a comment:
-`doc_store.codeText` masks those regions, so a position inside `"..."` reports nothing rather
+`scan.sd7`'s `maskOf` projects those regions — same length as the text, newlines preserved,
+every non-code character a space — so a position inside `"..."` reports nothing rather
 than the signature of some unrelated call — a real risk in files like `prg/calc7.sd7`, whose
 continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
 string in any rule that does not know char literals exist.
 
-One hole in that mask: a char literal whose content is a numeric escape (`'\9;`, `'\16#ff;`)
-is counted as two characters, so the mask loses the two that follow its closing quote. There a
-request may answer nothing, or answer a name spelled out of the escape's tail (`ff`). The
-fixed-count state predates this branch and `scan.sd7` replaces the machine; `lib/jpeg.s7i` is
-where the based form clusters.
-
-Ranges are line-based. Reflection reports a declaration's line and never a column, so a
-definition range is the whole line and `selectionRange` equals `range`. A symbol's
-*extent* (where it ends) is not available from the analyzer at all. Where the analyzer
-reports a column, it counts bytes and the server converts — see
-`doc_store.lspRangeBytes`.
+Symbol-feature ranges are line-based. Reflection reports a declaration's line and never
+a column, so a definition range is the whole line. A symbol's *extent* (where it ends)
+is not available from the analyzer at all. Where the analyzer reports a column, it counts
+bytes and the server converts — see `doc_store.lspRangeBytes`. The function that still
+uses this rule is `lspWholeLine`.
 
 ## What does not work yet
 
 `references` and rename (the reflection API yields declarations only, never use sites),
-`workspace/symbol`, folding ranges, selection ranges, semantic tokens, `documentSymbol`
-hierarchy for nested and local declarations, completion of local variables, pull
-diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
-and completion as well as stale diagnostics, because a library is analysed through a driver
-that reads the file back from disk, which also breaks the spec's rule that an open
-document must not be read through its uri), a based literal
-answering as a name (`16#be|ef` hovers `beef`) until `scan.sd7` separates number tokens
-from name tokens, `utf-8` position negotiation, `workspace/configuration`, and Windows. Asking
-for an unimplemented method returns `-32601 Method not found`, which editors display as
-"no data" rather than as a failure — and a capability is advertised only once its method
-is answered.
+`workspace/symbol`, `documentSymbol` hierarchy for nested and local declarations,
+completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
+staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
+as well as stale diagnostics, because a library is analysed through a driver that reads
+the file back from disk, which also breaks the spec's rule that an open document must not
+be read through its uri), `utf-8` position negotiation, `workspace/configuration`, and
+Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
+editors display as "no data" rather than as a failure — and a capability is advertised
+only once its method is answered.
 
 ## Layout and further reading
 
 `src/` is one module per responsibility — transport, JSON-RPC, JSON writing, document
-store, analysis, diagnostics, dispatch, entry point — and `tests/` has one suite each,
-plus `tests/transcript.py`, which drives the real process over real frames.
+store, the lexical scanner and its construct regions (`scan.sd7`, `blocks.sd7`), the
+code-point width tables (`utf8bytes.sd7`), analysis, diagnostics, dispatch, entry point —
+with the LSP features themselves in `src/features/`, one file per method plus `kinds.sd7`
+for the shared symbol/type mappings. `tests/` has one suite each, plus
+`tests/transcript.py`, which drives the real process over real frames.
 
 - `AGENTS.md` — constraints for anyone editing this code, including the Seed7 traps.
 - `docs/superpowers/specs/` — the design, its measurements, and its risk register.

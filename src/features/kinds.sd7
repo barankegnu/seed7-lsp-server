@@ -1,5 +1,25 @@
 $ include "seed7_05.s7i";
 
+# Three consumers share this file: document_symbol.sd7 (symbolKindOf), completion.sd7
+# (completionKindOf) and semantic_tokens.sd7 (semanticTypeOf plus the STT_*/STMOD_*
+# constants). A module may not include the module that includes it, so the constants
+# live here rather than in semantic_tokens.sd7.
+
+# SemanticTokenType indices for the legend. The order is load-bearing because the payload
+# is integers, not names.
+const integer: STT_COMMENT is 0;
+const integer: STT_STRING is 1;
+const integer: STT_NUMBER is 2;
+const integer: STT_FUNCTION is 3;
+const integer: STT_TYPE is 4;
+const integer: STT_VARIABLE is 5;
+const integer: STT_ENUM_MEMBER is 6;
+
+# SemanticTokenModifier bit flags. A token's modifier field is the bitwise OR of the
+# modifiers that apply; 0 means no modifiers.
+const integer: STMOD_DECLARATION is 1;
+const integer: STMOD_DEFAULT_LIBRARY is 2;
+
 # LSP SymbolKind, values from the 3.18 enumeration: Class=5, Function=12, Variable=13,
 # Constant=14, EnumMember=22. Seed7 has no methods or fields to map onto, so Class stands
 # for "declared type" and the mapping is deliberately lossy. Each branch is one comparison
@@ -40,5 +60,29 @@ const func integer: completionKindOf (in string: cat, in string: ty) is func
       out := 3;
     else
       out := 6;
+    end if;
+  end func;
+
+# SemanticTokenType index for a declaration, the same lossy map as symbolKindOf: Seed7 has no
+# methods or fields, so a type is STT_TYPE and everything callable is STT_FUNCTION.
+# Always returns a valid STT_* index; a name with no declaration is absent from the class
+# hash and is not emitted at all, so no sentinel is needed.
+const func integer: semanticTypeOf (in string: cat, in string: ty) is func
+  result
+    var integer: out is STT_VARIABLE;
+  begin
+    if cat = "TYPEOBJECT" then
+      out := STT_TYPE;
+    elsif cat = "ENUMLITERALOBJECT" then
+      out := STT_ENUM_MEMBER;
+    elsif startsWith(ty, "func ") or startsWith(ty, "proc") or
+          cat = "BLOCKOBJECT" or cat = "ACTOBJECT" then
+      out := STT_FUNCTION;
+    elsif cat = "STRUCTOBJECT" then
+      out := STT_TYPE;
+    elsif cat = "VAROBJECT" or cat = "LOCALVOBJECT" then
+      out := STT_VARIABLE;
+    else
+      out := STT_VARIABLE;
     end if;
   end func;

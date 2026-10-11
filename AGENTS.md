@@ -18,6 +18,26 @@ committing, and revert per file — `git checkout -- .` restores from the index 
 silently undo work you have not committed yet. When a review or a probe contradicts a
 commit message, correct the message in the next commit — the correction is the finding.
 
+Two mutation-proofing rules this branch learned the hard way: (1) before demanding a
+mutation, check the mutant is not **semantically identical** — `if n > MAX then n := MAX`
+and `if n >= MAX then n := MAX` are the same function because the assignment is a no-op
+at `n = MAX`, so no black-box input can separate them and the demanded proof was
+unsatisfiable by construction; (2) **"no fixture reaches it" is not "no input reaches
+it"** — a guard the unit suite could not see was killed in two seconds by the wire suite,
+and the honest answer was a missing fixture, not an equivalent mutant. And a probe
+method: to prove an `include` is unused you must exercise the module's **own** include
+list from a standalone probe, with a positive control proving the probe can fail — a test
+file that already includes the same modules makes any deletion pass for the wrong reason.
+
+Two measurement rules, both bought with a wrong number that reached a document or a
+commit. A byte count must come from the artifact the product emits — the wire
+`Content-Length` — never from re-serialising a parsed copy: `json.dumps` writes `", "`
+between elements, which turned a 309 521-byte `semanticTokens` frame into a recorded
+"451 KB", a 46 % overstatement on a 142 005-element array. And a probe must print a
+sentinel that the harness requires before any payload is counted as a result — a fuzz
+whose entry point had never run reported fourteen inputs as "no raise" while printing
+nothing but the interpreter banner.
+
 ## Seed7 traps
 
 Each of these cost a debugging cycle. Seed7 is not Python and will not warn you first.
@@ -74,6 +94,24 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   The quote character is written `'''` — open, the quote as content, close — and `''''` is
   the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
   before coding to it; two of this session's test fixtures were wrong because I guessed.
+- `stri` is not a type name; the type is `string`. `var stri: text is ""` fails with
+  "Match for {var stri : text is {"" } } failed".
+- `NULL_FILE` does not exist; the null file constant is `STD_NULL`.
+- `gets(<utf8 file>, -1)` raises `RANGE_ERROR` at `ut8_rtl.c(586)`; a `readln` loop reads
+  the same file. Relevant to R-F10, which needs to read a file from disk.
+- `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
+  match for any `k` and any `array` type. The existing `x not in arr` entry names the
+  struct-field-select case; the broader rule is that `in` has no array overload.
+- A slice whose low bound exceeds its high bound is the **empty string, silently** —
+  `text[3 .. 2]` has length 0. So "I deleted this bounds guard and every suite stayed
+  green" proves the guard is *harmless to remove*, never that its `FALSE` branch is
+  unreachable; `scan.maskOf`'s gap guard is exactly that case, and its `FALSE` branch is
+  ordinary adjacency (`(b`), firing more often than `TRUE` on `a := (b) + c[1];`.
+- `main` takes **no parameter** here. A parameterised `main` (probed with both
+  `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
+  missing`, exit 0, and the probe silently never ran — which is how one fuzz of mine
+  reported a result it had not computed. The idiom the standard library uses is a plain
+  `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
 
 ## Invariants — a violation is a defect, not a style preference
 
@@ -81,14 +119,13 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    one line. Feature files receive `symRec` records; the temptation to read a `reference`
    directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
-3. Only `src/transport.sd7` owns UTF-8 byte widths: it holds the width table
-   (`utf8CharLength`) and computes or consumes every outbound byte count.
-   `src/doc_store.sd7` may consume a byte-valued column only to convert it into a
-   character column (`charColumnForBytes`/`lspRangeBytes`), and never emits a byte count.
-   `doc_store` includes `transport.sd7` to reach that one helper, which inverts the
-   layering — a merge-time decision, not an accident: §2 of the design spec lists the
-   intended module layout, and the helper's next consumer is `scan.sd7` in the milestone
-   after this one, so the `src/utf8bytes.sd7` extraction belongs to the `scan.sd7` plan.
+3. Only `src/utf8bytes.sd7` **declares** the width rules: `utf8CharLength`,
+   `utf8Length`, and `utf16CharLength`. `src/transport.sd7`, `src/scan.sd7`, and
+   `src/doc_store.sd7` include it; nothing else re-derives a threshold.
+   `src/transport.sd7` owns every **outbound byte count** — `Content-Length` is its
+   arithmetic and no other file emits one. `src/doc_store.sd7` owns position conversion
+   and may consume a byte-valued column only to turn it into a character column
+   (`charColumnForBytes`/`lspRangeBytes`), never to emit a byte count.
 4. Only `src/*.sd7` and `src/features/*.sd7` build LSP response shapes; `analysis.sd7`
    returns Seed7-shaped data and knows nothing about LSP.
 5. Capabilities are static in `InitializeResult`. No dynamic registration. And a
@@ -148,8 +185,8 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `EXCEPTION`s in `seed7_05.s7i:277-291` are a different set (15 names, one of them
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
-  `doc_store.isRadixHash` decides by context, and `codeText` is the only place that
-  decides. `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
+  The scanner decides, because it knows whether it is inside a number token.
+  `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
 
 ## Do not "fix" these
 
@@ -159,30 +196,29 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
   scheduled for M3 and split into its own plan, so it is still open.
-- The `-32603` containment net in `main.sd7` is still unreachable, for a narrower reason
-  than before: the two reflection accessors this server actually calls, `getType` and
-  `formalParams`, *do* raise `RANGE_ERROR` on real references (`resultVar` also raises but
-  is never called), and `analysis.sd7` wraps each in a total (`safeType`, `paramsOf`), so
-  nothing is left for the net to catch. Keep it. When you add a handler that can raise, add
-  the check that reaches it — and never let the raise find stdout.
+- The `-32603` containment net in `main.sd7` is still unreachable: `parseStri` does not
+  raise on any input the server can receive (a truncated buffer is the normal state while
+  typing, and the scanner terminates at EOF without raising), and the reflection walk is
+  wrapped in a guard that catches `RANGE_ERROR`, `INDEX_ERROR`, and `ILLEGAL_ACTION`. The
+  `parseStri` call is deliberately outside the guard — wrapping it would turn a raise into
+  an empty diagnostic list, which publishes a falsely clean document. Keep the net. When
+  you add a handler that can raise, add the check that reaches it — and never let the
+  raise find stdout.
 
 ## Milestones
 
-M1+M2 (base protocol, lifecycle, sync, diagnostics) and M3's five symbol features
-(documentSymbol, definition, hover, completion, signatureHelp) are merged on `master`.
-Still open from M3: the trust gate, local-variable completion, and R-F10 — which is
-a conformance violation as well as stale data, because `textToAnalyze` reads an open
-`.s7i` back from disk while the spec says the server must not read a document's content
-through its uri.
+M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
+(documentSymbol, definition, hover, completion, signatureHelp), and M4's scanner and
+token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
+selectionRange, semanticTokens, one-analysis-per-version) are merged on
+`m4-scan-and-token-features`. Still open from M3: the trust gate, local-variable
+completion, and R-F10 — which is a conformance violation as well as stale data, because
+`textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
+not read a document's content through its uri.
 
-Masking already exists — `doc_store.codeText` blanks string literals, char literals,
-`(* *)` and `#` comments, `wordAt` answers nothing inside masked text, and
-`signature_help.callContextOf` counts arguments over it — so M4's `scan.sd7` is no longer
-"does this position mean anything" but token *spans*: foldingRange, selectionRange and
-semanticTokens, plus the extents and parameter specifiers reflection cannot give. The
-reflection API yields declarations only, never use sites, which is why references and
-rename stay M5. Settle two things first, or M4 makes them permanent: `scan.sd7` is the
-third consumer of the UTF-8 byte-width table, so extracting it out of `transport.sd7` is
-step 1 (see invariant 3); and `utf16Before` scans from index 1 per call — tolerable
-for a hundred capped diagnostics, unusable for a token stream — so give each document
-a cumulative UTF-16 column table in `setVersion` before semanticTokens exists.
+M4's `scan.sd7` is the server's only lexical machine; `doc_store.codeText` is a
+projection of it. A token's UTF-16 column is carried forward incrementally by `nextToken`
+(`scan.sd7:95` advances `cur.col16` by `utf16CharLength(ch)` per character and `:291`
+stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a whole
+document is O(document), not O(document × tokens). The reflection API yields declarations
+only, never use sites, which is why references and rename stay M5.

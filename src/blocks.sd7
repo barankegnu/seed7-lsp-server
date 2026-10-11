@@ -1,0 +1,353 @@
+$ include "seed7_05.s7i";
+  include "scan.sd7";
+
+# Seed7's block structure, read off the token stream. The construct inventory is
+# seed7-mode.el's seed7-block-start-regexp / seed7-block-end-regexp cross-checked against
+# manual/stats.htm 5 and decls.htm 3.2. A construct keyword inside a comment or a string cannot
+# reach this, because those are TK_COMMENT/TK_STRING tokens and never TK_NAME -- which is why
+# this file reads the scanner and not the source lines.
+#
+# Nothing here knows positions: a region is a pair of LINES. LSP ranges are built by the feature
+# that asks (invariant 2), and the later local-scope spec needs exactly the same pairs.
+
+const type: blockRef is new struct
+    var integer: startLine is 0;
+    var integer: endLine is 0;
+    var string: kind is "";
+  end struct;
+
+const type: blockStack is new struct
+    var array string: closer is 0 times "";
+    var array integer: openLine is 0 times 0;
+    var array string: kind is 0 times "";
+  end struct;
+
+const func boolean: isControl (in string: nm) is
+  return nm = "if" or nm = "for" or nm = "while" or nm = "case" or
+         nm = "block" or nm = "global";
+
+const func boolean: isSection (in string: nm) is
+  return nm = "result" or nm = "local" or nm = "begin" or nm = "exception";
+
+const func boolean: isClause (in string: nm) is
+  return nm = "when" or nm = "otherwise" or nm = "elsif" or nm = "else" or nm = "then";
+
+const func boolean: isTypeBody (in string: nm) is
+  return nm = "struct" or nm = "enum";
+
+const func integer: topWithCloser (in blockStack: st, in string: closer) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    out := 0;
+    for i range 1 to length(st.closer) do
+      if st.closer[i] = closer then
+        out := i;
+      end if;
+    end for;
+  end func;
+
+const proc: pushBlock (inout blockStack: st, in string: closer,
+                       in integer: line0, in string: kind) is func
+  begin
+    st.closer &:= closer;
+    st.openLine &:= line0;
+    st.kind &:= kind;
+  end func;
+
+# Closes every region from `index` up, innermost last, and pops them.
+const proc: closeFrom (inout blockStack: st, inout array blockRef: out,
+                       in integer: index, in integer: endLine) is func
+  local
+    var integer: i is 0;
+    var blockRef: r is blockRef.value;
+    var array string: dummy1 is 0 times "";
+    var array integer: dummy2 is 0 times 0;
+    var array string: dummy3 is 0 times "";
+  begin
+    if index > 0 then
+      for i range index to length(st.closer) do
+        if st.openLine[i] < endLine then
+          r.startLine := st.openLine[i];
+          r.endLine := endLine;
+          r.kind := st.kind[i];
+          out &:= r;
+        end if;
+      end for;
+      while length(st.closer) >= index and length(st.closer) > 0 do
+        dummy1 := remove(st.closer, length(st.closer), 1);
+        dummy2 := remove(st.openLine, length(st.openLine), 1);
+        dummy3 := remove(st.kind, length(st.kind), 1);
+      end while;
+    end if;
+  end func;
+
+# The stack index an `end <word>` closes: 0 to close nothing. An unbalanced end, or an
+# `end` for something never opened, is the analyzer's error to report -- folding invents
+# nothing, which is why 0 is the answer rather than the innermost region.
+const func integer: endIndexOf (in string: text, inout scanCursor: cur,
+                                in blockStack: st) is func
+  result
+    var integer: out is 0;
+  local
+    var tok: tk is tok.value;
+    var string: word is "";
+  begin
+    out := 0;
+    skipWhitespace(text, cur);
+    if cur.offset <= length(text) then
+      tk := nextToken(text, cur);
+      if tk.kind = TK_NAME then
+        word := text[tk.start .. tk.stop];
+        if word = "func" or word = "if" or word = "for" or word = "while" or
+           word = "case" or word = "block" or word = "global" or word = "struct" or
+           word = "enum" then
+          out := topWithCloser(st, "end " & word);
+        end if;
+      end if;
+    end if;
+  end func;
+
+# The first open region of this kind at or above the innermost body region, or 0. A section or
+# a clause ends at its next sibling, not at the end of the document, and it must not close the
+# callable body that contains it -- so the search starts below the innermost "end func".
+const func integer: firstAtOrAbove (in blockStack: st, in string: kind) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: body is 0;
+    var integer: i is 0;
+  begin
+    out := 0;
+    body := topWithCloser(st, "end func");
+    for i range succ(body) to length(st.closer) do
+      if out = 0 and st.closer[i] = kind then
+        out := i;
+      end if;
+    end for;
+  end func;
+
+const proc: walkRegions (in string: text, inout array blockRef: out,
+                         in integer: lastLine) is func
+  local
+    var scanCursor: cur is scanCursor.value;
+    var blockStack: st is blockStack.value;
+    var tok: tk is tok.value;
+    var tok: tok2 is tok.value;
+    var string: word is "";
+    var string: pending is "";
+    var integer: runStart is 0;
+    var integer: runStop is 0;
+    var boolean: inRun is FALSE;
+    var integer: impStart is 0;
+    var integer: impStop is 0;
+    var boolean: inImp is FALSE;
+    var blockRef: r is blockRef.value;
+  begin
+    while cur.offset <= length(text) do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        if tk.kind = TK_COMMENT then
+          # rule 7: the cursor is left on the line the comment ended on, which is the
+          # only place a multi-line token's end is ever needed.
+          if cur.line0 > tk.line0 then
+            r.startLine := tk.line0; r.endLine := cur.line0; r.kind := "comment";
+            out &:= r;
+          end if;
+        elsif tk.kind = TK_LINE_COMMENT then
+          # rule 9: a run of consecutive # lines, one region.
+          if inRun and tk.line0 = succ(runStop) then
+            runStop := tk.line0;
+          else
+            if inRun and runStop > runStart then
+              r.startLine := runStart; r.endLine := runStop; r.kind := "comment";
+              out &:= r;
+            end if;
+            runStart := tk.line0; runStop := tk.line0; inRun := TRUE;
+          end if;
+        elsif tk.kind = TK_OP then
+          # rule 10: a $ pragma, which may be an include line.
+          word := text[tk.start .. tk.stop];
+          if word = "$" then
+            skipWhitespace(text, cur);
+            if cur.offset <= length(text) then
+              tok2 := nextToken(text, cur);
+              if tok2.kind = TK_NAME and text[tok2.start .. tok2.stop] = "include" then
+                if inImp and tk.line0 <= succ(impStop) then
+                  impStop := tk.line0;
+                else
+                  if inImp and impStop > impStart then
+                    r.startLine := impStart; r.endLine := impStop; r.kind := "imports";
+                    out &:= r;
+                  end if;
+                  impStart := tk.line0; impStop := tk.line0; inImp := TRUE;
+                end if;
+              end if;
+            end if;
+          end if;
+        elsif tk.kind = TK_NAME then
+          word := text[tk.start .. tk.stop];
+          # Detect "include" statements (with or without $ prefix). Both forms count because
+          # Seed7 allows bare `include "x";` as well as `$ include "x";`, and a run of either
+          # shape is an imports region for folding purposes.
+          if word = "include" then
+            skipWhitespace(text, cur);
+            if cur.offset <= length(text) then
+              tok2 := nextToken(text, cur);
+              if tok2.kind = TK_STRING then
+                if inImp and tk.line0 <= succ(impStop) then
+                  impStop := tk.line0;
+                else
+                  if inImp and impStop > impStart then
+                    r.startLine := impStart; r.endLine := impStop; r.kind := "imports";
+                    out &:= r;
+                  end if;
+                  impStart := tk.line0; impStop := tk.line0; inImp := TRUE;
+                end if;
+              end if;
+            end if;
+          elsif word = "is" or word = "new" or word = "sub" then
+            pending := "func";
+          elsif pending = "func" then
+            pending := "";
+            if word = "func" then
+              pushBlock(st, "end func", tk.line0, "");
+            elsif isTypeBody(word) then
+              pushBlock(st, "end " & word, tk.line0, "");
+            end if;
+          elsif isControl(word) then
+            pushBlock(st, "end " & word, tk.line0, "");
+          elsif word = "repeat" then
+            pushBlock(st, "until", tk.line0, "");
+          elsif word = "until" then
+            closeFrom(st, out, topWithCloser(st, "until"), tk.line0);
+          elsif word = "end" then
+            closeFrom(st, out, endIndexOf(text, cur, st), tk.line0);
+          elsif isSection(word) then
+            closeFrom(st, out, firstAtOrAbove(st, "section"), tk.line0);
+            pushBlock(st, "section", tk.line0, "section");
+          elsif isClause(word) then
+            closeFrom(st, out, firstAtOrAbove(st, "clause"), tk.line0);
+            pushBlock(st, "clause", succ(tk.line0), "clause");
+          end if;
+        end if;
+        if tk.kind <> TK_LINE_COMMENT and inRun then
+          if runStop > runStart then
+            r.startLine := runStart; r.endLine := runStop; r.kind := "comment";
+            out &:= r;
+          end if;
+          inRun := FALSE;
+        end if;
+      end if;
+    end while;
+    if inRun and runStop > runStart then
+      r.startLine := runStart; r.endLine := runStop; r.kind := "comment";
+      out &:= r;
+    end if;
+    if inImp and impStop > impStart then
+      r.startLine := impStart; r.endLine := impStop; r.kind := "imports";
+      out &:= r;
+    end if;
+    closeFrom(st, out, 1, lastLine);
+  end func;
+
+const func array blockRef: blockRegions (in string: text,
+                                         in integer: lastLine) is func
+  result
+    var array blockRef: out is 0 times blockRef.value;
+  local
+    var array blockRef: raw is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: j is 0;
+    var blockRef: tmp is blockRef.value;
+    var blockRef: r is blockRef.value;
+    var integer: clauseCount is 0;
+    var integer: controlStart is 0;
+    var integer: controlEnd is 0;
+    var boolean: isClauseRegion is FALSE;
+  begin
+    walkRegions(text, raw, lastLine);
+    # ponytail: O(n^2) bubble sort, measured ceiling is ~95 regions per file across 213 lib/*.s7i
+    # files (20,151 total regions). Upgrade path: replace with insertion sort or stdlib sort if
+    # profiling shows this is a bottleneck.
+    # Sort by startLine ascending (document order).
+    for i range 1 to length(raw) do
+      for j range 1 to length(raw) - i do
+        if raw[j].startLine > raw[succ(j)].startLine then
+          tmp := raw[j];
+          raw[j] := raw[succ(j)];
+          raw[succ(j)] := tmp;
+        end if;
+      end for;
+    end for;
+    # Filter out clause regions that are the only clause in their control block.
+    for i range 1 to length(raw) do
+      r := raw[i];
+      isClauseRegion := r.kind = "clause";
+      if isClauseRegion then
+        # Find the enclosing control block.
+        controlStart := 0;
+        controlEnd := lastLine;
+        for j range 1 to length(raw) do
+          if raw[j].kind <> "clause" and raw[j].startLine < r.startLine and raw[j].endLine >= r.endLine then
+            controlStart := raw[j].startLine;
+            controlEnd := raw[j].endLine;
+          end if;
+        end for;
+        # Count clause regions in this control block.
+        clauseCount := 0;
+        for j range 1 to length(raw) do
+          if raw[j].kind = "clause" and raw[j].startLine >= controlStart and raw[j].endLine <= controlEnd then
+            clauseCount +:= 1;
+          end if;
+        end for;
+        # Only emit if there are multiple clauses.
+        if clauseCount > 1 then
+          r.kind := "";  # Strip internal marker
+          out &:= r;
+        end if;
+      else
+        if r.kind = "section" then
+          r.kind := "";  # Strip internal marker
+        end if;
+        out &:= r;
+      end if;
+    end for;
+  end func;
+
+# The chain containing a position, innermost first. A chain is a FILTER over regions, not a
+# second machine: blockRegions returns regions in document order, so the sort here reorders
+# them by startLine descending to put the innermost first.
+const func array blockRef: enclosingRegions (in string: text, in integer: line0,
+                                             in integer: lastLine) is func
+  result
+    var array blockRef: out is 0 times blockRef.value;
+  local
+    var array blockRef: all is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: j is 0;
+    var blockRef: r is blockRef.value;
+    var blockRef: tmp is blockRef.value;
+  begin
+    all := blockRegions(text, lastLine);
+    for i range 1 to length(all) do
+      if line0 >= all[i].startLine and line0 <= all[i].endLine then
+        r := all[i];
+        out &:= r;
+      end if;
+    end for;
+    # Sort by startLine descending (innermost first).
+    for i range 1 to length(out) do
+      for j range 1 to length(out) - i do
+        if out[j].startLine < out[succ(j)].startLine then
+          tmp := out[j];
+          out[j] := out[succ(j)];
+          out[succ(j)] := tmp;
+        end if;
+      end for;
+    end for;
+  end func;

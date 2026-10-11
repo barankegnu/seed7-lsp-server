@@ -1,0 +1,29 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "doc_store.sd7";
+  include "features/folding_range.sd7";
+
+const func string: foldsOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var lsDoc: doc is lsDoc.value;
+  begin
+    setVersion(doc, text, 1);
+    out := foldingResult(doc);
+  end func;
+
+const proc: main is func
+  begin
+    check("empty document answers an empty array", foldsOf(""), "[]");
+    check("a comment region carries its kind",
+          foldsOf("(* one\n   two *)\nwriteln(1);\n"),
+          "[{\"startLine\":0,\"endLine\":1,\"kind\":\"comment\"}]");
+    check("a plain region omits kind entirely",
+          foldsOf("repeat\n  noop;\nuntil TRUE;\n"),
+          "[{\"startLine\":0,\"endLine\":2}]");
+    check("line count clamps the last line",
+          foldsOf("const proc: a is func\nbegin\n  if TRUE then"),
+          "[{\"startLine\":0,\"endLine\":2},{\"startLine\":1,\"endLine\":2}]");
+    report("folding");
+  end func;

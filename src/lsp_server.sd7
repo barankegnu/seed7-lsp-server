@@ -12,6 +12,9 @@ $ include "seed7_05.s7i";
   include "features/hover.sd7";
   include "features/completion.sd7";
   include "features/signature_help.sd7";
+  include "features/folding_range.sd7";
+  include "features/selection_range.sd7";
+  include "features/semantic_tokens.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -21,6 +24,20 @@ var docMap: openDocs is docMap.EMPTY_HASH;
 var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
+
+# One analysis per OPEN document, held beside openDocs rather than inside `lsDoc`: `symRec` is
+# declared in analysis.sd7 and doc_store.sd7 must not come to include that.
+#
+# The entry is valid by PRESENCE, deliberately, and that is the whole invalidation rule: any
+# path that changes a document's text or version must delete its entry first. Each of the three
+# drops that exist today has its own pin: didOpen's by the didOpen-with-no-close wire check,
+# didChange's by the versionless-change wire check, didClose's by the unit assertion that a close
+# empties the map -- the reopen-after-close wire check CANNOT pin didClose, because didOpen's drop
+# would rescue it, which is why the unit suite holds that one. didClose's drop is the O(open
+# documents) memory bound, nothing more.
+const type: analysisMap is hash [string] docAnalysis;
+
+var analysisMap: analysisCache is analysisMap.EMPTY_HASH;
 
 const proc: note (in string: text) is func
   begin
@@ -61,6 +78,14 @@ const func string: capabilitiesJson is func
       field(w, "hoverProvider"); addBool(w, TRUE);
       field(w, "definitionProvider"); addBool(w, TRUE);
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
+      field(w, "foldingRangeProvider"); addBool(w, TRUE);
+      field(w, "selectionRangeProvider"); addBool(w, TRUE);
+      field(w, "semanticTokensProvider");
+      openObject(w);
+        field(w, "legend"); raw(w, semanticTokensLegend);
+        field(w, "range"); addBool(w, TRUE);
+        field(w, "full");  addBool(w, TRUE);
+      closeObject(w);
       field(w, "positionEncoding"); addStr(w, "utf-16");
     closeObject(w);
     out := finishJson(w);
@@ -99,12 +124,37 @@ const func string: textToAnalyze (in string: uri) is func
     end if;
   end func;
 
+# The single place a document is analysed. Every reader below goes through it, so a changed
+# document costs one parseStri and a symbol request arriving after that change costs none -- the
+# change's own refresh has already filled the entry. OBLIGATION: any path that changes a
+# document's text or version must delete its entry before refreshing; validity here is presence,
+# deliberately (see `analysisCache' above for why there is no second mechanism). The
+# `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py counts, because the log is
+# the observable and no counter variable belongs in the product.
+const proc: ensureAnalyzed (in string: uri) is func
+  local
+    var docAnalysis: fresh is docAnalysis.value;
+  begin
+    if uri in openDocs and not (uri in analysisCache) then
+      fresh := analyzeAll(textToAnalyze(uri), libraryDirs);
+      # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
+      # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
+      # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
+      # not 21 times). A `hash [string] struct` stores by value (probed), so this cannot alias
+      # `fresh`.
+      analysisCache @:= [uri] fresh;
+      note("analyzed " <& uri <& " version " <& str(openDocs[uri].version) <&
+           " records " <& str(length(fresh.syms)));
+    end if;
+  end func;
+
 const func analysisResult: analyzeDocument (in string: uri) is func
   result
     var analysisResult: out is analysisResult.value;
   begin
-    if uri in openDocs then
-      out := analyzeText(textToAnalyze(uri), libraryDirs);
+    ensureAnalyzed(uri);
+    if uri in analysisCache then
+      out := analysisCache[uri].parsed;
     end if;
   end func;
 
@@ -136,13 +186,17 @@ const func wordRef: wordOfRequest (in rpcMsg: msg) is func
     end if;
   end func;
 
-# The only place that decides whether a document is analysed directly or through the
-# synthetic .s7i driver, so no feature has to ask the question.
+# The symbol table behind all five symbol features. Signature unchanged, body now cached:
+# a client that asks for a hover and a definition on one version pays for neither, and a
+# document that is not open answers with no records rather than analysing the empty text.
 const func array symRec: symbolsOfDocument (in string: uri) is func
   result
     var array symRec: out is 0 times symRec.value;
   begin
-    out := analyzeSymbols(textToAnalyze(uri), libraryDirs);
+    ensureAnalyzed(uri);
+    if uri in analysisCache then
+      out := analysisCache[uri].syms;
+    end if;
   end func;
 
 const proc: refresh (in string: uri) is func
@@ -173,6 +227,11 @@ const proc: handleChange (in rpcMsg: msg) is func
                    intAt(atKey(msg.params, "textDocument"), "version",
                          openDocs[uri].version));
       end if;
+      # The version above may be the one intAt invented: LSP 3.18 REQUIRES `version' on
+      # VersionedTextDocumentIdentifier, so a frame without it is malformed, and this server
+      # answers it instead of rejecting it. A change we tolerate is a change we must not cache
+      # past, so the entry is dropped here rather than left to a number comparison.
+      excl(analysisCache, uri);
       refresh(uri);
     end if;
   end func;
@@ -182,6 +241,9 @@ const proc: handle (in rpcMsg: msg) is func
     var string: uri is "";
     var string: callee is "";
     var integer: activeArg is 0;
+    var integer: fromLine is 0;
+    var integer: toLine is 0;
+    var jsonValue: span is jsonValue.value;
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
@@ -204,6 +266,9 @@ const proc: handle (in rpcMsg: msg) is func
         openDocs @:= [uri] lsDoc.value;
         setVersion(openDocs[uri], strAt(atKey(msg.params, "textDocument"), "text", ""),
                    intAt(atKey(msg.params, "textDocument"), "version", 0));
+        # A didOpen with no didClose in between is another frame a client must not send and this
+        # server answers. The document was just replaced, whatever its version number says.
+        excl(analysisCache, uri);
         refresh(uri);
       end if;
     elsif msg.method = "textDocument/documentSymbol" then
@@ -250,6 +315,39 @@ const proc: handle (in rpcMsg: msg) is func
         callee := "";
       end if;
       sendResult(msg.id, signatureHelpResult(symbolsOfDocument(uri), callee, activeArg));
+    elsif msg.method = "textDocument/foldingRange" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, foldingResult(openDocs[uri]));
+      else
+        sendResult(msg.id, "[]");
+      end if;
+    elsif msg.method = "textDocument/selectionRange" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
+      else
+        sendResult(msg.id, "[]");
+      end if;
+    elsif msg.method = "textDocument/semanticTokens/full" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri),
+                                    pathOf(uri), 0, pred(lineCount(openDocs[uri]))));
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/semanticTokens/range" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        span := atKey(msg.params, "range");
+        fromLine := intAt(atKey(span, "start"), "line", 0);
+        toLine := intAt(atKey(span, "end"), "line", pred(lineCount(openDocs[uri])));
+        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri), pathOf(uri),
+                                    fromLine, toLine));
+      else
+        sendResult(msg.id, "null");
+      end if;
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);
     elsif msg.method = "textDocument/didClose" then
@@ -257,6 +355,8 @@ const proc: handle (in rpcMsg: msg) is func
       if uri in openDocs then
         publish(uri, openDocs[uri], 0 times lspDiag.value);
         excl(openDocs, uri);
+        # The drop that bounds the cache at one entry per OPEN document.
+        excl(analysisCache, uri);
       end if;
     else
       if msg.isRequest then
