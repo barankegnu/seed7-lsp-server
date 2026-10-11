@@ -6,12 +6,11 @@ const array string: HANDLED is
   []("textDocumentSync", "positionEncoding", "completionProvider",
      "hoverProvider", "signatureHelpProvider", "definitionProvider",
      "documentSymbolProvider", "foldingRangeProvider",
-     "selectionRangeProvider");
+     "selectionRangeProvider", "semanticTokensProvider");
 
 const array string: UNHANDLED is
   []("diagnosticProvider", "referencesProvider", "renameProvider",
      "implementationProvider", "typeDefinitionProvider", "declarationProvider",
-     "semanticTokensProvider",
      "workspaceSymbolProvider", "documentFormattingProvider",
      "documentHighlightProvider", "codeActionProvider", "colorProvider",
      "linkedEditingRangeProvider", "callHierarchyProvider",

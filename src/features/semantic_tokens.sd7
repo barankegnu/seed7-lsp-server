@@ -1,0 +1,150 @@
+$ include "seed7_05.s7i";
+  include "scan.sd7";
+  include "doc_store.sd7";
+  include "analysis.sd7";
+  include "features/kinds.sd7";
+  include "jsonw.sd7";
+
+# Sentinel for literalType when a token kind is not emitted (TK_OP, TK_BRACKET, TK_ILLEGAL).
+# Not used for names — a name with no declaration is absent from the class hash, which is
+# the gate that decides emission.
+const integer: NO_CLASS is -1;
+
+const type: classHash is hash [string] integer;
+
+# SemanticTokenType for a scanner token kind. TK_CHAR joins STT_STRING because the legend
+# has no character type. TK_OP, TK_BRACKET and TK_ILLEGAL answer NO_CLASS because they are
+# never emitted — punctuation is the client's own syntax highlighting.
+const func integer: literalType (in integer: kind) is func
+  result
+    var integer: out is NO_CLASS;
+  begin
+    out := NO_CLASS;
+    if kind = TK_COMMENT or kind = TK_LINE_COMMENT then
+      out := STT_COMMENT;
+    elsif kind = TK_STRING or kind = TK_CHAR then
+      out := STT_STRING;
+    elsif kind = TK_NUMBER then
+      out := STT_NUMBER;
+    end if;
+  end func;
+
+# name -> class index, first declaration wins for an overload set; name -> declaration line and
+# name -> library flag for the two modifiers. Measured free: 3 048 inserts and 15 000 lookups cost
+# nothing beside one parseStri.
+const proc: buildClasses (in array symRec: syms, in string: ownPath,
+                          inout classHash: classes, inout classHash: declLines,
+                          inout classHash: fromLib) is func
+  local
+    var integer: i is 0;
+    var integer: idx is 0;
+    var boolean: own is FALSE;
+  begin
+    for i range 1 to length(syms) do
+      idx := semanticTypeOf(syms[i].cat, syms[i].ty);
+      if not (syms[i].name in classes) then
+        classes @:= [syms[i].name] idx;
+        declLines @:= [syms[i].name] syms[i].line1;
+        own := FALSE;
+        if syms[i].file = ownPath or syms[i].file = BUFFER_FILE then
+          own := TRUE;
+        end if;
+        if own then
+          fromLib @:= [syms[i].name] 0;
+        else
+          fromLib @:= [syms[i].name] STMOD_DEFAULT_LIBRARY;
+        end if;
+      end if;
+    end for;
+  end func;
+
+# One scan, five integers per token straight into the writer, nothing kept. The previous token's
+# line and column are the only state, which is exactly what the relative encoding asks for.
+# ponytail: O(document) per request; the cursor maintains col16 incrementally (scan.sd7:95),
+# so no cumulative UTF-16 table is needed. Upgrade path: cached token array, spec 4.3 prices
+# at 189-265 bytes per token.
+const func string: tokensIn (in lsDoc: doc, in array symRec: syms, in string: ownPath,
+                             in integer: fromLine, in integer: toLine) is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+    var classHash: classes is classHash.EMPTY_HASH;
+    var classHash: declLines is classHash.EMPTY_HASH;
+    var classHash: fromLib is classHash.EMPTY_HASH;
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var string: word is "";
+    var integer: kind is NO_CLASS;
+    var integer: mods is 0;
+    var integer: prevLine is 0;
+    var integer: prevCol is 0;
+  begin
+    buildClasses(syms, ownPath, classes, declLines, fromLib);
+    openObject(w);
+      field(w, "data");
+      openArray(w);
+      while cur.offset <= length(doc.text) do
+        skipWhitespace(doc.text, cur);
+        if cur.offset > length(doc.text) then
+        else
+          tk := nextToken(doc.text, cur);
+          kind := literalType(tk.kind);
+          mods := 0;
+          if kind = NO_CLASS and tk.kind = TK_NAME then
+            word := doc.text[tk.start .. tk.stop];
+            if word in classes then
+              kind := classes[word];
+              if tk.line0 + 1 = declLines[word] then
+                mods +:= STMOD_DECLARATION;
+              end if;
+              mods +:= fromLib[word];
+            end if;
+          end if;
+          if kind <> NO_CLASS and tk.width16 > 0 and tk.line0 >= fromLine and
+             tk.line0 <= toLine then
+            addInt(w, tk.line0 - prevLine);
+            if tk.line0 = prevLine then
+              addInt(w, tk.col16 - prevCol);
+            else
+              addInt(w, tk.col16);
+            end if;
+            addInt(w, tk.width16);
+            addInt(w, kind);
+            addInt(w, mods);
+            prevLine := tk.line0;
+            prevCol := tk.col16;
+          end if;
+        end if;
+      end while;
+      closeArray(w);
+    closeObject(w);
+    out := finishJson(w);
+  end func;
+
+# The legend as a JSON string, for the capability and the InitializeResult.
+const func string: semanticTokensLegend is func
+  result
+    var string: out is "";
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    openObject(w);
+      field(w, "tokenTypes");
+      openArray(w);
+        addStr(w, "comment");
+        addStr(w, "string");
+        addStr(w, "number");
+        addStr(w, "function");
+        addStr(w, "type");
+        addStr(w, "variable");
+        addStr(w, "enumMember");
+      closeArray(w);
+      field(w, "tokenModifiers");
+      openArray(w);
+        addStr(w, "declaration");
+        addStr(w, "defaultLibrary");
+      closeArray(w);
+    closeObject(w);
+    out := finishJson(w);
+  end func;

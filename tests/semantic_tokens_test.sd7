@@ -1,0 +1,52 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "doc_store.sd7";
+  include "analysis.sd7";
+  include "features/semantic_tokens.sd7";
+
+const func lsDoc: docOf (in string: text) is func
+  result
+    var lsDoc: out is lsDoc.value;
+  begin
+    setVersion(out, text, 1);
+  end func;
+
+const func array symRec: oneWriteln is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+  begin
+    rec.name := "writeln";
+    rec.cat := "BLOCKOBJECT";
+    rec.ty := "proc";
+    rec.file := "/home/username/seed7/lib/stdio.s7i";
+    rec.line1 := 2;
+    rec.sign := "const proc: writeln";
+    out &:= rec;
+  end func;
+
+const proc: main is func
+  begin
+    check("the legend is the seven types and two modifiers, in index order",
+          semanticTokensLegend,
+          "{\"tokenTypes\":[\"comment\",\"string\",\"number\",\"function\",\"type\"," &
+          "\"variable\",\"enumMember\"]," &
+          "\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]}");
+    check("an empty document answers an empty data array",
+          tokensIn(docOf(""), 0 times symRec.value, "/p/a.sd7", 0, 0),
+          "{\"data\":[]}");
+    check("a comment and a number emit, and an unknown name does not",
+          tokensIn(docOf("(* note *) 42 q"), 0 times symRec.value, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,0,10,0,0,0,11,2,2,0]}");
+    check("punctuation emits nothing, but a number literal does",
+          tokensIn(docOf("a := (b) + c[1]"), 0 times symRec.value, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,13,1,2,0]}");
+    check("modifiers and the cross-line delta rule, in one array",
+          tokensIn(docOf("writeln\nwriteln"), oneWriteln, "/p/a.sd7", 0, 1),
+          "{\"data\":[0,0,7,3,2,1,0,7,3,3]}");
+    check("a range request rebases its first delta",
+          tokensIn(docOf("writeln\nwriteln"), oneWriteln, "/p/a.sd7", 1, 1),
+          "{\"data\":[1,0,7,3,3]}");
+    report("semantic_tokens");
+  end func;

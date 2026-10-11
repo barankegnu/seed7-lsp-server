@@ -636,5 +636,63 @@ reopen2 = [s["name"] for s in by_id.get(2, {}).get("result") or []]
 expect("reopenedWithoutClose" in reopen2,
        "a didOpen that follows no didClose re-analyses (%s)" % reopen2)
 
+# --- Task 12: semanticTokens -----------------------------------------------
+def decode_semantic_tokens(data):
+    """Turn the 5-int relative array back into absolute (line, col, length, type, mods)."""
+    out, line, col = [], 0, 0
+    for i in range(0, len(data), 5):
+        dline, dcol, length, ty, mods = data[i:i + 5]
+        line += dline
+        col = dcol if dline else col + dcol
+        out.append((line, col, length, ty, mods))
+    return out
+
+ST_URI = "file:///tmp/tt_sem.sd7"
+ST_TEXT = '$ include "seed7_05.s7i";\nconst integer: x is 0;\n"\U00010000" (x)\n'
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(ST_URI, ST_TEXT)),
+                                frame(req(2, "textDocument/semanticTokens/full",
+                                          {"textDocument": {"uri": ST_URI}})),
+                                frame(req(3, "textDocument/semanticTokens/range",
+                                          {"textDocument": {"uri": ST_URI},
+                                           "range": {"start": {"line": 1, "character": 0},
+                                                     "end": {"line": 1, "character": 10}}})),
+                                frame(req(4, "textDocument/semanticTokens/full",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"}})),
+                                frame(shutdown(5)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+init_caps = replies[0].get("result", {}).get("capabilities", {})
+expect("semanticTokensProvider" in init_caps,
+       "initialize advertises semanticTokensProvider")
+st_cap = init_caps.get("semanticTokensProvider", {})
+expect(st_cap.get("full") is True and st_cap.get("range") is True,
+       "semanticTokensProvider advertises full and range (%r)" % st_cap)
+legend = st_cap.get("legend", {})
+expect(legend.get("tokenTypes") == ["comment", "string", "number", "function", "type",
+       "variable", "enumMember"],
+       "legend tokenTypes are the seven types in index order (%r)" % legend.get("tokenTypes"))
+expect(legend.get("tokenModifiers") == ["declaration", "defaultLibrary"],
+       "legend tokenModifiers are the two modifiers (%r)" % legend.get("tokenModifiers"))
+
+full = by_id.get(2, {}).get("result") or {}
+full_data = full.get("data", [])
+full_decoded = decode_semantic_tokens(full_data)
+# Line 0: $ include "seed7_05.s7i"; -> include (function, defaultLibrary) + string
+# Line 1: const integer: x is 0; -> const (function,lib), integer (type,lib), x (variable,declaration), 0 (number)
+# Line 2: "\U00010000" (x) -> string width=4 (astral=2 UTF-16 units), x (variable, no mods)
+expect(full_decoded == [(0, 2, 7, 3, 2), (0, 10, 14, 1, 0),
+                        (1, 0, 5, 3, 2), (1, 6, 7, 4, 2), (1, 15, 1, 5, 1), (1, 20, 1, 2, 0),
+                        (2, 0, 4, 1, 0), (2, 6, 1, 5, 0)],
+       "semanticTokens/full decoded tuples with astral char (%r)" % full_decoded)
+
+rng = by_id.get(3, {}).get("result") or {}
+rng_data = rng.get("data", [])
+rng_decoded = decode_semantic_tokens(rng_data)
+expect(rng_decoded == [(1, 0, 5, 3, 2), (1, 6, 7, 4, 2), (1, 15, 1, 5, 1), (1, 20, 1, 2, 0)],
+       "semanticTokens/range decoded tuples for line 1 only (%r)" % rng_decoded)
+
+expect(by_id.get(4, {}).get("result") is None,
+       "semanticTokens/full for an unopened uri is null")
+
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)

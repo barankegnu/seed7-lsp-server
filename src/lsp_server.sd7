@@ -14,6 +14,7 @@ $ include "seed7_05.s7i";
   include "features/signature_help.sd7";
   include "features/folding_range.sd7";
   include "features/selection_range.sd7";
+  include "features/semantic_tokens.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -79,6 +80,12 @@ const func string: capabilitiesJson is func
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
       field(w, "foldingRangeProvider"); addBool(w, TRUE);
       field(w, "selectionRangeProvider"); addBool(w, TRUE);
+      field(w, "semanticTokensProvider");
+      openObject(w);
+        field(w, "legend"); raw(w, semanticTokensLegend);
+        field(w, "range"); addBool(w, TRUE);
+        field(w, "full");  addBool(w, TRUE);
+      closeObject(w);
       field(w, "positionEncoding"); addStr(w, "utf-16");
     closeObject(w);
     out := finishJson(w);
@@ -234,6 +241,9 @@ const proc: handle (in rpcMsg: msg) is func
     var string: uri is "";
     var string: callee is "";
     var integer: activeArg is 0;
+    var integer: fromLine is 0;
+    var integer: toLine is 0;
+    var jsonValue: span is jsonValue.value;
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
@@ -318,6 +328,25 @@ const proc: handle (in rpcMsg: msg) is func
         sendResult(msg.id, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
       else
         sendResult(msg.id, "[]");
+      end if;
+    elsif msg.method = "textDocument/semanticTokens/full" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri),
+                                    pathOf(uri), 0, pred(lineCount(openDocs[uri]))));
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/semanticTokens/range" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        span := atKey(msg.params, "range");
+        fromLine := intAt(atKey(span, "start"), "line", 0);
+        toLine := intAt(atKey(span, "end"), "line", pred(lineCount(openDocs[uri])));
+        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri), pathOf(uri),
+                                    fromLine, toLine));
+      else
+        sendResult(msg.id, "null");
       end if;
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);
