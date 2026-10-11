@@ -507,6 +507,42 @@ expect(by_id.get(3, {}).get("result") == [],
 expect("foldingRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
        "initialize advertises foldingRangeProvider")
 
+# --- Task 11: selectionRange -------------------------------------------------
+SEL_URI = "file:///tmp/tt_sel.sd7"
+SEL_TEXT = "$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;"
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(SEL_URI, SEL_TEXT)),
+                                frame(req(2, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": SEL_URI},
+                                           "positions": [{"line": 3, "character": 4}]})),
+                                frame(req(3, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": "file:///tmp/not_open.sd7"},
+                                           "positions": [{"line": 0, "character": 0}]})),
+                                frame(shutdown(4)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+sel = by_id.get(2, {}).get("result") or []
+# The extraction loop indexes the result per position; an IndexError here is load-bearing —
+# a regression in dispatch/capability would otherwise pass silently.
+expect(isinstance(sel, list) and len(sel) == 1,
+       "selectionRange returns one result per position, got %d" % len(sel))
+if len(sel) == 1:
+    expect("range" in sel[0] and "parent" in sel[0],
+           "selectionRange result has range and parent keys")
+    # Walk the chain to verify it's nested correctly.
+    node = sel[0]
+    depth = 0
+    while "parent" in node:
+        depth += 1
+        node = node["parent"]
+    expect(depth == 3,
+           "selectionRange chain has 3 parent levels (token->region->region->document), got %d" % depth)
+    expect("parent" not in node,
+           "outermost selectionRange has no parent key")
+expect(by_id.get(3, {}).get("result") == [],
+       "selectionRange for an unopened uri is []")
+expect("selectionRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
+       "initialize advertises selectionRangeProvider")
+
 # --- Task 9 / spec §4.2: one analysis per document version -------------------
 CACHE_URI = "file:///tmp/tt_cache.sd7"
 CACHE_LINES = SYMS.split("\n")

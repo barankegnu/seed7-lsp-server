@@ -13,6 +13,7 @@ $ include "seed7_05.s7i";
   include "features/completion.sd7";
   include "features/signature_help.sd7";
   include "features/folding_range.sd7";
+  include "features/selection_range.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -77,6 +78,7 @@ const func string: capabilitiesJson is func
       field(w, "definitionProvider"); addBool(w, TRUE);
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
       field(w, "foldingRangeProvider"); addBool(w, TRUE);
+      field(w, "selectionRangeProvider"); addBool(w, TRUE);
       field(w, "positionEncoding"); addStr(w, "utf-16");
     closeObject(w);
     out := finishJson(w);
@@ -307,6 +309,13 @@ const proc: handle (in rpcMsg: msg) is func
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, foldingResult(openDocs[uri]));
+      else
+        sendResult(msg.id, "[]");
+      end if;
+    elsif msg.method = "textDocument/selectionRange" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        sendResult(msg.id, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
       else
         sendResult(msg.id, "[]");
       end if;
