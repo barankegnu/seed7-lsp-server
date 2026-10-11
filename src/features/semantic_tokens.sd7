@@ -61,7 +61,8 @@ const proc: buildClasses (in array symRec: syms, in string: ownPath,
 # One scan, five integers per token straight into the writer, nothing kept. The previous token's
 # line and column are the only state, which is exactly what the relative encoding asks for.
 # ponytail: O(document) per request. Measured worst case: lib/shiftjis.s7i emits 28 401
-# tokens in a 451 KB JSON frame. Upgrade path: cached token array.
+# tokens in a 309 521-byte frame (the wire Content-Length, not a re-serialised count).
+# Upgrade path: cached token array.
 const func string: tokensIn (in lsDoc: doc, in array symRec: syms, in string: ownPath,
                              in integer: fromLine, in integer: toLine) is func
   result
