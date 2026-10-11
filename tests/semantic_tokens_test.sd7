@@ -26,6 +26,26 @@ const func array symRec: oneWriteln is func
     out &:= rec;
   end func;
 
+const func array symRec: twoWriteln is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: first is symRec.value;
+    var symRec: second is symRec.value;
+  begin
+    first.name := "writeln";
+    first.cat := "TYPEOBJECT";
+    first.file := BUFFER_FILE;
+    first.line1 := 1;
+    out &:= first;
+    second.name := "writeln";
+    second.cat := "BLOCKOBJECT";
+    second.ty := "proc";
+    second.file := BUFFER_FILE;
+    second.line1 := 9;
+    out &:= second;
+  end func;
+
 const proc: main is func
   begin
     check("the legend is the seven types and two modifiers, in index order",
@@ -48,5 +68,8 @@ const proc: main is func
     check("a range request rebases its first delta",
           tokensIn(docOf("writeln\nwriteln"), oneWriteln, "/p/a.sd7", 1, 1),
           "{\"data\":[1,0,7,3,3]}");
+    check("a name declared twice takes the first declaration's class",
+          tokensIn(docOf("writeln\n"), twoWriteln, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,0,7,4,1]}");
     report("semantic_tokens");
   end func;
