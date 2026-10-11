@@ -71,5 +71,11 @@ const proc: main is func
     check("a name declared twice takes the first declaration's class",
           tokensIn(docOf("writeln\n"), twoWriteln, "/p/a.sd7", 0, 0),
           "{\"data\":[0,0,7,4,1]}");
+    # The fixture is the test: x is undeclared so it is not emitted, which starts the first
+    # emitted token at column 2. In a fixture whose first token is at column 0, prevCol is 0
+    # and the delta is relative to nothing, so the subtraction cannot be observed.
+    check("same-line delta is relative to the previous token's column",
+          tokensIn(docOf("x 42 99"), 0 times symRec.value, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,2,2,2,0,0,3,2,2,0]}");
     report("semantic_tokens");
   end func;
