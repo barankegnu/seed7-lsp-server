@@ -78,6 +78,13 @@ overload plus the `(** … *)` comment the library author wrote, `completion` fo
 declarations and the base keywords, and `signatureHelp` with the active parameter counted
 from the call site.
 
+Scanner-backed features: `foldingRange` for declaration bodies, control blocks, comments,
+and include runs (no fold for a single-line construct); `selectionRange` enclosing by line
+(a position in a region's leading whitespace still nests inside it); and `semanticTokens`
+with seven name/literal types and no `keyword` or `parameter` class (the two authoritative
+word lists disagree by about forty words each way, and a parameter has no position because
+`paramsOf` returns strings).
+
 Requests stay silent inside a string literal, a char literal or a comment:
 `scan.sd7`'s `maskOf` projects those regions — same length as the text, newlines preserved,
 every non-code character a space — so a position inside `"..."` reports nothing rather
@@ -85,25 +92,24 @@ than the signature of some unrelated call — a real risk in files like `prg/cal
 continuation strings span lines, and in `lib/chartype.s7i`, where `{'"'}` opened a phantom
 string in any rule that does not know char literals exist.
 
-Ranges are line-based. Reflection reports a declaration's line and never a column, so a
-definition range is the whole line and `selectionRange` equals `range`. A symbol's
-*extent* (where it ends) is not available from the analyzer at all. Where the analyzer
-reports a column, it counts bytes and the server converts — see
-`doc_store.lspRangeBytes`.
+Symbol-feature ranges are line-based. Reflection reports a declaration's line and never
+a column, so a definition range is the whole line. A symbol's *extent* (where it ends)
+is not available from the analyzer at all. Where the analyzer reports a column, it counts
+bytes and the server converts — see `doc_store.lspRangeBytes`. The function that still
+uses this rule is `lspWholeLine`.
 
 ## What does not work yet
 
 `references` and rename (the reflection API yields declarations only, never use sites),
-`workspace/symbol`, folding ranges, selection ranges, semantic tokens, `documentSymbol`
-hierarchy for nested and local declarations, completion of local variables, pull
-diagnostics, formatting, the trust gate, `.s7i` staleness (R-F10: an unsaved library edit reports a stale outline, hover
-and completion as well as stale diagnostics, because a library is analysed through a driver
-that reads the file back from disk, which also breaks the spec's rule that an open
-document must not be read through its uri), `utf-8` position negotiation,
-`workspace/configuration`, and Windows. Asking
-for an unimplemented method returns `-32601 Method not found`, which editors display as
-"no data" rather than as a failure — and a capability is advertised only once its method
-is answered.
+`workspace/symbol`, `documentSymbol` hierarchy for nested and local declarations,
+completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
+staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
+as well as stale diagnostics, because a library is analysed through a driver that reads
+the file back from disk, which also breaks the spec's rule that an open document must not
+be read through its uri), `utf-8` position negotiation, `workspace/configuration`, and
+Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
+editors display as "no data" rather than as a failure — and a capability is advertised
+only once its method is answered.
 
 ## Layout and further reading
 

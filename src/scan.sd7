@@ -228,7 +228,7 @@ const proc: skipContinuation (in string: text, inout integer: j, in integer: sta
         scanLineBreak(text, j, cur, units);
       elsif text[j] = '#' then
         # a line comment inside the ignored region may hold a double quote, so only a break ends
-        # it. The radix question doc_store.isRadixHash settles cannot arise in here.
+        # it. The radix question cannot arise in here: the scanner knows it is not inside a number.
         while j <= length(text) and not lineEnd(text[j]) do
           countUnit(startLine0, cur, units, utf16CharLength(text[j]));
           j := succ(j);

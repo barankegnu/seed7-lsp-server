@@ -292,12 +292,12 @@ parameter.
 
   | file | all tokens | emitted (punctuation dropped) | ints | JSON |
   |---|---|---|---|---|
-  | `src/doc_store.sd7` | 2 367 | 1 467 | 7 335 | 44 KB |
-  | `lib/jpeg.s7i` | 10 999 | 6 532 | 32 660 | 196 KB |
-  | `lib/aes.s7i` | 17 908 | 7 559 | 37 795 | 226 KB |
-  | `lib/shiftjis.s7i` | 85 155 | 28 515 | 142 575 | 850 KB |
+  | `src/doc_store.sd7` | 1 616 | 543 | 2 715 | 6 KB |
+  | `lib/jpeg.s7i` | 10 999 | 3 346 | 16 730 | 35 KB |
+  | `lib/aes.s7i` | 17 908 | 6 759 | 33 795 | 71 KB |
+  | `lib/shiftjis.s7i` | 85 155 | 28 401 | 142 005 | 302 KB |
 
-  The 850 KB worst case is why `range` is advertised: a client coloring a visible window asks for
+  The 302 KB worst case is why `range` is advertised: a client coloring a visible window asks for
   a window.
 
 - **Name classes come from the cached `symRec` list** through a `hash [string] integer` built
@@ -339,8 +339,8 @@ parameter.
 - A document that was never opened, or a position past its last line, answers like every other
   feature in this server: `null` for folding and semanticTokens, an empty array where the
   response is an array, and `-32601` is reserved for methods we do not implement.
-- Frames: `Content-Length` counts the *bytes* of the payload, and an 850 KB token array is a
-  850 KB frame — `MAX_FRAME_BYTES` guards inbound only, so outbound size is a design
+- Frames: `Content-Length` counts the *bytes* of the payload, and a 302 KB token array is a
+  302 KB frame — `MAX_FRAME_BYTES` guards inbound only, so outbound size is a design
   responsibility, which is what §6.2's legend rule exists to bound.
 - `utf8CharLength` stays the single width rule (§4.5); a token's `width16` comes from
   `utf8bytes.sd7`, never from a fresh comparison.
@@ -410,7 +410,7 @@ semanticTokensProvider: { legend: {7 types, 2 modifiers as in §6.2}, range: tru
   language where constructs are declared, and the two available lists disagree by forty words.
   Folding is unaffected — it reads construct keywords as tokens, where a wrong guess costs a
   missing region rather than a wrong colour.
-- **850 KB frames exist.** Bounded by the legend rule and `range`, not by a cap. If a client
+- **302 KB frames exist.** Bounded by the legend rule and `range`, not by a cap. If a client
   measurably suffers, the upgrade is a documented token ceiling, and the `ponytail:` comment
   says so in the file that would grow it.
 - **`selectionRange` over a stream is O(document) per request.** Accepted for the same reason
