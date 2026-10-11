@@ -493,6 +493,7 @@ const func string: maskOf (in string: text) is func
       if cur.offset > length(text) then
       else
         tk := nextToken(text, cur);
+        # FALSE is adjacency ("(b"), not an error: tokens advance monotonically
         if tk.start > copied then
           out := out & text[copied .. pred(tk.start)];
         end if;

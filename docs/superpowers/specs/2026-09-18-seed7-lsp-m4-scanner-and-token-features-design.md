@@ -188,7 +188,7 @@ AGENTS.md's Milestones section says to "give each document a cumulative UTF-16 c
 quadratic — but its conclusion is not: a table is the fix for random access, and the scan is
 sequential. `(line0, col16)` is carried forward by `nextToken` and stored in the token, so no
 table is built, none is invalidated, and no second source of truth for column arithmetic
-appears next to `utf16Length` and `charColumnForBytes`. Random access keeps what it has:
+appears next to `utf16Before` and `charColumnForBytes`. Random access keeps what it has:
 `charIndexOf` walks one line per incoming position, `charColumnForBytes` walks one line per
 diagnostic, both bounded by line length. That paragraph of AGENTS.md is replaced, not
 implemented.
