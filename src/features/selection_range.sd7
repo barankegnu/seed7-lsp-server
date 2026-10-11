@@ -2,7 +2,6 @@ $ include "seed7_05.s7i";
   include "json.s7i";
   include "doc_store.sd7";
   include "blocks.sd7";
-  include "features/kinds.sd7";
   include "rpc.sd7";
 
 # Ponytail: cap at 32 positions per request, the way folding_range caps regions.
@@ -58,7 +57,6 @@ const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
 
     # Build the token range (or empty range if no token).
     if tk.start > 0 then
-      tokenRange := lspRange(doc, succ(tk.line0), succ(tk.col16));
       tokenRange := "{\"start\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16)) <&
                     ",\"end\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16) + tk.width16) <& "}";
     else

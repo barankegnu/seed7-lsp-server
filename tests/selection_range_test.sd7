@@ -18,6 +18,36 @@ const func string: selOf (in string: text, in string: positionsJson) is func
     out := selectionResult(doc, positions);
   end func;
 
+# A JSON array of n identical positions, each the whitespace position that
+# test (c) uses, so the payload stays small while the count gets large.
+const func string: manyPositions (in integer: n) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    out := "[";
+    for i range 1 to n do
+      if i > 1 then
+        out := out & ",";
+      end if;
+      out := out & "{\"line\":0,\"character\":2}";
+    end for;
+    out := out & "]";
+  end func;
+
+const func integer: answerCount (in string: text, in string: positionsJson) is func
+  result
+    var integer: n is 0;
+  local
+    var jsonValue: answers is jsonValue.value;
+  begin
+    answers := readJson(selOf(text, positionsJson));
+    if category(answers) = JSON_ARRAY then
+      n := length(answers);
+    end if;
+  end func;
+
 const proc: main is func
   local
     var string: text is "";
@@ -66,6 +96,15 @@ const proc: main is func
     check("two positions yield answers in request order",
           selOf(text, "[{\"line\":3,\"character\":4},{\"line\":3,\"character\":13}]"),
           expected);
+
+    # (e) MAX_SELECT_POSITIONS clamp: 33 requests answer 32, and 32 answer 32.
+    # The second is the boundary: a request count exactly at the limit must
+    # lose nothing. (">" and ">=" are equivalent here, because the clamp
+    # assigns the constant, so no check can separate them.)
+    text := "a  b";
+    check("33 positions clamp to 32 answers and 32 positions keep 32",
+          str(answerCount(text, manyPositions(33))) & "/" & str(answerCount(text, manyPositions(32))),
+          "32/32");
 
     report("selection_range");
   end func;
