@@ -1,0 +1,42 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "occurrences.sd7";
+
+# "line0:col16:width16" of the i'th occurrence, or "none".
+const func string: at (in array occurrence: oc, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(oc) then
+      out := str(oc[i].line0) & ":" & str(oc[i].col16) & ":" & str(oc[i].width16);
+    end if;
+  end func;
+
+const proc: main is func
+  local
+    var array occurrence: oc is 0 times occurrence.value;
+  begin
+    oc := occurrencesOf("count := 1;\nwriteln(count);\n", "count");
+    check("two occurrences of count", str(length(oc)), "2");
+    check("first is the declaration", at(oc, 1), "0:0:5");
+    check("second is the use inside the call", at(oc, 2), "1:8:5");
+
+    # an occurrence inside a comment or string is impossible, not filtered by luck
+    oc := occurrencesOf("writeln(count); # count\n", "count");
+    check("a name in a line comment does not count", str(length(oc)), "1");
+    oc := occurrencesOf("writeln(\"count\");\n", "count");
+    check("a name inside a string does not count", str(length(oc)), "0");
+    # measured: two astral characters inside a masked literal cost two UTF-16 units,
+    # so the mask would answer 11 and doc.text answers 13. Review Focus 3.
+    oc := occurrencesOf("x := \"\128512;\128512;\"; count := 1;\n", "count");
+    check("the column counts the astral characters in the literal before it",
+          at(oc, 1), "0:13:5");
+    # an operator run is indexable, so rename can reach a user-declared operator name
+    oc := occurrencesOf("a := b <+ c;\nd := b <+ c;\n", "<+");
+    check("an operator token is an occurrence", str(length(oc)), "2");
+    oc := occurrencesOf("abracadabra", "count");
+    check("a name that is a fragment of a longer name is not an occurrence",
+          str(length(oc)), "0");
+
+    report("occurrences");
+  end func;

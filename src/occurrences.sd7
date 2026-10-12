@@ -1,0 +1,62 @@
+$ include "seed7_05.s7i";
+  include "scan.sd7";
+
+# Every occurrence of one name in one document, as a stream: one pass of nextToken per
+# request, nothing cached, no LSP shape in here (invariant 4) and no progs.s7i (invariant 1).
+#
+# It reads the document's REAL text and never doc_store.codeText / scan.maskOf, and that is
+# the whole reason this module exists. maskOf replaces every hidden character with ONE space,
+# but an astral character is one character and TWO UTF-16 units, so each masked astral
+# character shifts the rest of its line one unit left: on `x := "<astral><astral>"; count := 1;`
+# the real text puts count at col16 13 and the mask answers 11 (spec section 11.6, measured).
+# Skipping hiddenKind tokens off the real text gives the mask's behaviour -- a name inside a
+# comment or a literal cannot be an occurrence -- with honest columns.
+
+const type: occurrence is new struct
+    var integer: line0 is 0;      # 0-based, as every token record
+    var integer: col16 is 0;      # UTF-16 column, carried by nextToken
+    var integer: width16 is 0;    # in UTF-16 units, so a range needs no re-scan
+    var integer: kind is 0;       # TK_NAME or TK_OP -- nothing else is indexable
+  end struct;
+
+# The most occurrences one pass reports. Appending stops at MAX_OCCURRENCES + 1 so that
+# `length(oc) > MAX_OCCURRENCES` IS the truncation test for the caller: no second pass, and
+# no flag on the record that could be forgotten.
+const integer: MAX_OCCURRENCES is 2000;
+
+# A token is indexable when it is a name or an operator run; brackets, numbers, illegal
+# characters and every hiddenKind token are not. One comparison per arm because a long
+# or/and chain of them can fail to match.
+const func boolean: indexableKind (in integer: kind) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := FALSE;
+    if not hiddenKind(kind) then
+      out := kind = TK_NAME or kind = TK_OP;
+    end if;
+  end func;
+
+const func array occurrence: occurrencesOf (in string: text, in string: name) is func
+  result
+    var array occurrence: out is 0 times occurrence.value;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var occurrence: one is occurrence.value;
+  begin
+    while cur.offset <= length(text) and length(out) <= MAX_OCCURRENCES do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        if indexableKind(tk.kind) and text[tk.start .. tk.stop] = name then
+          one.line0 := tk.line0;
+          one.col16 := tk.col16;
+          one.width16 := tk.width16;
+          one.kind := tk.kind;
+          out &:= one;
+        end if;
+      end if;
+    end while;
+  end func;
