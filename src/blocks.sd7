@@ -14,12 +14,21 @@ const type: blockRef is new struct
     var integer: startLine is 0;
     var integer: endLine is 0;
     var string: kind is "";
+    # "func" for the body of a routine, "" for everything else. `kind' cannot carry this: the
+    # two `# Strip internal marker' assignments in blockRegions blank it for routine bodies and
+    # for sections, and foldingRange serialises what survives. Seed7 closes a proc body with
+    # `end func' too -- there is no `end proc' -- so "proc" is a value no input reaches.
+    var string: closer is "";
   end struct;
 
 const type: blockStack is new struct
     var array string: closer is 0 times "";
     var array integer: openLine is 0 times 0;
     var array string: kind is 0 times "";
+    # Parallel to the three above, one entry per open region: the blockRef.closer a region gets
+    # when it closes. Derived from `closer' at the push, so nothing here re-derives which word
+    # names a routine.
+    var array string: closerName is 0 times "";
   end struct;
 
 const func boolean: isControl (in string: nm) is
@@ -55,6 +64,14 @@ const proc: pushBlock (inout blockStack: st, in string: closer,
     st.closer &:= closer;
     st.openLine &:= line0;
     st.kind &:= kind;
+    # A routine body is the only region a caller may treat as a declaration scope, and `kind'
+    # cannot say so once blockRegions strips it. Every other push clears the field, so a
+    # section or clause can never inherit the routine it sits in.
+    if closer = "end func" then
+      st.closerName &:= "func";
+    else
+      st.closerName &:= "";
+    end if;
   end func;
 
 # Closes every region from `index` up, innermost last, and pops them.
@@ -66,6 +83,7 @@ const proc: closeFrom (inout blockStack: st, inout array blockRef: out,
     var array string: dummy1 is 0 times "";
     var array integer: dummy2 is 0 times 0;
     var array string: dummy3 is 0 times "";
+    var array string: dummy4 is 0 times "";
   begin
     if index > 0 then
       for i range index to length(st.closer) do
@@ -73,6 +91,7 @@ const proc: closeFrom (inout blockStack: st, inout array blockRef: out,
           r.startLine := st.openLine[i];
           r.endLine := endLine;
           r.kind := st.kind[i];
+          r.closer := st.closerName[i];
           out &:= r;
         end if;
       end for;
@@ -80,6 +99,7 @@ const proc: closeFrom (inout blockStack: st, inout array blockRef: out,
         dummy1 := remove(st.closer, length(st.closer), 1);
         dummy2 := remove(st.openLine, length(st.openLine), 1);
         dummy3 := remove(st.kind, length(st.kind), 1);
+        dummy4 := remove(st.closerName, length(st.closerName), 1);
       end while;
     end if;
   end func;
@@ -349,5 +369,53 @@ const func array blockRef: enclosingRegions (in string: text, in integer: line0,
           out[succ(j)] := tmp;
         end if;
       end for;
+    end for;
+  end func;
+
+# The routine bodies enclosing line0, innermost first -- the scope chain a binding walk reads.
+# A filter over enclosingRegions, which is already innermost-first, so no second machine and no
+# second sort. Control bodies, sections, clauses, type bodies, comments and imports are not
+# scopes and are not here.
+const func array blockRef: enclosingDeclarations (in string: text, in integer: line0,
+                                                  in integer: lastLine) is func
+  result
+    var array blockRef: out is 0 times blockRef.value;
+  local
+    var array blockRef: chain is 0 times blockRef.value;
+    var integer: i is 0;
+  begin
+    chain := enclosingRegions(text, line0, lastLine);
+    for i range 1 to length(chain) do
+      if chain[i].closer <> "" then
+        out &:= chain[i];
+      end if;
+    end for;
+  end func;
+
+# The body region of the declaration whose NAME line is declLine1 (1-based, as reflection
+# reports it). Not a containment test: a multi-line header opens its region at the `is func'
+# line, below its own name, so the pair is the FIRST routine body that opens at or after
+# declLine1 -- and a one-line header, whose `is func' sits on the name line, pairs with itself.
+# Nothing pairs: the empty blockRef. startLine 0 is this file's "no match", and `closer = ""' is
+# what tells it apart, because a real region may legitimately start at line 0.
+# shortcut: a NON-routine declaration line above a routine pairs with that routine; the only
+#           caller (M5 binding resolution) asks about routine records. Upgrade to a category
+#           test there if a caller ever needs every declaration.
+const func blockRef: declarationRegion (in string: text, in integer: lastLine,
+                                        in integer: declLine1) is func
+  result
+    var blockRef: out is blockRef.value;
+  local
+    var array blockRef: all is 0 times blockRef.value;
+    var integer: i is 0;
+    var integer: declLine0 is 0;
+  begin
+    out := blockRef.value;
+    declLine0 := pred(declLine1);
+    all := blockRegions(text, lastLine);
+    for i range 1 to length(all) do
+      if out.closer = "" and all[i].closer <> "" and all[i].startLine >= declLine0 then
+        out := all[i];
+      end if;
     end for;
   end func;
