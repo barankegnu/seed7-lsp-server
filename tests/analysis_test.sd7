@@ -175,11 +175,39 @@ const func symRec: libBlockNamed (in array symRec: syms, in string: nm) is func
     end for;
   end func;
 
+# Test-only: the scope invariant as ONE aggregate string, "filled|leaked". `filled' counts
+# every record that carries a scope and `leaked' counts the records whose file is neither
+# BUFFER_FILE nor the analysed document. The pair is the proof: a nonzero `filled' says the
+# scope really was filled in this run, so the 0 in `leaked' is not an accident of a fixture
+# that filled nothing. Aggregated over all records rather than pinned to one named record
+# because a single library record's category or list order can make such an assertion pass
+# for a reason unrelated to the rule.
+const func string: scopeLeak (in array symRec: syms, in string: docPath) is func
+  result
+    var string: out is "";
+  local
+    var integer: filled is 0;
+    var integer: leaked is 0;
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if length(syms[i].locals) <> 0 then
+        filled +:= 1;
+        if syms[i].file <> BUFFER_FILE and syms[i].file <> docPath then
+          leaked +:= 1;
+        end if;
+      end if;
+    end for;
+    out := str(filled) <& "|" <& str(leaked);
+  end func;
+
 const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
     var array string: dirs is 0 times "";
     var string: libPath is "/tmp/seed7_lsp_probe.s7i";
+    var string: latePath is "/tmp/seed7_lsp_late.s7i";
+    var string: lateFix is "";
     var array symRec: syms is 0 times symRec.value;
     var array symRec: wlist is 0 times symRec.value;
     var string: fixPath is "tests/programs/symbols.sd7";
@@ -313,6 +341,41 @@ const proc: main is func
     syms := symsOf(driverFor(libPath), dirs, "");
     check("without docPath those same declarations stay unfilled",
           str(length(symsNamed(syms, "probeDouble")[1].locals)), "0");
+    # `rec' in collectSyms is loop-carried, so a library record that follows a filled
+    # buffer record inherits that routine's scope unless the non-buffer path resets the
+    # field. The witness is a LATE-LOADED include placed after a buffer declaration: the
+    # order matters -- a library resolved before any buffer declaration leaks nothing, and
+    # so does one seed7_05.s7i has already loaded. The late library file is written here
+    # rather than taken from the stdlib, because which stdlib files are pre-loaded is an
+    # interpreter detail that would turn this witness into a silent vacuous pass.
+    out := open(latePath, "w");
+    write(out, "$ include \"seed7_05.s7i\";\n" &
+               "const proc: lateShow is func\n" &
+               "  local\n" &
+               "    var integer: lateLocal is 0;\n" &
+               "  begin\n" &
+               "    writeln(lateLocal);\n" &
+               "  end func;\n");
+    close(out);
+    lateFix := "$ include \"seed7_05.s7i\";\n" &
+               "const proc: bufferShow is func\n" &
+               "  local\n" &
+               "    var integer: phantomName is 0;\n" &
+               "  begin\n" &
+               "    writeln(phantomName);\n" &
+               "  end func;\n" &
+               "  $ include " <& literal(latePath) <& ";\n" &
+               "const proc: main is func\n" &
+               "  begin\n" &
+               "    writeln(1);\n" &
+               "  end func;\n";
+    a := parsedOf(lateFix, dirs);
+    check("the late-include fixture analyses clean", str(length(a.diags)), "0");
+    syms := symsOf(lateFix, dirs, "");
+    # filled 1 is `bufferShow' alone -- `main' declares no scope -- and no foreign record
+    # may carry one. Reverting the reset in the non-buffer path reads 2|1.
+    check("a late-loaded library record inherits no buffer scope",
+          scopeLeak(syms, ""), "1|0");
     # The reproduction for the rule AGENTS.md and spec §4.4 state. Two documents whose
     # character positions differ report the SAME column, because both escape sequences end
     # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.

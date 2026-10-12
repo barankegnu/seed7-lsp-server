@@ -60,9 +60,9 @@ const type: scopeRec is new struct
 # One global declaration the analyzer knows about, as plain data. `file` is the absolute
 # path reflection reports, or BUFFER_FILE for the analysed text itself; never "?". `line1`
 # is the 1-based declaration line. There is no column anywhere in this API, which is why
-# every range built from it is line-based. `locals` is the scope of a ROUTINE and is filled
-# only for the declarations of the document being analysed -- an empty `locals` on a library
-# record is that guard, not an absence of scope.
+# every range built from it is line-based. `locals` is the scope of a ROUTINE, filled only
+# for the declarations of the document being analysed and reset to empty for every other
+# record -- an empty `locals` on a library record is that guard, not an absence of scope.
 const type: symRec is new struct
     var string: name is "";
     var string: cat is "";
@@ -277,6 +277,12 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
         # accessor walks per one of those, on every didChange, is the cost refused here.
         if rec.file = BUFFER_FILE or rec.file = docPath then
           rec.locals := localsOf(obj);
+        else
+          # `rec' is loop-carried and this is the only field the guard does not re-stamp,
+          # so without the reset a library record copies whatever the previous filled
+          # routine left in it -- measured with a late-loaded include after a buffer
+          # declaration, which is legal Seed7 and real library files do it.
+          rec.locals := 0 times scopeRec.value;
         end if;
         rec.sign := signatureOf(obj);
         keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
