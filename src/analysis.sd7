@@ -60,7 +60,9 @@ const type: scopeRec is new struct
 # One global declaration the analyzer knows about, as plain data. `file` is the absolute
 # path reflection reports, or BUFFER_FILE for the analysed text itself; never "?". `line1`
 # is the 1-based declaration line. There is no column anywhere in this API, which is why
-# every range built from it is line-based.
+# every range built from it is line-based. `locals` is the scope of a ROUTINE and is filled
+# only for the declarations of the document being analysed -- an empty `locals` on a library
+# record is that guard, not an absence of scope.
 const type: symRec is new struct
     var string: name is "";
     var string: cat is "";
