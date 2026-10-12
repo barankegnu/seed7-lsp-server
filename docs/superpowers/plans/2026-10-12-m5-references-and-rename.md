@@ -495,7 +495,6 @@ The first client capability this server ever consults (spec §6, §7): a `Worksp
 
 `advertised` exists at `tests/lsp_server_test.sd7:21`. The last check is the M5/M6 line held in
 code: `workspace/symbol` is *not* in this milestone and must not be advertised for it.
-```
 
 - [ ] **Step 2: Run, and name the failure.** `make test-lsp_server`. Expected: `FALSE` for the rename object — it is still a bare `true` today — and every `prepareRenameAnswer` check unmatched, because that function is written in Step 4. `advertised`, `capabilitiesJson` and `HANDLED`/`UNHANDLED` are the suite's existing machinery; `prepareRenameAnswer` is reached because `lsp_server_test.sd7:3` already includes `lsp_server.sd7`, and the feature include arrives with Step 4.
 - [ ] **Step 3: Read the capability.** In the `initialize` branch, before answering, walk `params.workspace.applyEdit` through the existing guarded `atKey` chain and store the boolean; a missing key leaves it `FALSE`. One comment line: this is the only client capability the server reads, and the reason the rest of the debt is listed in spec §10 rather than paid here.
