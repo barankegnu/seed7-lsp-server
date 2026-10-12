@@ -161,15 +161,35 @@ git commit -m "the occurrence pass over the real text, so a column stops lying"
     check("the local var carries its category", syms[1].locals[1].cat, "LOCALVOBJECT");
 ```
 
-Add the two cases the accessors can raise on: `localsOf` for a `TYPEOBJECT` answers empty, and a routine with a `result` variable lists it with `cat = "RESULTOBJECT"` and a `const local` with `cat = "LOCALVOBJECT"` — `localConsts` and `localVars` are two separate lists and a fixture that mixes them is the only proof both are read.
+Add the two cases the accessors can raise on: `localsOf` for a `TYPEOBJECT` answers empty, and a routine with a `result` variable lists it with `cat = "RESULTOBJECT"`.
+
+**Corrected by ruling R17 after this task was reviewed:** a `const local` does NOT report
+`LOCALVOBJECT`. Measured twice on `s7` 5.4.10, `localConsts` reports the *value* category —
+`ci=INTOBJECT`, `cs=STRIOBJECT`, `cset=SETOBJECT` — while `localVars` reports `LOCALVOBJECT`. So
+`scopeRec.cat` stores `str(category(obj))` verbatim, with no mapping and no invented category
+(Task 6 may need to tell `REFPARAMOBJECT` from `VALUEPARAMOBJECT`), and the `localConsts` READ is
+proved instead by a total-length check over consts + vars + result + params. `resultVar` on a
+`proc` answers ` *NULL_OBJECT* ` and is skipped; the trailing `SYMBOLOBJECT` in `formalParams` is
+already excluded by the existing `isParam`.
 
 - [ ] **Step 2: Run, and name the failure.** `make test-analysis`. Expected: FAILs of the shape `0` where `1` was asked, because `symRec` has no `locals` field yet — if the suite fails to analyse instead, the field is misspelled, which is the same red with a different cause.
 
 - [ ] **Step 3: Implement `scopeRec` and `localsOf`.** Order inside the record: parameters first, then `localConsts`, then `localVars`, then `resultVar` — the plan's later subtraction does not depend on the order, but a check on `length(locals)` reads best against that grouping. Skip a `resultVar` whose `str(r)` is `" *NULL_OBJECT* "` or empty (measured on `main`, which has none). Guard the whole body in one `block … exception catch RANGE_ERROR: catch INDEX_ERROR: catch ILLEGAL_ACTION: end block;` returning the empty array, exactly as `paramsOf` does.
 
-- [ ] **Step 4: Fill `locals` only for buffer declarations.** In `collectSyms`, call `localsOf(obj)` only when `rec.file = BUFFER_FILE or rec.file = docPath` — thread the document path in as a new parameter of `collectSyms` and `analyzeAll`, from `lsp_server`'s `pathOf(uri)`. A library local can shadow nothing visible in this file, so filling it is pure cost.
+- [ ] **Step 4: Fill `locals` only for buffer declarations.** In `collectSyms`, call `localsOf(obj)` only when `rec.file = BUFFER_FILE or rec.file = docPath` — thread the document path in as a new parameter of `collectSyms` and `analyzeAll`, from `lsp_server`'s `pathOf(uri)` (`pathOf` already decodes the `file://` spelling the analyzer reports, so the guard compares identical strings). A library local can shadow nothing visible in this file, so filling it is pure cost.
 
-- [ ] **Step 5: Measure the cost of the guard, and write the number down.** `analyzeAll` on `lib/shiftjis.s7i` and on `prg/calc7.sd7`, before and after, timed with Seed7's `cpuTime`:
+**Corrected by ruling R21, a Critical found in review of the first attempt:** `rec` is one `symRec`
+variable carried across the loop, so the guard alone is not the "only" — on the non-buffer path
+`rec.locals` must be reset (`else rec.locals := 0 times scopeRec.value;`), or a library record
+following a filled buffer record is appended carrying that routine's scope. Reproduced: a buffer
+whose `const proc: bufferShow` (one local) is declared *before* `$ include "c1lib.s7i"` yields
+`LEAK lateShow file=c1lib.s7i locals=1` with `DIAGS=0`. Order matters — an include before the
+declarations leaks nothing, and so does a library `seed7_05.s7i` already loaded. The suite must
+assert the aggregate invariant (no record outside `BUFFER_FILE`/`docPath` carries locals) rather
+than pinning one named record, because a named record's category or position can make it pass for
+the wrong reason — which is exactly what happened to the first proof of this guard.
+
+- [ ] **Step 5: Measure the cost of the guard, and write the number down.** `analyzeAll` on `lib/shiftjis.s7i` and on `prg/calc7.sd7`, before and after, timed with `time(NOW)` and `toMicroSeconds` (corrected after review: there is no `cpuTime` in the standard library; `time(NOW)` is at `time.s7i:1098`). *No in-suite timing check exists or should be written* — a wall-clock assertion in a suite is flaky and proves nothing about the guard; the numbers belong in the task report:
 
 ```bash
 s7 -q -l src tests/analysis_test.sd7
@@ -177,7 +197,7 @@ s7 -q -l src tests/analysis_test.sd7
 
 Expected: the buffered-only guard keeps the per-analysis increase under the noise of one `parseStri` (20–45 ms today). If it does not, stop and change `locals` to a lazy second call made by `references`/`rename` only, then re-run Task 2 Step 1 with `analyzeAll` unchanged — the spec §4 promises this fork rather than hoping.
 
-- [ ] **Step 6: Run to green, prove the mutation, commit.** Deleting the `resultVar` append must fail its named check; so must inverting the buffer-only guard while leaving the timing check untouched (add a check that a `TYPEOBJECT`'s `locals` is empty).
+- [ ] **Step 6: Run to green, prove the mutation, commit.** Deleting the `resultVar` append must fail its named check; so must deleting the buffer-only guard, proved by the aggregate check of R21 — not by a `TYPEOBJECT`-empty check, which passes whether or not the guard holds (ruling R18: with the guard deleted `localsOf` is simply never called on that record). The `TYPEOBJECT`-empty check is still worth keeping, with honest evidence: deleting `localsOf`'s own `RANGE_ERROR` catch makes `analyzeAll`'s outer net empty the whole symbol list, so the graded `N checks, M failed` line never prints — which the Makefile recipe grades as failure.
 
 ```bash
 git add src/analysis.sd7 tests/analysis_test.sd7
