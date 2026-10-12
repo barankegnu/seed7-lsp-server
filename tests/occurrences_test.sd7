@@ -35,11 +35,15 @@ const proc: main is func
     # an operator run is indexable, so rename can reach a user-declared operator name
     oc := occurrencesOf("a := b <+ c;\nd := b <+ c;\n", "<+");
     check("an operator token is an occurrence", str(length(oc)), "2");
-    # A bracket token's text is exactly "(", delimiter-free like a name, so this is the check
-    # that fails if indexableKind stops requiring TK_NAME/TK_OP (the number token "1" does the
-    # same job; one of them is enough).
+    # These two are what reach the kind filter. A comment token's text is "# count" and a
+    # string token's is "\"count\"", so their own delimiters defeat the name comparison
+    # whatever the filter does -- they cannot prove it. "(" and "1" are delimiter-free like a
+    # name (TK_BRACKET and TK_NUMBER are both outside TK_OP), so each fails if indexableKind
+    # stops requiring TK_NAME/TK_OP.
     oc := occurrencesOf("writeln(count);\n", "(");
     check("a bracket token is not indexable", str(length(oc)), "0");
+    oc := occurrencesOf("x := 1;\n", "1");
+    check("a number token is not indexable", str(length(oc)), "0");
     oc := occurrencesOf("discount := 1;\n", "count");
     check("a name that is only a substring of a longer name is not an occurrence",
           str(length(oc)), "0");

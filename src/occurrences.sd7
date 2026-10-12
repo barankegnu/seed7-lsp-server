@@ -2,7 +2,8 @@ $ include "seed7_05.s7i";
   include "scan.sd7";
 
 # Every occurrence of one name in one document, as a stream: one pass of nextToken per
-# request, nothing cached, no LSP shape in here (invariant 4) and no progs.s7i (invariant 1).
+# request, nothing cached, no LSP shape in here (invariant 4) and no import of the programs
+# library, which is invariant 1: only src/analysis.sd7 may read a parsed program.
 #
 # It reads the document's REAL text and never doc_store.codeText / scan.maskOf, and that is
 # the whole reason this module exists. maskOf replaces every hidden character with ONE space,
