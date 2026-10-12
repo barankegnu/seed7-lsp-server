@@ -21,7 +21,8 @@ const proc: main is func
     check("first is the declaration", at(oc, 1), "0:0:5");
     check("second is the use inside the call", at(oc, 2), "1:8:5");
 
-    # an occurrence inside a comment or string is impossible, not filtered by luck
+    # A comment/string token's text carries its own delimiters ("# count", "\"count\""), so
+    # these two prove token-boundary behaviour. The kind filter itself is the bracket check.
     oc := occurrencesOf("writeln(count); # count\n", "count");
     check("a name in a line comment does not count", str(length(oc)), "1");
     oc := occurrencesOf("writeln(\"count\");\n", "count");
@@ -34,8 +35,13 @@ const proc: main is func
     # an operator run is indexable, so rename can reach a user-declared operator name
     oc := occurrencesOf("a := b <+ c;\nd := b <+ c;\n", "<+");
     check("an operator token is an occurrence", str(length(oc)), "2");
-    oc := occurrencesOf("abracadabra", "count");
-    check("a name that is a fragment of a longer name is not an occurrence",
+    # A bracket token's text is exactly "(", delimiter-free like a name, so this is the check
+    # that fails if indexableKind stops requiring TK_NAME/TK_OP (the number token "1" does the
+    # same job; one of them is enough).
+    oc := occurrencesOf("writeln(count);\n", "(");
+    check("a bracket token is not indexable", str(length(oc)), "0");
+    oc := occurrencesOf("discount := 1;\n", "count");
+    check("a name that is only a substring of a longer name is not an occurrence",
           str(length(oc)), "0");
 
     report("occurrences");

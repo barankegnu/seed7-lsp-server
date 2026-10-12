@@ -9,7 +9,7 @@ $ include "seed7_05.s7i";
 # but an astral character is one character and TWO UTF-16 units, so each masked astral
 # character shifts the rest of its line one unit left: on `x := "<astral><astral>"; count := 1;`
 # the real text puts count at col16 13 and the mask answers 11 (spec section 11.6, measured).
-# Skipping hiddenKind tokens off the real text gives the mask's behaviour -- a name inside a
+# Skipping the non-indexable tokens off the real text gives the mask's behaviour -- a name inside a
 # comment or a literal cannot be an occurrence -- with honest columns.
 
 const type: occurrence is new struct
@@ -24,17 +24,15 @@ const type: occurrence is new struct
 # no flag on the record that could be forgotten.
 const integer: MAX_OCCURRENCES is 2000;
 
-# A token is indexable when it is a name or an operator run; brackets, numbers, illegal
-# characters and every hiddenKind token are not. One comparison per arm because a long
-# or/and chain of them can fail to match.
+# A token is indexable when it is a name or an operator run, and the allow-list is what makes
+# comments, string and char literals unindexable: no hidden kind is TK_NAME or TK_OP, so
+# hiddenKind adds no second gate. One comparison per arm because a long or/and chain of them
+# can fail to match.
 const func boolean: indexableKind (in integer: kind) is func
   result
     var boolean: out is FALSE;
   begin
-    out := FALSE;
-    if not hiddenKind(kind) then
-      out := kind = TK_NAME or kind = TK_OP;
-    end if;
+    out := kind = TK_NAME or kind = TK_OP;
   end func;
 
 const func array occurrence: occurrencesOf (in string: text, in string: name) is func
