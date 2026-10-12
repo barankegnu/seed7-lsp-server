@@ -136,7 +136,7 @@ const proc: ensureAnalyzed (in string: uri) is func
     var docAnalysis: fresh is docAnalysis.value;
   begin
     if uri in openDocs and not (uri in analysisCache) then
-      fresh := analyzeAll(textToAnalyze(uri), libraryDirs);
+      fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
       # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
       # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
       # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,

@@ -118,18 +118,61 @@ const func analysisResult: parsedOf (in string: text, in array string: libraryDi
   local
     var docAnalysis: d is docAnalysis.value;
   begin
-    d := analyzeAll(text, libraryDirs);
+    d := analyzeAll(text, libraryDirs, "");
     out := d.parsed;
   end func;
 
-const func array symRec: symsOf (in string: text, in array string: libraryDirs) is func
+const func array symRec: symsOf (in string: text, in array string: libraryDirs,
+                                in string: docPath) is func
   result
     var array symRec: out is 0 times symRec.value;
   local
     var docAnalysis: d is docAnalysis.value;
   begin
-    d := analyzeAll(text, libraryDirs);
+    d := analyzeAll(text, libraryDirs, docPath);
     out := d.syms;
+  end func;
+
+# Test-only: one scope entry as a single string -- name, category and declaration line
+# together, so a failing pin shows all three dimensions at once (the diagPin idiom).
+const func string: scopePin (in array symRec: syms, in string: routineName,
+                             in integer: i) is func
+  result
+    var string: out is "";
+  local
+    var array symRec: hits is 0 times symRec.value;
+    var integer: n is 0;
+  begin
+    hits := symsNamed(syms, routineName);
+    if length(hits) = 0 then
+      out := "no symbol " <& routineName;
+    else
+      n := length(hits[1].locals);
+      if i < 1 or i > n then
+        out := "no entry " <& str(i) <& " of " <& str(n);
+      else
+        out := hits[1].locals[i].name <& "|" <& hits[1].locals[i].cat <& "|" <&
+               str(hits[1].locals[i].line1);
+      end if;
+    end if;
+  end func;
+
+# Test-only: the first record of `nm' that reflection reports as a routine body. `writeln'
+# is also listed as an ACTOBJECT, whose scope accessors raise, so only a BLOCKOBJECT can
+# tell "the buffer-only guard is on" apart from "localsOf never fills anything".
+const func symRec: libBlockNamed (in array symRec: syms, in string: nm) is func
+  result
+    var symRec: out is symRec.value;
+  local
+    var integer: i is 0;
+    var boolean: found is FALSE;
+  begin
+    for i range 1 to length(syms) do
+      if not found and syms[i].name = nm and syms[i].cat = "BLOCKOBJECT" then
+        out := syms[i];
+        found := TRUE;
+      end if;
+    end for;
   end func;
 
 const proc: main is func
@@ -140,6 +183,8 @@ const proc: main is func
     var array symRec: syms is 0 times symRec.value;
     var array symRec: wlist is 0 times symRec.value;
     var string: fixPath is "tests/programs/symbols.sd7";
+    var string: scopeFix is "";
+    var symRec: lib is symRec.value;
     var file: out is STD_NULL;
   begin
     # Empty libraryDirs is enough: the interpreter resolves its own stdlib,
@@ -171,7 +216,7 @@ const proc: main is func
     check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
     a := parsedOf(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
     checkTrue("missing include is reported", length(a.diags) <> 0);
-    syms := symsOf(readAll(fixPath), dirs);
+    syms := symsOf(readAll(fixPath), dirs, "");
     checkTrue("fixture yields symbols", length(syms) <> 0);
     check("own struct is listed", symsNamed(syms, "Widget")[1].cat, "TYPEOBJECT");
     check("a buffer's own declarations carry the STRING file",
@@ -185,11 +230,22 @@ const proc: main is func
               str(length(symsNamed(syms, "totalSize")[1].params)) = "2");
     checkTrue("stdlib writeln is listed with an absolute path",
               startsWith(symsNamed(syms, "writeln")[1].file, "/"));
+    # The buffer-only guard's two witnesses. A struct type has no scope at all -- its
+    # accessors raise -- and a library routine body does have parameters, so this pair
+    # shows `locals' is empty because of the guard and not because there was nothing to
+    # fill. Deleting the guard makes the second check read 1, not 0.
+    check("a TYPEOBJECT has no scope",
+          str(length(symsNamed(syms, "Widget")[1].locals)), "0");
+    lib := libBlockNamed(syms, "writeln");
+    checkTrue("the library routine body has parameters to fill",
+              length(lib.params) <> 0);
+    check("a library routine's locals are not filled",
+          str(length(lib.locals)), "0");
     checkTrue("nothing keeps the ? file", pos(allFiles(syms), "?") = 0);
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than
     # a name; buildSign must not paste that marker into text the user reads.
     syms := symsOf("$ include \"seed7_05.s7i\";\n" <&
-                             "const set of char: letters is {'a'};" <& chr(10), dirs);
+                             "const set of char: letters is {'a'};" <& chr(10), dirs, "");
     checkTrue("a marker type is not printed as a signature",
               pos(symsNamed(syms, "letters")[1].sign, "*") = 0);
     check("and the name still stands alone", symsNamed(syms, "letters")[1].sign, "letters");
@@ -200,7 +256,7 @@ const proc: main is func
     syms := symsOf("$ include \"seed7_05.s7i\";\n" &
                            "const func integer: countSet (in set of char: chSet) is func\n" &
                            "  result\n    var integer: n is 0;\n  begin\n" &
-                           "  end func;\n", dirs);
+                           "  end func;\n", dirs, "");
     checkTrue("a marker type on a parameter is not printed either",
               pos(symsNamed(syms, "countSet")[1].sign, "*") = 0);
     checkTrue("and the parameter is still named",
@@ -209,6 +265,54 @@ const proc: main is func
     check("dedupe collapses identical (name,file,line) entries",
           str(countNameFile(syms, "writeln", wlist[1].file)),
           str(countDistinctLines(syms, "writeln", wlist[1].file)));
+    # ---- M5 Task 2: the names inside a routine's scope -------------------------
+    # The categories are the measured ones (s7 5.4.10), stored verbatim: a `const local'
+    # reports the category of its VALUE -- INTOBJECT, STRIOBJECT -- and only a `var local'
+    # answers LOCALVOBJECT. The total length is what proves all four lists are read: two
+    # parameters, two local constants, one local variable, one result variable.
+    scopeFix := "$ include \"seed7_05.s7i\";\n" &
+        "const func integer: scopeProbe (in integer: p, in string: s) is func\n" &
+        "  result\n    var integer: res is 0;\n" &
+        "  local\n    const integer: ci is 1;\n    const string: cs is \"x\";\n" &
+        "    var string: vs is \"\";\n" &
+        "  begin\n    res := ci;\n  end func;\n" &
+        "const proc: main is func\n" &
+        "  local\n    var integer: count is 0;\n" &
+        "  begin\n    writeln(count);\n  end func;\n";
+    # Fixture hygiene: a buffer that fails to analyse makes the accessors raise for a
+    # reason unrelated to the rule being pinned, so prove the fixture clean first.
+    a := parsedOf(scopeFix, dirs);
+    check("the scope fixture analyses clean", str(length(a.diags)), "0");
+    syms := symsOf(scopeFix, dirs, "");
+    check("main is listed once", str(length(symsNamed(syms, "main"))), "1");
+    check("the scope is params, consts, vars, result",
+          str(length(symsNamed(syms, "scopeProbe")[1].locals)), "6");
+    check("scope 1: a value parameter names itself",
+          scopePin(syms, "scopeProbe", 1), "p|VALUEPARAMOBJECT|2");
+    check("scope 2: a ref parameter keeps its own category",
+          scopePin(syms, "scopeProbe", 2), "s|REFPARAMOBJECT|2");
+    check("scope 3: a const local is its value's category",
+          scopePin(syms, "scopeProbe", 3), "ci|INTOBJECT|6");
+    check("scope 4: a string const local likewise",
+          scopePin(syms, "scopeProbe", 4), "cs|STRIOBJECT|7");
+    check("scope 5: a var local is LOCALVOBJECT",
+          scopePin(syms, "scopeProbe", 5), "vs|LOCALVOBJECT|8");
+    check("scope 6: the result variable is RESULTOBJECT",
+          scopePin(syms, "scopeProbe", 6), "res|RESULTOBJECT|4");
+    # A proc has no result variable: resultVar answers the null reference, whose line() and
+    # category() raise. Reading it anyway empties the whole scope through the guard.
+    check("a proc lists only its own local",
+          str(length(symsNamed(syms, "main")[1].locals)), "1");
+    check("the local shadows the library name and carries its own line",
+          scopePin(syms, "main", 1), "count|LOCALVOBJECT|14");
+    # An .s7i document is analysed through the synthetic driver, so its declarations report
+    # the FILE path rather than BUFFER_FILE. docPath is what fills their scope.
+    syms := symsOf(driverFor(libPath), dirs, libPath);
+    check("the document's own path fills the scope",
+          scopePin(syms, "probeDouble", 1), "n|VALUEPARAMOBJECT|1");
+    syms := symsOf(driverFor(libPath), dirs, "");
+    check("without docPath those same declarations stay unfilled",
+          str(length(symsNamed(syms, "probeDouble")[1].locals)), "0");
     # The reproduction for the rule AGENTS.md and spec §4.4 state. Two documents whose
     # character positions differ report the SAME column, because both escape sequences end
     # at the same byte: columnNumber is a count of UTF-8 bytes from the line start.
@@ -224,6 +328,6 @@ const proc: main is func
           diagPin(a, 1),
           "7|23@EXPECTED_SYMBOL@line4|\"end\" expected found \"writeln\"");
     check("an unanalysable buffer yields nothing",
-          str(length(symsOf("", dirs))), "0");
+          str(length(symsOf("", dirs, ""))), "0");
     report("analysis");
   end func;
