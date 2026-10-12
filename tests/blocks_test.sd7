@@ -284,6 +284,8 @@ const proc: main is func
     check("a begin section carries no closer", closerAt(demo(), 3), "");
     check("a clause carries no closer", closerAt(demo(), 20), "");
     check("an imports region carries no closer", closerAt(demo(), 0), "");
+    check("a comment region carries no closer",
+          closerAt("(* one\n   two *)\nwriteln(1);\n", 1), "");
     check("a repeat body carries no closer",
           closerAt("repeat\n  writeln(1);\nuntil TRUE;\n", 1), "");
     check("a struct body carries no closer",
