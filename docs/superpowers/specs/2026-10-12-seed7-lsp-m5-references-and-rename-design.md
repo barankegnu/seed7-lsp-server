@@ -333,10 +333,16 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
 ## 11. Measured facts this design rests on
 
 1. **No use sites.** `progs.s7i` exposes 53 actions; `body()`/`localConsts()`/`localVars()`/
-   `resultVar()` all raise `RANGE_ERROR` unless `category = BLOCKOBJECT`, and on a global
-   routine that category holds. `body` of a real routine reports `CALLOBJECT`, and
+   `resultVar()` raise `RANGE_ERROR` unless `category = BLOCKOBJECT` (their docstring precondition,
+   `seed7/lib/progs.s7i:641-687`), and on a global routine that category holds. `formalParams`
+   does NOT raise — measured on a real buffer: it raised on 0 of 3 328 objects, answering a list
+   for anything that has none (`/tmp/m2_count_probe.sd7`, cited by Task 2's fix report), and
+   `resultVar` on a `proc` returns ` *NULL_OBJECT* ` rather than raising; it is `line()` and
+   `category()` of that reference which raise. `body` of a real routine reports `CALLOBJECT`, and
    `getValue(b, attr reference)` on it **fails to match**. `globalObjects` for a hello-world
-   program: 3053 entries, 0 of category `SYMBOLOBJECT`.
+   program: 3053 entries, 0 of category `SYMBOLOBJECT`. `globalObjects` is documented to return
+   definitions in source declaration order (`progs.s7i:533`), which is what makes a
+   declaration-order-dependent test meaningful at all — see §12.4.
 2. **Scope is reachable.** On `/tmp/m5_scope.sd7`: `double` at line 3 → formals
    `count(REFPARAMOBJECT)`, `limit(VALUEPARAMOBJECT)` plus a trailing `double(SYMBOLOBJECT)`;
    `localVars` → `hidden(LOCALVOBJECT)`; `resultVar` → `total`. `main` at line 12 → `localVars`
