@@ -266,7 +266,7 @@ git commit -m "a range from a UTF-16 column, and selectionRange stops double-con
 
 ## Task 5: `src/keywords.sd7` — one list, and the word it was missing
 
-The keyword gate decides whether a destructive operation runs, and the list it would have inherited from `completion.sd7` holds 36 entries and is missing `begin` (spec §11.5). A gate on a destructive op cannot share a convenience list.
+The keyword gate decides whether a destructive operation runs, and the list it would have inherited from `completion.sd7` holds 39 entries and is missing nine words the language owns — `begin`, `when`, `static`, `forward`, `member`, `switch`, `leave`, `exit`, `include` (spec §11.5). A gate on a destructive op cannot share a convenience list.
 
 **Files:**
 - Create: `src/keywords.sd7`
@@ -293,8 +293,38 @@ The keyword gate decides whether a destructive operation runs, and the list it w
 ```
 
 - [ ] **Step 2: Run, and name the failure.** `make test-keywords`. Expected: `FALSE` where `TRUE` was asked for `begin` — the exact gap, and the reason this task exists before the gate.
+- [ ] **Step 3: Write the two sets, from the data below.** There is no runtime enumeration (spec §11.5), so this is the copy, made once from `lib/syntax.s7i`.
 
-- [ ] **Step 3: Build the list from the authoritative source, once, by hand.** `lib/syntax.s7i` holds 194 `$ syntax` declarations and there is no runtime enumeration (spec §11.5), so `keywords.sd7` is the copy — seeded from the union of `completion.sd7`'s 36 and the pure syntax symbols §11.3 names: `begin`, `end`, `then`, `do`, `else`, `elsif`, `when`, `otherwise`, `result`, `local`, `static`, `forward`, `interface`, `member`, `range`, `switch`, `while`, `for`, `if`, `return`, `leave`, `exit`, `include`, `type`, `const`, `var`, `proc`, `func`, plus the operator words `and`, `or`, `not`, `in`, `is`, `isnt`, `div`, `mod`, `rem`, `exp`, `times`, `to`, `step`, `succ`, `pred`, `ceil`, `floor`, `abs`, `sign`, `round`, `trunc`, `min`, `max`, `file`, `value`, `attr`, `cast`, and the symbol operators `<+`-style runs are *not* keywords (a user declares those). One comment line names the source and the count, so the next reader knows which way it was built.
+`GATE_KEYWORDS` — the 90 bare identifiers extracted from the `$ syntax` templates of `lib/syntax.s7i`, used by `isKeyword`. It is deliberately a superset: it keeps dot-selector words (`key`, `len`, `value`, `attr`, `cast`, `conv`, `parse`, `find`, `set`, `default`), because a false positive here refuses a rename that would have been legal, and a false negative renames a word of the language. Over-refusal is the cheap direction; the other one is not.
+
+```seed7
+const array string: GATE_KEYWORDS is
+  []("action", "and", "array", "assert", "attr", "begin", "block", "by", "case", "cast",
+     "catch", "ceilDiv", "class", "conj", "const", "conv", "default", "digits", "div",
+     "divRem", "do", "downto", "elem", "else", "elsif", "end", "enum", "exception", "exp",
+     "find", "fixLen", "for", "forward", "func", "getfunc", "getobj", "global", "hash",
+     "if", "in", "include", "inout", "interface", "is", "key", "len", "local", "lpad",
+     "lpad0", "mdiv", "mod", "mult", "new", "not", "of", "or", "otherwise", "param",
+     "parse", "radix", "range", "ref", "rem", "repeat", "result", "return", "rpad", "sci",
+     "set", "step", "struct", "struct2", "sub", "subrange", "subtype", "symb", "system",
+     "then", "times", "to", "tuple", "until", "val", "value", "var", "varConv", "varfunc",
+     "when", "while", "type", "proc", "exit", "leave", "static", "member", "switch");
+
+const func boolean: isKeyword (in string: nm) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(GATE_KEYWORDS) do
+      if GATE_KEYWORDS[i] = nm then
+        out := TRUE;
+      end if;
+    end for;
+  end func;
+```
+
+The trailing five entries are the words the `syntax.s7i` templates do not carry alone: `type` and `proc` report as `TYPEOBJECT`s in `globalObjects` (spec §11.2) rather than as template tokens, and `exit`, `leave`, `static`, `member` are section words from `seed7_05.s7i`'s pragmas, with `switch` its alias for `case`. `keywordList` — the *completion* candidates — is `SEED7_KEYWORDS`'s existing 39 words plus `begin`, `when`, `include`, `switch`, `leave`, `exit`, `static`, `member`, `forward`: the words a typist wants offered, without the selector noise. A comment above each array names which product it serves, because the two lists must drift apart on purpose and not by accident.
 - [ ] **Step 4: Point `completion.sd7` at it** and delete its private list. Its checks must pass unchanged — if a completion candidate disappears, the list you built is wrong, and that is this task's real test.
 
 ```bash

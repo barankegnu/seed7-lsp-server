@@ -358,9 +358,15 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
    is the second time this branch has wanted a generated keyword list and failed to find one at
    runtime; the seven independent hand-written lists (FAQ, `seed7-mode`, six editor files in
    `seed7/doc`) still disagree with each other. One consequence is load-bearing and new: the
-   keyword gate in §5/§6 was going to reuse `completion.sd7`'s copied list, which holds 36
-   entries and is **missing `begin`** — a gap that was cosmetic for completion and is a gate on
-   a destructive operation the moment M5 lands.
+   keyword gate in §5/§6 would have reused `completion.sd7`'s copied list, which holds **39**
+   entries and is missing nine words the language owns — `begin`, `when`, `static`, `forward`,
+   `member`, `switch`, `leave`, `exit`, `include` (measured by extracting the array). A gap that
+   was cosmetic for completion is a gate on a destructive operation the moment M5 lands.
+   Re-measured as a source: the 90 bare identifiers appearing in the `$ syntax` templates of
+   `lib/syntax.s7i` are the conservative keyword set — a superset that includes dot-selector
+   words like `key` and `len`, which is the right direction of error for a gate that refuses
+   renames and the wrong one for a completion list, so §5/§6's predicate and `completion`'s
+   candidates are two sets, not one.
 6. **`maskOf` loses UTF-16 units.** Measured on `x := "😀😀"; count := 1;`: `count` at
    `col16 = 13` from `doc.text`, `11` from `codeText`. Both scans agree on lines with no masked
    astral character ahead of them, which is why the BMP tests never saw it.
