@@ -647,6 +647,11 @@ expect(list(edit["changes"].keys()) == [URI], "the WorkspaceEdit names one uri")
 
 - [ ] **Step 2: Add the two client-shape runs** the spec's §7 requires: an `initialize` **without** `workspace.applyEdit` must get `null` from `prepareRename` and still answer hover and diagnostics normally; an `initialize` whose `workspace` key is absent must not raise and must not close the stream.
 - [ ] **Step 3: Add the log-line check:** the unresolved-binding request (`pix`) must be preceded by a `window/logMessage` notification whose `message` names the reason, and nothing but frames may appear on stdout.
+
+  *Already shipped by Task 7* (`tests/transcript.py:316-323` pins the log notification ordering and
+  `junk == 0`; `:325-333` pins `-32601` for `typeDefinition` and silence for an unknown
+  notification). Task 10 must NOT duplicate it — its job is the two client-capability shapes and
+  the rename path end to end.
 - [ ] **Step 4: Run and read the totals.** `python3 tests/transcript.py`; expected: FAILs naming the methods as unimplemented, then green after Tasks 7–9 are in place. If any earlier task already made these pass, the check is not proving what it claims — re-read that check before moving on.
 - [ ] **Step 5: Commit.**
 
