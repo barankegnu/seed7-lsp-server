@@ -1048,16 +1048,17 @@ expect(hdr_false == HDR_EXPECT[1:],
 one_answer_per_request(HDR_MSGS, replies, "the includeDeclaration run")
 expect(junk == 0, "the includeDeclaration run put only frames on stdout (junk=%d)" % junk)
 
-# --- M5 Task 10 F1: a DEFECT RECORD -- a non-ASCII byte in a request body desyncs the read ---
-# `frame' writes json.dumps' DEFAULT ensure_ascii=True, which escapes every non-ASCII character
-# out of the body, so no frame this suite sent before this pin ever held a byte over 127. A real
-# client sends raw UTF-8 and a BYTE Content-Length; transport.sd7:73 hands that number to `gets` on
-# a UTF-8 file, which counts CHARACTERS, so the read runs one byte past the body and eats the first
-# byte of the next header. Measured today: the answered ids are [1] of 3 requests -- the hover and
-# the shutdown behind the non-ASCII body are never answered -- and stderr logs the mangled header.
-# After Task 12 reads a frame by BYTE this reddens with [1, 160, 161], which is the passing shape
-# and the check Task 12 needs. The control below is the SAME hand-built raw framing with a
-# BMP-free body: without it, a build that answered nothing at all would pass this pin.
+# --- M5 Task 10 F1 / FIXED by Task 12: a frame body is read by BYTE, not by character ---
+# HISTORY (kept, not rewritten): Task 10 found that `transport.sd7' handed Content-Length -- a BYTE
+# count -- to `gets' on a UTF-8 file, which counts CHARACTERS, so any body holding a non-ASCII
+# character read past its own frame and ate the first byte of the next header. Measured with the
+# defect live: answered ids were [1] of 3 requests, the hover and shutdown behind the body never
+# came back, and stderr logged the mangled header. It had hid for four milestones because `frame'
+# writes json.dumps' DEFAULT ensure_ascii=True, so no body this suite sent ever held a byte over
+# 127 -- which is why the control below is the SAME hand-built raw framing with a BMP-free body:
+# without it, a build that answered nothing at all would pass either pin.
+# Task 12 flipped this pin on purpose. The strongest form is the file's own idiom below, so the run
+# is now asserted request-for-answer rather than by a hand-listed id set.
 def raw_frame(obj):
     """One frame with the body a real client sends: raw UTF-8, Content-Length its BYTE length.
 
@@ -1075,7 +1076,8 @@ def raw_msgs(text, uri):
 
 def raw_seq(msgs_):
     """Frame every message, EXCEPT the didOpen, which goes out raw: the byte-counted body is the
-    only difference between the two runs below, so the desync cannot be blamed on the builder."""
+    only difference between the two runs below, so a boundary error cannot be blamed on the
+    builder. Before Task 12 that one difference was the whole defect."""
     return [raw_frame(m) if m.get("method") == "textDocument/didOpen" else frame(m)
             for m in msgs_]
 
@@ -1084,18 +1086,18 @@ RAW_URI = "file:///tmp/tt_raw_utf8.sd7"
 RAW_TEXT = 'const proc: main is func\n  begin\n    writeln("\u03c0");\n  end func;\n'
 RAW_CTRL_URI = "file:///tmp/tt_raw_ascii.sd7"
 RAW_CTRL_TEXT = RAW_TEXT.replace("\u03c0", "p")
-replies, code, err, junk = run(raw_seq(raw_msgs(RAW_TEXT, RAW_URI)))
+RAW_MSGS = raw_msgs(RAW_TEXT, RAW_URI)
+replies, code, err, junk = run(raw_seq(RAW_MSGS))
 raw_answered = sorted(r["id"] for r in replies if "id" in r and
                       ("result" in r or "error" in r))
-expect(raw_answered == [1],
-       "DEFECT F1 (flips at Task 12): a didOpen body with ONE non-ASCII byte swallows the next "
-       "header, so the 2 requests behind it go unanswered -- ids answered %s of [1, 160, 161]"
-       % raw_answered)
-expect("frame without Content-Length" in err,
-       "and the desync surfaces as the mangled header the transport refuses (%r)" % err[-160:])
+expect(raw_answered == [1, 160, 161],
+       "FIXED F1: a didOpen body whose Content-Length counts BYTES while its text holds a "
+       "multi-byte character no longer swallows the next header -- ids answered %s of the 3 "
+       "requests (%s)" % (raw_answered, err[-160:]))
+expect("frame without Content-Length" not in err,
+       "and no mangled header reaches the transport at all now (%r)" % err[-160:])
 expect(junk == 0, "the F1 run put only frames on stdout (junk=%d)" % junk)
-# one_answer_per_request is deliberately NOT applied to the run above: 3 requests and 1 answer IS
-# the defect. It is applied to the control, which has no excuse.
+one_answer_per_request(RAW_MSGS, replies, "the fixed-F1 run")
 CTRL_MSGS = raw_msgs(RAW_CTRL_TEXT, RAW_CTRL_URI)
 replies, code, err, junk = run(raw_seq(CTRL_MSGS))
 ctrl_answered = sorted(r["id"] for r in replies if "id" in r and
