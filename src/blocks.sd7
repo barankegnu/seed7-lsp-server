@@ -395,12 +395,13 @@ const func array blockRef: enclosingDeclarations (in string: text, in integer: l
   end func;
 
 # The body region of the declaration whose NAME line is declLine1 (1-based, as reflection
-# reports it). Not a containment test: a multi-line header opens its region at the `is func'
-# line, below its own name, so the pair is the FIRST routine body that opens at or after
-# declLine1 -- and a one-line header, whose `is func' sits on the name line, pairs with itself.
-# Nothing pairs: the empty blockRef. startLine 0 is this file's "no match", and `closer = ""' is
-# what tells it apart, because a real region may legitimately start at line 0. A declLine1 of 0 or
-# less -- the unset default of symRec.line1, not line 0 of the document -- pairs with nothing.
+# reports it), chosen out of an ALREADY scanned region list. Not a containment test: a multi-line
+# header opens its region at the `is func' line, below its own name, so the pair is the FIRST
+# routine body that opens at or after declLine1 -- and a one-line header, whose `is func' sits on
+# the name line, pairs with itself. Nothing pairs: the empty blockRef. startLine 0 is this file's
+# "no match", and `closer = ""' is what tells it apart, because a real region may legitimately
+# start at line 0. A declLine1 of 0 or less -- the unset default of symRec.line1, not line 0 of
+# the document -- pairs with nothing.
 # shortcut: a NON-routine declaration line above a routine pairs with that routine; the only
 #           caller (M5 binding resolution) asks about routine records. Upgrade to a category
 #           test there if a caller ever needs every declaration. The rule is line-granular:
@@ -409,23 +410,35 @@ const func array blockRef: enclosingDeclarations (in string: text, in integer: l
 #           below, and two headers sharing a line are unpairable for the same reason (the
 #           ascending sort keeps the inner one first, so an outer declaration gets the inner's
 #           region).
-const func blockRef: declarationRegion (in string: text, in integer: lastLine,
-                                        in integer: declLine1) is func
+#
+# The list form exists because a caller that pairs SEVERAL declarations pays one blockRegions
+# scan and one sort for all of them instead of one per declaration: occurrences.resolveBinding
+# pairs every routine whose scope carries a name, and blockRegions is the expensive half.
+const func blockRef: routineRegionFor (in array blockRef: all,
+                                       in integer: declLine1) is func
   result
     var blockRef: out is blockRef.value;
   local
-    var array blockRef: all is 0 times blockRef.value;
     var integer: i is 0;
     var integer: declLine0 is 0;
   begin
     out := blockRef.value;
     if declLine1 > 0 then
       declLine0 := pred(declLine1);
-      all := blockRegions(text, lastLine);
       for i range 1 to length(all) do
         if out.closer = "" and all[i].closer <> "" and all[i].startLine >= declLine0 then
           out := all[i];
         end if;
       end for;
     end if;
+  end func;
+
+# The same pairing for a caller that has a document and no region list. declarationRegion's
+# rule and its limits are routineRegionFor's; this is the scan plus that call.
+const func blockRef: declarationRegion (in string: text, in integer: lastLine,
+                                        in integer: declLine1) is func
+  result
+    var blockRef: out is blockRef.value;
+  begin
+    out := routineRegionFor(blockRegions(text, lastLine), declLine1);
   end func;

@@ -1,5 +1,6 @@
 $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
+  include "analysis.sd7";
   include "occurrences.sd7";
 
 # "line0:col16:width16" of the i'th occurrence, or "none".
@@ -12,10 +13,292 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     end if;
   end func;
 
+const func string: readAll (in string: path) is func
+  result
+    var string: out is "";
+  local
+    var file: f is STD_NULL;
+    var string: one is "";
+  begin
+    block
+      f := open(path, "r");
+      while not eof(f) do
+        readln(f, one);
+        out &:= one <& "\n";
+      end while;
+      close(f);
+    exception
+      catch FILE_ERROR:
+        out := "";
+    end block;
+  end func;
+
+# The last line index of a text, on the same model as doc_store.lineCount: a trailing break
+# leaves a phantom empty line, and readAll appends one break per line it reads -- so the
+# fixture file's 43 lines arrive as 44 breaks and lastLine is 44, not 42. Every scope pin
+# below is computed from the text handed to resolveBinding, never counted by hand.
+const func integer: linesIn (in string: text) is func
+  result
+    var integer: out is 1;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(text) do
+      if text[i] = '\n' then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
+const func docAnalysis: analysisOf (in string: text, in string: docPath) is func
+  result
+    var docAnalysis: out is docAnalysis.value;
+  local
+    var array string: dirs is 0 times "";
+  begin
+    out := analyzeAll(text, dirs, docPath);
+  end func;
+
+# Every binding field except the two scope pins, in one string, so a failing check shows all
+# of them: name|owner|resolved|keyword|capped|declLine1.
+const func string: bindPin (in binding: b) is func
+  result
+    var string: out is "";
+  begin
+    out := b.name <& "|" <& b.owner <& "|" <& str(b.resolved) <& "|" <& str(b.keyword) <&
+           "|" <& str(b.capped) <& "|" <& str(b.declLine1);
+  end func;
+
+const func string: scopePin (in binding: b) is func
+  result
+    var string: out is "";
+  begin
+    out := str(b.scopeStart) <& "-" <& str(b.scopeStop);
+  end func;
+
+const func string: excludedPin (in binding: b) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(b.excluded) do
+      if out <> "" then
+        out &:= " ";
+      end if;
+      out &:= str(b.excluded[i].startLine) <& "-" <& str(b.excluded[i].endLine);
+    end for;
+  end func;
+
+# The surviving occurrences as line0 values, so one check pins WHICH are kept and not only
+# how many: a filter that kept the wrong five would pass a length check.
+const func string: linesPin (in array occurrence: oc) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(oc) do
+      if out <> "" then
+        out &:= " ";
+      end if;
+      out &:= str(oc[i].line0);
+    end for;
+  end func;
+
+# Test-only, per Task 6's brief: the buffer routines whose own scope carries `name`, with the
+# count in front. This is the set the global row's subtraction has to exclude, listed from the
+# analyzer's records rather than from the binding under test, so the two cannot agree by
+# construction.
+const func array string: shadowing (in array symRec: syms, in string: name,
+                                    in string: docPath) is func
+  result
+    var array string: out is 0 times "";
+  local
+    var integer: i is 0;
+    var integer: j is 0;
+  begin
+    for i range 1 to length(syms) do
+      if syms[i].file = BUFFER_FILE or syms[i].file = docPath then
+        for j range 1 to length(syms[i].locals) do
+          if syms[i].locals[j].name = name then
+            out &:= syms[i].name;
+          end if;
+        end for;
+      end if;
+    end for;
+  end func;
+
+const func string: shadowPin (in array string: names) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+  begin
+    # a result variable cannot be initialised from a parameter of its own function
+    out := str(length(names));
+    for i range 1 to length(names) do
+      out &:= " " <& names[i];
+    end for;
+  end func;
+
 const proc: main is func
   local
+    var string: fixPath is "tests/programs/binding.sd7";
+    var string: DOC is "/tmp/binding.sd7";
+    var string: text is "";
+    var docAnalysis: d is docAnalysis.value;
+    var array symRec: syms is 0 times symRec.value;
     var array occurrence: oc is 0 times occurrence.value;
+    var binding: b is binding.value;
+    var integer: lastLine is 0;
+    var string: truncated is "";
+    var docAnalysis: td is docAnalysis.value;
+    var array symRec: tsyms is 0 times symRec.value;
+    var string: oneLine is "";
+    var docAnalysis: od is docAnalysis.value;
+    var array symRec: osyms is 0 times symRec.value;
+    var string: capText is "";
+    var array symRec: noSyms is 0 times symRec.value;
+    var integer: i is 0;
   begin
+    # ---- the fixture, and the proof that it is the analysable one ----------------
+    text := readAll(fixPath);
+    d := analysisOf(text, DOC);
+    syms := d.syms;
+    lastLine := pred(linesIn(text));
+    check("the binding fixture analyses clean", str(length(d.parsed.diags)), "0");
+
+    # ---- row 1: a name the enclosing routine declares in its own scope -----------
+    # alpha's parameter `count' (line1 17) at a cursor inside alpha's body region 16-23.
+    b := resolveBinding(text, syms, "count", 21, lastLine, DOC);
+    check("inside a routine its own scope entry wins over the global of the same name",
+          bindPin(b), "count|local|TRUE|FALSE|FALSE|17");
+    check("a local's scope is its routine's region", scopePin(b), "16-23");
+    check("a local excludes nothing", excludedPin(b), "");
+    oc := occurrencesOf(text, "count");
+    check("every occurrence of the name is found before scope is applied",
+          str(length(oc)), "12");
+    check("a local keeps only the occurrences inside its region",
+          linesPin(inScope(oc, b)), "16 20 20 21 22");
+    # the same row in a second routine, so the first is not one lucky record: beta's
+    # `count' is a LOCALVOBJECT (line1 28) where alpha's is a REFPARAMOBJECT.
+    b := resolveBinding(text, syms, "count", 29, lastLine, DOC);
+    check("a second routine's own local binds the same way",
+          bindPin(b), "count|local|TRUE|FALSE|FALSE|28");
+    check("and its scope is that routine's region, not the first one's",
+          scopePin(b), "25-31");
+    check("and it keeps its own three occurrences", linesPin(inScope(oc, b)), "27 29 30");
+    # a local VARIABLE of the routine the cursor is in, declared two lines below its header
+    b := resolveBinding(text, syms, "total", 20, lastLine, DOC);
+    check("a local variable binds like a parameter",
+          bindPin(b), "total|local|TRUE|FALSE|FALSE|19");
+
+    # ---- row 2: a declaration of this buffer, minus what shadows it --------------
+    b := resolveBinding(text, syms, "count", 38, lastLine, DOC);
+    check("outside every routine that declares it, the buffer declaration is the answer",
+          bindPin(b), "count|global|TRUE|FALSE|FALSE|8");
+    check("a global's scope is the whole document", scopePin(b), "0-44");
+    check("the subtraction names exactly the routines whose scope carries the name",
+          excludedPin(b), "16-23 25-31");
+    check("a global drops every occurrence inside a shadowing region",
+          linesPin(inScope(oc, b)), "7 38 39 41");
+    check("the shadowing set the subtraction owes",
+          shadowPin(shadowing(syms, "count", DOC)), "2 alpha beta");
+
+    # ---- row 3: a name only a library declares -----------------------------------
+    b := resolveBinding(text, syms, "writeln", 41, lastLine, DOC);
+    check("a name only the library declares is a library symbol",
+          bindPin(b), "writeln|library|TRUE|FALSE|FALSE|0");
+    check("a library symbol still answers the whole document", scopePin(b), "0-44");
+    check("and a library declaration line is not a line of this document",
+          str(b.declLine1), "0");
+    # R28's witness: `for' is one of the 63 words the interpreter refuses as a declared name
+    # (src/keywords.sd7) AND an ACTOBJECT globalObjects really reports, 52 records of it in
+    # this fixture's parse. Resolution first answers "library"; a gate that ran first would
+    # answer owner "" keyword TRUE here, which is the ordering this check pins.
+    b := resolveBinding(text, syms, "for", 38, lastLine, DOC);
+    check("a gated word the analyzer reports as an object resolves before the gate is asked",
+          bindPin(b), "for|library|TRUE|FALSE|FALSE|0");
+
+    # ---- row 4: a struct field, which has no declaration source at all -----------
+    # `box.pix' at line0 37. globalObjects reports Widget and never pix (spec 11.10), so
+    # this is over-included with a log line by the controller's 12.2 ruling, not proven.
+    b := resolveBinding(text, syms, "pix", 37, lastLine, DOC);
+    check("a dot-selected name is a field, and says it is not proven",
+          bindPin(b), "pix|field|FALSE|FALSE|FALSE|0");
+    b := resolveBinding(text, syms, "pix", 4, lastLine, DOC);
+    check("the same name on its own declaration line is no field",
+          bindPin(b), "pix||FALSE|FALSE|FALSE|0");
+    b := resolveBinding(text, syms, "total", 38, lastLine, DOC);
+    check("a routine's own name used outside its region is over-included, not proven",
+          bindPin(b), "total|field|FALSE|FALSE|FALSE|0");
+
+    # ---- rows 5 and 6: language furniture, and the mystery -----------------------
+    b := resolveBinding(text, syms, "begin", 37, lastLine, DOC);
+    check("a keyword binds to nothing and is marked as one",
+          bindPin(b), "begin||FALSE|TRUE|FALSE|0");
+    check("a keyword still answers the whole document", scopePin(b), "0-44");
+    b := resolveBinding(text, syms, "mysteryName", 38, lastLine, DOC);
+    check("an unknown name is unresolved but not a keyword",
+          bindPin(b), "mysteryName||FALSE|FALSE|FALSE|0");
+    # `type' is a legal declared name (spec 11.11 measured it clean) that the completion
+    # vocabulary list also holds, so a gate built from that list instead of CANNOT_BE_NAME
+    # would answer owner "" here and deny a rename of a real symbol.
+    b := resolveBinding(text, syms, "type", 38, lastLine, DOC);
+    check("a buffer declaration named like a vocabulary word is that declaration",
+          bindPin(b), "type|global|TRUE|FALSE|FALSE|10");
+    b := resolveBinding(text, syms, "", 38, lastLine, DOC);
+    check("the empty name is total and binds to nothing",
+          bindPin(b), "||FALSE|FALSE|FALSE|0");
+
+    # ---- a truncated buffer: the analyzer reported a declaration that failed -----
+    truncated := "$ include \"seed7_05.s7i\";\n" <&
+                 "const proc: main is func\n" <&
+                 "  local\n" <&
+                 "    var integer: count is 0;\n" <&
+                 "  begin\n";
+    td := analysisOf(truncated, DOC);
+    tsyms := td.syms;
+    check("the truncated fixture is the unanalysable one",
+          str(length(td.parsed.diags) <> 0), "TRUE");
+    b := resolveBinding(truncated, tsyms, "count", 3, pred(linesIn(truncated)), DOC);
+    check("a truncated buffer leaves the binding unresolved",
+          bindPin(b), "count||FALSE|FALSE|FALSE|0");
+    check("but it still answers the whole document", scopePin(b), "0-5");
+
+    # ---- a routine whose whole body sits on one line pairs with no region --------
+    # blocks.sd7's line-granular rule: closeFrom emits a region only when the body opens
+    # above the line it closes, so `tiny' has none and its parameter can neither bind a
+    # cursor nor be subtracted from the global's scope.
+    oneLine := "$ include \"seed7_05.s7i\";\n" <&
+               "const proc: tiny (inout integer: count) is func begin count := 1; end func;\n" <&
+               "var integer: count is 0;\n" <&
+               "const proc: main is func begin tiny(count); end func;\n";
+    od := analysisOf(oneLine, DOC);
+    osyms := od.syms;
+    check("the one-line fixture analyses clean", str(length(od.parsed.diags)), "0");
+    b := resolveBinding(oneLine, osyms, "count", 3, pred(linesIn(oneLine)), DOC);
+    check("an unpaired routine excludes nothing from the global's scope",
+          excludedPin(b), "");
+    check("and the global still binds", bindPin(b), "count|global|TRUE|FALSE|FALSE|3");
+    b := resolveBinding(oneLine, osyms, "count", 0, pred(linesIn(oneLine)), DOC);
+    check("an unpaired routine captures no line, not even line 0",
+          bindPin(b), "count|global|TRUE|FALSE|FALSE|3");
+
+    # ---- the cap: MAX_OCCURRENCES + 1 is the truncation test, no second pass -----
+    # Not analysed, deliberately: the cap is a property of the occurrence pass, and 2000
+    # lines of `count := 1;' is not a program. Empty records are the honest input for it.
+    for i range 1 to MAX_OCCURRENCES do
+      capText &:= "count := 1;\n";
+    end for;
+    b := resolveBinding(capText, noSyms, "count", 0, pred(linesIn(capText)), DOC);
+    check("exactly MAX_OCCURRENCES occurrences are not capped", str(b.capped), "FALSE");
+    capText &:= "count := 1;\n";
+    b := resolveBinding(capText, noSyms, "count", 0, pred(linesIn(capText)), DOC);
+    check("one more occurrence is capped", str(b.capped), "TRUE");
+
+    # ---- Task 1's checks, unchanged ---------------------------------------------
     oc := occurrencesOf("count := 1;\nwriteln(count);\n", "count");
     check("two occurrences of count", str(length(oc)), "2");
     check("first is the declaration", at(oc, 1), "0:0:5");

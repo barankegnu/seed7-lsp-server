@@ -1,0 +1,43 @@
+$ include "seed7_05.s7i";
+  include "console.s7i";
+
+const type: Widget is new struct
+    var integer: pix is 0;
+  end struct;
+
+var integer: count is 0;
+
+const func integer: type (in integer: n) is func
+  result
+    var integer: doubled is 0;
+  begin
+    doubled := n * 2;
+  end func;
+
+const proc: alpha (inout integer: count) is func
+  local
+    var integer: total is 0;
+  begin
+    total := count + type(count);
+    count := total;
+    writeln(count);
+  end func;
+
+const proc: beta is func
+  local
+    var integer: count is 0;
+  begin
+    count := 2;
+    writeln(count);
+  end func;
+
+const proc: main is func
+  local
+    var Widget: box is Widget.value;
+  begin
+    box.pix := 3;
+    count := box.pix;
+    alpha(count);
+    beta;
+    writeln(count);
+  end func;

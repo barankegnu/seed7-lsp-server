@@ -1,5 +1,8 @@
 $ include "seed7_05.s7i";
   include "scan.sd7";
+  include "blocks.sd7";
+  include "analysis.sd7";
+  include "keywords.sd7";
 
 # Every occurrence of one name in one document, as a stream: one pass of nextToken per
 # request, nothing cached, no LSP shape in here (invariant 4) and no import of the programs
@@ -12,6 +15,12 @@ $ include "seed7_05.s7i";
 # the real text puts count at col16 13 and the mask answers 11 (spec section 11.6, measured).
 # Skipping the non-indexable tokens off the real text gives the mask's behaviour -- a name inside a
 # comment or a literal cannot be an occurrence -- with honest columns.
+#
+# The module's second half answers "whose name is this": `binding', `resolveBinding' and
+# `inScope'. It reads the analyzer's own scope records (symRec.locals, which analysis.sd7 fills
+# for buffer declarations only) and blocks.sd7's routine regions, which is what the rest of the
+# include list is for -- data from those modules, still no programs library and still no shape a
+# client reads.
 
 const type: occurrence is new struct
     var integer: line0 is 0;      # 0-based, as every token record
@@ -58,4 +67,251 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
         end if;
       end if;
     end while;
+  end func;
+
+# Whose name a token is: the four rows of spec section 4 with the shadowing subtraction, and
+# the only place `resolved' is set. A feature reads this record and never re-derives a rule from
+# it -- `inScope' below is where scope is applied, so references and rename cannot disagree
+# about it. Nothing here builds an LSP shape (invariant 4), and the scope records arrive already
+# read in symRec.locals, so no programs library is needed (invariant 1).
+const type: binding is new struct
+    var string: name is "";
+    # "local" | "global" | "library" | "field" | "". The empty owner is the one "we cannot bind
+    # this", and `keyword' is what separates language furniture from a name we simply do not
+    # know: refusing a rename of `begin' and over-including one of `mystery' are different
+    # answers, and only this flag tells them apart.
+    var string: owner is "";
+    var boolean: resolved is FALSE;
+    var boolean: keyword is FALSE;
+    var boolean: capped is FALSE;
+    var integer: scopeStart is 0;
+    var integer: scopeStop is 0;
+    # 1-based declaration line, and 0 whenever no declaration OF THIS DOCUMENT has the name: a
+    # library record's line1 counts lines in a file the client never opened, so a range built
+    # from it would point at the wrong buffer.
+    var integer: declLine1 is 0;
+    # The regions a shadowing scope takes out of a global's scope. Kept as regions rather than
+    # as a pre-filtered occurrence array because rename needs the declaration line as well, and
+    # because the filter is inScope's job and only its job.
+    var array blockRef: excluded is 0 times blockRef.value;
+  end struct;
+
+# Reflection's own answer for "declared in the buffer being edited": BUFFER_FILE for text handed
+# to parseStri, and the document's path for the .s7i driver case. One spelling of the test, since
+# analysis.sd7's locals guard uses the same pair.
+const func boolean: isBufferFile (in string: fname, in string: docPath) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := fname = BUFFER_FILE or fname = docPath;
+  end func;
+
+# The first scope entry with this name, 0 when the routine does not declare it. `in' has no
+# array overload in this language, so the scan is written out.
+const func integer: scopeIndexOf (in array scopeRec: locals, in string: name) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(locals) do
+      if out = 0 and locals[i].name = name then
+        out := i;
+      end if;
+    end for;
+  end func;
+
+const func boolean: lineIn (in blockRef: region, in integer: line0) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := line0 >= region.startLine and line0 <= region.endLine;
+  end func;
+
+const func boolean: insideAny (in array blockRef: regions, in integer: line0) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(regions) do
+      if lineIn(regions[i], line0) then
+        out := TRUE;
+      end if;
+    end for;
+  end func;
+
+# TRUE when an occurrence of `name' on line0 follows a `.' token: a selector, the one name class
+# with no declaration source at all -- globalObjects reports the struct and never its fields, and
+# structToList raises RANGE_ERROR (spec 11.10, measured). The 12.2 ruling is over-inclusive with
+# a log line and no field-index machine, so this only LABELS the binding: it says nothing about
+# which struct the field belongs to, and two structs' `pix' stay one symbol.
+const func boolean: dotSelected (in string: text, in string: name, in integer: line0) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var scanCursor: cur is scanCursor.value;
+    var tok: tk is tok.value;
+    var boolean: afterDot is FALSE;
+    var integer: dotLine is 0;
+  begin
+    while cur.offset <= length(text) and not out do
+      skipWhitespace(text, cur);
+      if cur.offset > length(text) then
+      else
+        tk := nextToken(text, cur);
+        if tk.kind = TK_OP and text[tk.start .. tk.stop] = "." then
+          afterDot := TRUE;
+          dotLine := tk.line0;
+        else
+          if afterDot and dotLine = line0 then
+            if tk.kind = TK_NAME then
+              if text[tk.start .. tk.stop] = name then
+                out := TRUE;
+              end if;
+            end if;
+          end if;
+          afterDot := FALSE;
+        end if;
+      end if;
+    end while;
+  end func;
+
+# The resolution order IS the decision (R28): the analyzer is asked first and the keyword gate
+# last, because Seed7 declares no reserved words and a program may legally declare a symbol
+# named `type' -- which documentSymbol lists and hover answers today. A gate that ran first
+# would answer "nothing" for a real declaration, manufacturing the silent lie this milestone
+# refuses. Every row degrades rather than raises: a truncated buffer is the normal state while
+# typing, symRec.locals is empty on a routine whose own declaration failed, and an empty scope
+# simply fails to match row 1.
+const func binding: resolveBinding (in string: text, in array symRec: syms,
+                                    in string: name, in integer: line0,
+                                    in integer: lastLine, in string: docPath) is func
+  result
+    var binding: out is binding.value;
+  local
+    var array blockRef: regions is 0 times blockRef.value;
+    var blockRef: region is blockRef.value;
+    var integer: i is 0;
+    var integer: scopeIdx is 0;
+    var boolean: found is FALSE;
+    var boolean: scopeElsewhere is FALSE;
+  begin
+    out.name := name;
+    out.scopeStop := lastLine;
+    # The pass appends at most MAX_OCCURRENCES + 1, so this length IS the truncation test.
+    out.capped := length(occurrencesOf(text, name)) > MAX_OCCURRENCES;
+    # ONE region scan for the whole resolution: blockRegions is the expensive half of the
+    # pairing and routineRegionFor only filters a list, so rows 1 and 2 share this call
+    # instead of paying a scan and an O(n^2) sort per declaration.
+    regions := blockRegions(text, lastLine);
+    # Row 1: a scope entry of a routine whose body region holds the cursor. A record whose
+    # declaration pairs with NO region (a body that sits on one line) is skipped by the closer
+    # test, never by startLine: a real region may open at line 0.
+    for i range 1 to length(syms) do
+      if out.owner = "" then
+        if isBufferFile(syms[i].file, docPath) then
+          scopeIdx := scopeIndexOf(syms[i].locals, name);
+          if scopeIdx <> 0 then
+            region := routineRegionFor(regions, syms[i].line1);
+            if region.closer <> "" then
+              if lineIn(region, line0) then
+                out.owner := "local";
+                out.resolved := TRUE;
+                out.scopeStart := region.startLine;
+                out.scopeStop := region.endLine;
+                out.declLine1 := syms[i].locals[scopeIdx].line1;
+              else
+                scopeElsewhere := TRUE;
+              end if;
+            end if;
+          end if;
+        end if;
+      end if;
+    end for;
+    # Row 2: a declaration of this buffer. Its scope is the document minus every routine whose
+    # own scope carries the same name -- without that subtraction a rename of the global would
+    # rewrite a shadowing local and its declaration, and the result would still compile.
+    if out.owner = "" then
+      for i range 1 to length(syms) do
+        if not found then
+          if isBufferFile(syms[i].file, docPath) then
+            if syms[i].name = name then
+              out.owner := "global";
+              out.resolved := TRUE;
+              out.declLine1 := syms[i].line1;
+              found := TRUE;
+            end if;
+          end if;
+        end if;
+      end for;
+      if found then
+        for i range 1 to length(syms) do
+          if isBufferFile(syms[i].file, docPath) then
+            if scopeIndexOf(syms[i].locals, name) <> 0 then
+              region := routineRegionFor(regions, syms[i].line1);
+              if region.closer <> "" then
+                out.excluded &:= region;
+              end if;
+            end if;
+          end if;
+        end for;
+      end if;
+    end if;
+    # Row 3: some record carries the name and this buffer does not, so it is the library's.
+    # Resolved -- references answers for this file -- but not renameable, and declLine1 stays
+    # 0 because that line is in a file the client never opened.
+    if out.owner = "" then
+      for i range 1 to length(syms) do
+        if not found then
+          if syms[i].name = name then
+            out.owner := "library";
+            out.resolved := TRUE;
+            found := TRUE;
+          end if;
+        end if;
+      end for;
+    end if;
+    # Row 4: unprovable, and over-included with a log line rather than refused (12.2). Either
+    # the name is some other routine's scope entry -- so this token cannot be that one -- or it
+    # follows a dot, which is a field.
+    if out.owner = "" then
+      if scopeElsewhere then
+        out.owner := "field";
+      elsif dotSelected(text, name, line0) then
+        out.owner := "field";
+      end if;
+    end if;
+    # Rows 5 and 6 differ in nothing but the flag, so one assignment serves both: the gate is
+    # consulted only now, and only to keep references from listing every `begin' in the file.
+    if out.owner = "" then
+      out.keyword := isKeyword(name);
+    end if;
+  end func;
+
+# The scope rule in ONE place: an occurrence counts when its line is inside the binding's scope
+# and inside no excluded region. Line-granular, like every region this server has -- a shadowing
+# local on the same line as a use of the global is not separable without columns, and rename
+# refuses rather than guesses (spec 6).
+const func boolean: inScopeLine (in binding: b, in integer: line0) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := line0 >= b.scopeStart and line0 <= b.scopeStop;
+    if out then
+      out := not insideAny(b.excluded, line0);
+    end if;
+  end func;
+
+const func array occurrence: inScope (in array occurrence: oc, in binding: b) is func
+  result
+    var array occurrence: out is 0 times occurrence.value;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(oc) do
+      if inScopeLine(b, oc[i].line0) then
+        out &:= oc[i];
+      end if;
+    end for;
   end func;
