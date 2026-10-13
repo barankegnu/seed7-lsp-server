@@ -61,14 +61,18 @@ const func integer: headerNumber (in string: text) is func
 # read it replaces. The work is one utf8Length pass over the body -- the pass writeMessage already
 # pays on every frame it sends -- plus 37 C calls; the capped wire session went 0.161 s to 0.177 s.
 #
-# seek/tell would be cheaper and are unusable here: STD_UTF8_IN is a pipe, seekable(STD_UTF8_IN)
-# is FALSE and both raise FILE_ERROR on it (measured). On a regular UTF-8 file they are 1-based
-# BYTES -- 7 bytes read leaves tell at 8 -- which is how the unit checks see where a read stopped.
+# seek/tell would be cheaper and are unusable here: STD_UTF8_IN is a pipe, and on a pipe
+# seekable(STD_UTF8_IN) is FALSE while seek raises FILE_ERROR -- both measured, in this server's
+# actual configuration. They are NOT how the unit checks find where a read stopped: those count
+# the bytes that came back and the bytes still in the file, because tell's base on a decoded
+# file is a claim this suite does not depend on and could not re-measure without writing
+# non-Latin-1 bytes to a plain file, which Seed7 refuses.
 #
 # Known limit of any character-based reader: a Content-Length that lands INSIDE a character
-# consumes that character whole (1 byte asked of "xe" takes both bytes and leaves nothing behind),
-# because a character is the smallest thing this can read. A client that frames a UTF-8 payload
-# puts its length between characters; the unit checks pin what happens if one does not.
+# consumes that character whole -- asking 1 byte of e-acute + 'a' returns the 2-byte character
+# and leaves 'a' behind, measured in tests/transport_test.sd7 -- because a character is the
+# smallest thing this can read. A client that frames a UTF-8 payload puts its length between
+# characters; the check named above pins what happens if one does not.
 const func string: readFrameBody (inout file: source,
                                  in integer: contentLength) is func
   result
