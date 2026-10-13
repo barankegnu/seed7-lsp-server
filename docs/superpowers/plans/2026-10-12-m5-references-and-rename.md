@@ -580,13 +580,15 @@ git commit -m "prepareRename, and the first client capability the server reads"
 - Modify: `tests/features_test.sd7`, `tests/transcript.py`
 
 **Interfaces:**
-- Consumes: `prepareRenameAnswer`'s refusal rules (re-run, never trusted), `resolveBinding`, `occurrencesOf`, `lspRangeUnits`, `isKeyword`, `nameStart`/`nameMore`, `symRec` name sets, `rpc.sd7`'s `sendError`.
+- Consumes: `renameDecision (doc, syms, word, docUri, canApplyEdits) → renameCheck {refused, reason, oc, slot, b}` from `src/features/prepare_rename.sd7` — **the shared refusal predicate (R45)**, not `prepareRenameAnswer` and never a copied arm list — plus `inScope (oc, b)`, `lspRangeUnits`, `isKeyword`, `nameStart`/`nameMore`, `symRec` name sets, `rpc.sd7`'s `sendError`.
 
-  **R45 sharpens this line:** Task 9 calls `prepareRenameAnswer` and branches on `refused`/`why`.
-  It must NOT re-implement the arm list. Spec §6's "rename re-runs resolution, trusts nothing" is
-  satisfied by re-CALLING the same function — a second copy of eight rules is the divergence that
-  turns into "accepted by prepareRename, edited by rename".
-- Produces: `renameAnswer {string json, string error, string why}` where `error` is `""` or `"invalid"`; `renameResult (in lsDoc: doc, in array symRec: syms, in wordRef: word, in string: docUri, in string: newName) → renameAnswer`. `editCount` counts `"{\"range\":{"` in the same idiom as `uriCount`.
+  **R45 sharpens this line:** Task 9 calls `renameDecision` and branches on `refused`/`reason`,
+  reusing the `oc`/`slot`/`b` it hands back rather than resolving a second time. Spec §6's "rename
+  re-runs resolution, trusts nothing" is satisfied by re-CALLING the shared predicate — a second
+  copy of eight rules is the divergence that turns into "accepted by `prepareRename`, edited by
+  `rename`". `inScope (oc, b)` is Task 9's to call: `prepareRename` never needed it, because a
+  one-token range has no scope to filter, so each request filters the list exactly once.
+- Produces: `renameAnswer {string json, string error, string why}` where `error` is `""` or `"invalid"`; `renameResult (in lsDoc: doc, in array symRec: syms, in wordRef: word, in string: docUri, in string: newName, in boolean: canApplyEdits) → renameAnswer` — the sixth parameter arrives because `renameDecision` needs the capability flag and a feature may not read the dispatcher's global (R45). `editCount` counts `"{\"range\":{"` in the same idiom as `uriCount`.
 
 - [ ] **Step 1: Write the failing checks** — the collision and shape rules, from spec §6:
 
