@@ -534,7 +534,7 @@ The first client capability this server ever consults (spec §6, §7): a `Worksp
 
 **Interfaces:**
 - Consumes: `rpc.sd7`'s `atKey`/`boolAt` (Task 7), `resolveBinding`, `occurrencesOf`, `lspRangeUnits`, `uris.sd7`'s `pathOf`.
-- Produces: `var boolean: clientCanApplyEdits is FALSE;` set from `workspace.applyEdit` during `initialize`; `prepareAnswer {string json, boolean refused, string why}`; `const func prepareAnswer: prepareRenameAnswer (in lsDoc: doc, in array symRec: syms, in wordRef: word, in string: docUri) → prepareAnswer`, whose `json` is `{range, placeholder}` or `null`.
+- Produces: `var boolean: clientCanApplyEdits is FALSE;` set from `workspace.applyEdit` during `initialize`; `prepareAnswer {string json, boolean refused, string why}`; `const func prepareAnswer: prepareRenameAnswer (in lsDoc: doc, in array symRec: syms, in wordRef: word, in string: docUri, in boolean: canApplyEdits) → prepareAnswer`, whose `json` is `{range, placeholder}` or `null`. **Moved by ruling R45 into `src/features/prepare_rename.sd7`** (it lived in `lsp_server.sd7` because it read the module-global capability flag, which `src/features/rename.sd7` cannot reach), with `canApplyEdits` passed in by the dispatcher — so Task 9 calls the SAME predicate instead of restating its eight arms.
 
 - [ ] **Step 1: Write the failing checks** in `tests/lsp_server_test.sd7` — capability shapes first:
 
@@ -581,6 +581,11 @@ git commit -m "prepareRename, and the first client capability the server reads"
 
 **Interfaces:**
 - Consumes: `prepareRenameAnswer`'s refusal rules (re-run, never trusted), `resolveBinding`, `occurrencesOf`, `lspRangeUnits`, `isKeyword`, `nameStart`/`nameMore`, `symRec` name sets, `rpc.sd7`'s `sendError`.
+
+  **R45 sharpens this line:** Task 9 calls `prepareRenameAnswer` and branches on `refused`/`why`.
+  It must NOT re-implement the arm list. Spec §6's "rename re-runs resolution, trusts nothing" is
+  satisfied by re-CALLING the same function — a second copy of eight rules is the divergence that
+  turns into "accepted by prepareRename, edited by rename".
 - Produces: `renameAnswer {string json, string error, string why}` where `error` is `""` or `"invalid"`; `renameResult (in lsDoc: doc, in array symRec: syms, in wordRef: word, in string: docUri, in string: newName) → renameAnswer`. `editCount` counts `"{\"range\":{"` in the same idiom as `uriCount`.
 
 - [ ] **Step 1: Write the failing checks** — the collision and shape rules, from spec §6:
