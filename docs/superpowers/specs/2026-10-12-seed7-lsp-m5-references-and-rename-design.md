@@ -405,23 +405,24 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     that half I did not re-run. Either way there is no declaration source for a field, so a
     "find references" cursor on `pix` in `w.pix` is a permanent row-4 case on well-formed code —
     not the truncated-buffer exception §9 pins — and it is §12.2's question.
-11. **Which words the language refuses is measurable, and the answer is 48, not 90.** Seed7 has no
-    reserved words (`Seed7Home/manual/intro.htm:230`), so a word's status is a property of the
-    interpreter, not of a list — and the interpreter answers the question directly: declare
-    `var integer: <WORD> is 1;` in a one-program-per-word sweep and see whether `s7 -q -a` reports
-    errors. Measured over 98 candidates (`/tmp/kwgate`): **48 cannot be a plain declared name** —
-    `action array assert attr begin block case catch class conj const default do downto elem else
-    elsif end exception fixLen for func getfunc getobj global hash if in include inout interface is
-    key len local new not of otherwise param range ref repeat return set step struct sub subrange
-    subtype symb system then to tuple until val var varfunc when` — and 50 can, including `type`,
-    `proc`, `result`, `enum`, `switch`, `static`, `member`, `exit`, `leave`, `forward`, `and`, `or`,
-    `div`, `mod`, `rem`, `exp`, `times`, `cast`, `conv`, `parse`, `find`, `value`, `nested`, `out`
-    and the dot-selector fragments. Direct check: `const func integer: type (in integer: n)`
-    analyses and prints `3`. Three consequences, all carried into the plan: §5's gate must run after
-    resolution (R28); the §11.5 template extraction is a *vocabulary* list and must not be used as
-    a gate, because over-refusal here would deny a rename of a legal symbol rather than protect the
-    user; and `completion`'s 39-word candidate list and this 48-word gate are different products
-    that must not be merged.
+11. **"Is this a keyword?" is answerable only behaviourally, and the answer is 63 — which is also a
+    correction to this document.** Seed7 has no reserved words (`Seed7Home/manual/intro.htm:230`),
+    so a word's status is a property of the interpreter, not of any list, and the interpreter
+    answers directly: declare `var integer: <WORD> is 1;` in one program per word and check whether
+    `s7 -q -a` reports errors. Task 5 shipped that probe as `tools/keyword_gate.sh`, which prints
+    the current set and exits 1 if `src/keywords.sd7` ever drifts from it — RUN IT rather than
+    copying an answer out of here.
+    My first hand sweep reported **48**, and it was wrong twice over: my `words.txt` listed `while`
+    with no program behind it, and `raise` and `syntax` were never candidates at all, so an
+    incomplete superset produced a confidently wrong count. The measured answer is **63**. The three
+    additions were re-verified independently: `while`, `raise` and `syntax` each fail to analyse,
+    while `type` and `value` analyse clean (`const func integer: type (in integer: n)` prints `3`).
+    Three consequences, all carried into the plan: §5's gate runs after resolution (R28); the §11.5
+    template extraction is a *vocabulary* list and must not be used as a gate, because over-refusal
+    would deny a rename of a legal symbol rather than protect the user; and `completion`'s 39-word
+    candidate list and this gate are different products that must not be merged. The meta-lesson is
+    the R29 one: a number transcribed out of a probe is already stale, so the document points at
+    the generator instead of at itself.
 
 ## 12. Open questions put to the partner
 
