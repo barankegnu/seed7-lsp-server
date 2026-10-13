@@ -13,8 +13,9 @@ $ include "seed7_05.s7i";
 # not of this file: re-measure on upgrade rather than editing entries by hand.
 #
 # This module is the predicate the references/rename gate consults (Tasks 6 and 9) and nothing
-# else. It resolves no binding -- the gate runs AFTER resolution fails, R28 -- imports nothing
-# beyond seed7_05.s7i, and builds no LSP shape (invariants 1 and 4).
+# else. It resolves no binding -- the gate is consulted after the document's own rows have been
+# asked and before the library row (R28, refined by R36) -- imports nothing beyond seed7_05.s7i, and
+# builds no LSP shape (invariants 1 and 4).
 
 # THE GATE: the 63 words s7 5.4.10 will not accept as a declared name, so no user symbol can be
 # spelled with one. Over-refusing here would deny a rename of a real symbol for a reason the

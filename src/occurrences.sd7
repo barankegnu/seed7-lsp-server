@@ -30,8 +30,9 @@ const type: occurrence is new struct
   end struct;
 
 # The most occurrences one pass reports. Appending stops at MAX_OCCURRENCES + 1 so that
-# `length(oc) > MAX_OCCURRENCES` IS the truncation test for the caller: no second pass, and
-# no flag on the record that could be forgotten.
+# `length(oc) > MAX_OCCURRENCES' IS the truncation test, and resolveBinding is HANDED that same
+# array instead of running its own pass: one list per request, so `binding.capped' cannot disagree
+# with the occurrences its caller publishes and no length is paid for twice.
 const integer: MAX_OCCURRENCES is 2000;
 
 # A token is indexable when it is a name or an operator run, and the allow-list is what makes
@@ -73,7 +74,7 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
 # the only place `resolved' is set. A feature reads this record and never re-derives a rule from
 # it -- `inScope' below is where scope is applied, so references and rename cannot disagree
 # about it. Nothing here builds an LSP shape (invariant 4), and the scope records arrive already
-# read in symRec.locals, so no programs library is needed (invariant 1).
+# read in symRec.locals, so this module never imports the programs library (invariant 1).
 const type: binding is new struct
     var string: name is "";
     # "local" | "global" | "library" | "field" | "". The empty owner is the one "we cannot bind
@@ -84,6 +85,15 @@ const type: binding is new struct
     var boolean: resolved is FALSE;
     var boolean: keyword is FALSE;
     var boolean: capped is FALSE;
+    # TRUE when the scope answered here may be SHORTER than the truth, so a caller must not
+    # treat it as complete. Two ways it happens, both set below: a routine that declares the name
+    # in its own scope but owns no region cannot be subtracted from a global (row 2), and a cursor
+    # inside a nested routine binds to the enclosing routine while the nested scope is invisible to
+    # reflection (row 1). Reads may over-include (spec 12.2's ruling); a write would rewrite a
+    # declaration the user did not mean, so prepareRename and rename refuse when this is set and
+    # references still answers. Callers may not re-derive scope (spec 4), so this is the only
+    # signal they get.
+    var boolean: scopeUncertain is FALSE;
     var integer: scopeStart is 0;
     var integer: scopeStop is 0;
     # 1-based declaration line, and 0 whenever no declaration OF THIS DOCUMENT has the name: a
@@ -95,16 +105,6 @@ const type: binding is new struct
     # because the filter is inScope's job and only its job.
     var array blockRef: excluded is 0 times blockRef.value;
   end struct;
-
-# Reflection's own answer for "declared in the buffer being edited": BUFFER_FILE for text handed
-# to parseStri, and the document's path for the .s7i driver case. One spelling of the test, since
-# analysis.sd7's locals guard uses the same pair.
-const func boolean: isBufferFile (in string: fname, in string: docPath) is func
-  result
-    var boolean: out is FALSE;
-  begin
-    out := fname = BUFFER_FILE or fname = docPath;
-  end func;
 
 # The first scope entry with this name, 0 when the routine does not declare it. `in' has no
 # array overload in this language, so the scan is written out.
@@ -141,11 +141,71 @@ const func boolean: insideAny (in array blockRef: regions, in integer: line0) is
     end for;
   end func;
 
+# The buffer record that OWNS `region': the one whose name line is the greatest at or before
+# the line the region opens on (both sides in the units each carries: symRec.line1 is 1-based,
+# blockRef.startLine is 0-based). routineRegionFor pairs by ADJACENCY -- the first region that
+# opens at or after the name line -- and closeFrom emits no region for a routine whose whole body
+# sits on one line, so a one-line routine's pair is the NEXT routine below. Adjacency is not
+# ownership, and both binding rows read more out of a pair than a fold does: row 1 takes a
+# declaration line and a scope from it, row 2 subtracts it from a global. Ties go to the earlier
+# record, and two headers sharing one line are already unpairable there (blocks.sd7's shortcut).
+const func integer: regionOwner (in array symRec: syms, in string: docPath,
+                                 in blockRef: region) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+    var integer: bestLine is 0;
+  begin
+    for i range 1 to length(syms) do
+      if isBufferFile(syms[i].file, docPath) then
+        if syms[i].line1 > bestLine and syms[i].line1 <= succ(region.startLine) then
+          bestLine := syms[i].line1;
+          out := i;
+        end if;
+      end if;
+    end for;
+  end func;
+
+# TRUE when record `idx' pairs with a region AND the region belongs to it. The closer test comes
+# first, because blockRef.value's startLine is 0 and an unpaired record must not be handed the
+# region of a routine that really opens on line 0.
+const func boolean: ownsRegion (in array symRec: syms, in string: docPath,
+                                in integer: idx, in blockRef: region) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    if region.closer <> "" then
+      out := regionOwner(syms, docPath, region) = idx;
+    end if;
+  end func;
+
+# The routine region deepest at `line0', from the hoisted list. Lexical, so it names a NESTED
+# routine's region too -- which is the whole reason row 1 asks: reflection gives that routine no
+# symRec, so nothing else in this resolution can see it.
+const func blockRef: innermostRegion (in array blockRef: regions, in integer: line0) is func
+  result
+    var blockRef: out is blockRef.value;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(regions) do
+      if regions[i].closer <> "" and lineIn(regions[i], line0) then
+        if out.closer = "" or regions[i].startLine > out.startLine then
+          out := regions[i];
+        end if;
+      end if;
+    end for;
+  end func;
+
 # TRUE when an occurrence of `name' on line0 follows a `.' token: a selector, the one name class
 # with no declaration source at all -- globalObjects reports the struct and never its fields, and
 # structToList raises RANGE_ERROR (spec 11.10, measured). The 12.2 ruling is over-inclusive with
 # a log line and no field-index machine, so this only LABELS the binding: it says nothing about
 # which struct the field belongs to, and two structs' `pix' stay one symbol.
+# shortcut: line-granular -- the dot's own line is what the test keys on, so `box.' at the end of
+#           one line above `pix' at the start of the next is not recognised as a selector. A
+#           column-aware version would need the token list, and nothing here has one.
 const func boolean: dotSelected (in string: text, in string: name, in integer: line0) is func
   result
     var boolean: out is FALSE;
@@ -177,50 +237,60 @@ const func boolean: dotSelected (in string: text, in string: name, in integer: l
     end while;
   end func;
 
-# The resolution order IS the decision (R28): the analyzer is asked first and the keyword gate
-# last, because Seed7 declares no reserved words and a program may legally declare a symbol
-# named `type' -- which documentSymbol lists and hover answers today. A gate that ran first
-# would answer "nothing" for a real declaration, manufacturing the silent lie this milestone
-# refuses. Every row degrades rather than raises: a truncated buffer is the normal state while
-# typing, symRec.locals is empty on a routine whose own declaration failed, and an empty scope
-# simply fails to match row 1.
+# The resolution order IS the decision. The document's own two rows are asked first (R28), so a
+# program may legally declare a symbol named `type' -- which documentSymbol lists and hover
+# answers today -- and the keyword gate comes after them but BEFORE the library row (R36), so a
+# gated word never resolves to 52 analyzer records of itself. Every row degrades rather than
+# raises: a truncated buffer is the normal state while typing, symRec.locals is empty on a routine
+# whose own declaration failed, and an empty scope simply fails to match row 1.
 const func binding: resolveBinding (in string: text, in array symRec: syms,
-                                    in string: name, in integer: line0,
-                                    in integer: lastLine, in string: docPath) is func
+                                    in array occurrence: oc, in string: name,
+                                    in integer: line0, in integer: lastLine,
+                                    in string: docPath) is func
   result
     var binding: out is binding.value;
   local
     var array blockRef: regions is 0 times blockRef.value;
     var blockRef: region is blockRef.value;
+    var blockRef: inner is blockRef.value;
     var integer: i is 0;
     var integer: scopeIdx is 0;
-    var boolean: found is FALSE;
+    var boolean: bufferDeclared is FALSE;
+    var boolean: librarySeen is FALSE;
     var boolean: scopeElsewhere is FALSE;
   begin
     out.name := name;
     out.scopeStop := lastLine;
-    # The pass appends at most MAX_OCCURRENCES + 1, so this length IS the truncation test.
-    out.capped := length(occurrencesOf(text, name)) > MAX_OCCURRENCES;
+    # The caller's own list, capped the same way: this is the array references publishes, so
+    # `capped' cannot disagree with it and no second pass is paid for a discarded length.
+    out.capped := length(oc) > MAX_OCCURRENCES;
     # ONE region scan for the whole resolution: blockRegions is the expensive half of the
     # pairing and routineRegionFor only filters a list, so rows 1 and 2 share this call
     # instead of paying a scan and an O(n^2) sort per declaration.
     regions := blockRegions(text, lastLine);
-    # Row 1: a scope entry of a routine whose body region holds the cursor. A record whose
+    # Row 1: a scope entry of a routine whose OWNED body region holds the cursor. A record whose
     # declaration pairs with NO region (a body that sits on one line) is skipped by the closer
-    # test, never by startLine: a real region may open at line 0.
+    # test, never by startLine: a real region may open at line 0. A record that pairs with a
+    # region it does not OWN is skipped by ownsRegion -- the same pair, but it belongs to the
+    # routine below, and trusting it here renames that other routine's declaration.
     for i range 1 to length(syms) do
       if out.owner = "" then
         if isBufferFile(syms[i].file, docPath) then
           scopeIdx := scopeIndexOf(syms[i].locals, name);
           if scopeIdx <> 0 then
             region := routineRegionFor(regions, syms[i].line1);
-            if region.closer <> "" then
+            if ownsRegion(syms, docPath, i, region) then
               if lineIn(region, line0) then
                 out.owner := "local";
                 out.resolved := TRUE;
                 out.scopeStart := region.startLine;
                 out.scopeStop := region.endLine;
                 out.declLine1 := syms[i].locals[scopeIdx].line1;
+                # A cursor below the matched region sits in a NESTED routine, which reflection
+                # never reports as a symRec -- so its own scope may carry this name and nothing
+                # in this resolution can see it. Regions are lexical, so the depth is measurable.
+                inner := innermostRegion(regions, line0);
+                out.scopeUncertain := inner.startLine > region.startLine;
               else
                 scopeElsewhere := TRUE;
               end if;
@@ -229,45 +299,61 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
         end if;
       end if;
     end for;
-    # Row 2: a declaration of this buffer. Its scope is the document minus every routine whose
-    # own scope carries the same name -- without that subtraction a rename of the global would
-    # rewrite a shadowing local and its declaration, and the result would still compile.
+    # Row 2: a declaration of this buffer. Its scope is the document minus every routine that
+    # OWNS a region and carries the same name in its own scope -- without that subtraction a
+    # rename of the global would rewrite a shadowing local and its declaration, and the result
+    # would still compile. A carrier that owns no region cannot be subtracted at all, and the
+    # global row says so instead of answering a silently short list.
     if out.owner = "" then
       for i range 1 to length(syms) do
-        if not found then
+        if not bufferDeclared then
           if isBufferFile(syms[i].file, docPath) then
             if syms[i].name = name then
               out.owner := "global";
               out.resolved := TRUE;
               out.declLine1 := syms[i].line1;
-              found := TRUE;
+              bufferDeclared := TRUE;
             end if;
           end if;
         end if;
       end for;
-      if found then
+      if bufferDeclared then
         for i range 1 to length(syms) do
           if isBufferFile(syms[i].file, docPath) then
             if scopeIndexOf(syms[i].locals, name) <> 0 then
               region := routineRegionFor(regions, syms[i].line1);
-              if region.closer <> "" then
+              if ownsRegion(syms, docPath, i, region) then
                 out.excluded &:= region;
+              else
+                out.scopeUncertain := TRUE;
               end if;
             end if;
           end if;
         end for;
       end if;
     end if;
+    # The gate, between the rows that read THIS document and the rows that read every record.
+    # Nothing a user can declare is spelled with one of the 63 words -- that is what the probe in
+    # src/keywords.sd7 measured -- so the only records the library row could match for `for', `in',
+    # `is' or `to' are the analyzer's own, and answering "library" for them would have references
+    # list every one in the file. Rows 1 and 2 still run first, which is what keeps a declared
+    # symbol named `type' safe: `type' is not in the gate at all, and a word that IS in it cannot
+    # name a declaration this buffer made.
+    if out.owner = "" then
+      out.keyword := isKeyword(name);
+    end if;
     # Row 3: some record carries the name and this buffer does not, so it is the library's.
     # Resolved -- references answers for this file -- but not renameable, and declLine1 stays
-    # 0 because that line is in a file the client never opened.
-    if out.owner = "" then
+    # 0 because that line is in a file the client never opened. Skipped for a gated word, and
+    # row 4 with it: a gated word can be neither a scope entry nor a declared field, so the two
+    # rows have nothing to answer for it beyond what the gate already said.
+    if out.owner = "" and not out.keyword then
       for i range 1 to length(syms) do
-        if not found then
+        if not librarySeen then
           if syms[i].name = name then
             out.owner := "library";
             out.resolved := TRUE;
-            found := TRUE;
+            librarySeen := TRUE;
           end if;
         end if;
       end for;
@@ -275,18 +361,15 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
     # Row 4: unprovable, and over-included with a log line rather than refused (12.2). Either
     # the name is some other routine's scope entry -- so this token cannot be that one -- or it
     # follows a dot, which is a field.
-    if out.owner = "" then
+    if out.owner = "" and not out.keyword then
       if scopeElsewhere then
         out.owner := "field";
       elsif dotSelected(text, name, line0) then
         out.owner := "field";
       end if;
     end if;
-    # Rows 5 and 6 differ in nothing but the flag, so one assignment serves both: the gate is
-    # consulted only now, and only to keep references from listing every `begin' in the file.
-    if out.owner = "" then
-      out.keyword := isKeyword(name);
-    end if;
+    # Row 5 and row 6 are the record this function started with: owner "", the whole document, and
+    # `keyword' already carrying the gate's answer for everything rows 1 and 2 did not bind.
   end func;
 
 # The scope rule in ONE place: an occurrence counts when its line is inside the binding's scope

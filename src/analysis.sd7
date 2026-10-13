@@ -45,6 +45,18 @@ const proc: collectDiags (in program: prog, inout analysisResult: res) is func
 # document's own declarations apart from the ones it merely pulls in. Measured, not assumed.
 const string: BUFFER_FILE is "STRING";
 
+# One spelling of "declared in the document being edited": BUFFER_FILE for text handed to
+# parseStri, and the document's OWN PATH for an open .s7i, which lsp_server analyses through
+# driverFor(pathOf(uri)) with that same path as docPath -- so its declarations arrive with `file'
+# equal to the path, never BUFFER_FILE (measured by analysis_test's probeDouble checks). The
+# collectSyms guard below and occurrences' binding rows both ask through this one function.
+const func boolean: isBufferFile (in string: fname, in string: docPath) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := fname = BUFFER_FILE or fname = docPath;
+  end func;
+
 # One name visible inside a routine's own scope: a parameter, a local constant, a local
 # variable or the result variable. `cat` is the reflection category stored VERBATIM, which
 # is the measured shape (s7 5.4.10): a `const local' reports the category of its VALUE
@@ -280,7 +292,7 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
         # 3 328 globalObjects the symbols fixture parses to measured 52 ms per analyzeAll
         # against 43 ms guarded, calc7 140 against 130, shiftjis 71 against 64 -- medians of
         # three runs of nine analyses each, the same harness and text on both sides.
-        if rec.file = BUFFER_FILE or rec.file = docPath then
+        if isBufferFile(rec.file, docPath) then
           rec.locals := localsOf(obj);
         else
           # `rec' is loop-carried and this is the only field the guard does not re-stamp,
