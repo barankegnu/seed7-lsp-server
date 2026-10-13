@@ -38,6 +38,14 @@ sentinel that the harness requires before any payload is counted as a result —
 whose entry point had never run reported fourteen inputs as "no raise" while printing
 nothing but the interpreter banner.
 
+Performance numbers are never `time`-ed off the interpreter. Build a profiled, optimized binary —
+`s7c -p -O2 -l src <file>`, run it, read `profile_out` (`-p` activates simple function profiling in
+the compiler's option list, <https://seed7.net/faq.htm#compile>; `-p` alone is the interpreter's
+trace-protocol flag). Profile the optimized build, because an unoptimized one misleads: the pass you
+want to see often hides behind interpreter overhead. Record the command and the table next to any
+figure that reaches a document — the measured example is in *Seed7 traps* below. Clean up after a
+probe: the binary lands beside its source and `profile_out` in the cwd.
+
 ## Seed7 traps
 
 Each of these cost a debugging cycle. Seed7 is not Python and will not warn you first.
@@ -76,8 +84,10 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `main.sd7` and `lsp_server.sd7` are separate files.
 - **Profile with `s7c -p`, and never confuse the two `-p` flags.** `s7 -p file` writes a trace
   protocol log. `s7c -p` activates function profiling: compile, run the executable, and it writes
-  `profile_out` — a tab-separated table of microseconds, call count, `file(line)` and function name
-  (`doc/faq.txt` "Can I profile Seed7 programs?"). Use it for every performance claim this repo
+  `profile_out` — a tab-separated table of microseconds, call count, `file(line)` and function name.
+  The flag is the compiler's: `doc/faq.txt` "Is it possible to compile Seed7 programs?" /
+  <https://seed7.net/faq.htm#compile>, and the same section's `-On`, `-ocN`, `-flto` are what
+  optimize. Use it for every performance claim this repo
   makes, instead of `time`-ing a whole suite: measured here as
   `s7c -p -O2 -l src tests/occurrences_test.sd7`, running it gave 194 700 µs in `main`, of which
   164 211 µs was 7 `analysisOf` calls (`src/analysis.sd7:333` `analyzeAll`, then
