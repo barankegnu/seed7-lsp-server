@@ -363,6 +363,18 @@ def answered_null(by_id, rid):
     return "result" in reply and reply["result"] is None and "error" not in reply
 
 
+def one_answer_per_request(messages, replies, label):
+    """Every request of `messages' answered exactly once, and nothing answers a notification.
+
+    The idiom of the references run (REQUESTS) and the rename run (REQUESTS9), applied to the runs
+    added later, which had no such pin: an answer to `initialized' or `textDocument/didOpen' in
+    one of them would pass every other check in the block unnoticed."""
+    sent = len([m for m in messages if "id" in m])
+    got = len([r for r in replies if "result" in r or "error" in r])
+    expect(got == sent, "%s answers every request and nothing else (%d requests, %d answers)"
+           % (label, sent, got))
+
+
 def pr_msgs(init):
     """One framed session: initialize, open the fixture, ask prepareRename four times."""
     return [frame(m) for m in [init, msgs[1], opened("file:///tmp/tt_syms.sd7", SYMS),
@@ -552,6 +564,15 @@ by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(answered_null(by_id, 70),
        "no applyEdit -> rename answers null (%r)" % by_id.get(70, {}))
 expect("workspace.applyEdit" in err, "and says the capability it did not declare")
+# NOT COVERED, written down so a reader does not count the two lines above as covering it: that
+# sentence is checked on STDERR only. prepareRename's capability refusal is also pinned as a
+# CLIENT frame ("the refusal is explained to the client before the null") and rename's
+# unresolved-binding refusal is too ("an unresolved rename speaks the reason to the client before
+# its null"), but nothing here requires rename's CAPABILITY refusal to arrive as a
+# window/logMessage. The LOGS9 count above cannot see it: that run GRANTS the capability, so this
+# refusal never happens there. Left unpinned on purpose -- the client-frame ordering it would need
+# is the machinery the library-buffer block repairs further down, and standing it up here would
+# mean new request traffic for one more sentence.
 
 # --- M5 Task 9 R47: a capped document refuses instead of half-editing ----------------
 # 2 002 uses of one global plus its declaration: occurrencesOf stops at its 2 001st record, so
@@ -656,10 +677,14 @@ expect(junk == 0, "the shared-name run put only frames on stdout (junk=%d)" % ju
 # 13/19/21 bytes) is the BMP control that separates the byte rule from the other two.
 #
 # Expectations are computed from the fixture text with `u16`, never from anything the server
-# sent, so a server that answers BYTE columns shows 25 and is red -- measured, mutant M8. What
-# this run provably CANNOT see is stated at the CESU-8 pin below: an astral character never
-# reaches doc.text as one character, so the server's own character column IS 21 here too, and a
-# regression from col16 to a character count is invisible to every frame this suite can send.
+# sent, so a server that answers BYTE columns is red -- measured again in this round with mutant
+# M8 (`utf16CharLength := utf8CharLength'): it answers line 8's `tally' at column 29, and the BMP
+# control's three at [13, 19, 21]. 29 is not the client's own byte count (25), because the two
+# astral characters arrive as FOUR CESU-8 surrogate characters of 3 bytes each -- see the pin
+# below. What this run provably CANNOT see: an astral character never reaches doc.text as one
+# character, so the server's own character column IS 21 here too, and a regression from col16 to a
+# character count stays invisible to every frame this suite can send -- the F1 pin further down
+# sends a raw body and shows that the transport, not the column, is what breaks first.
 def u16(stri):
     """UTF-16 code units in `stri` -- the count an LSP position calls a `character'.
 
@@ -704,9 +729,21 @@ expect(U16_COL[U16_AST] != len(U16_PREFIX) and
 
 
 def u16_loc(uri, line, start):
+    # The width is a UTF-16 count, not len(): production emits `width16', so an ASCII-only
+    # fixture name is the only reason the two agree today.
     return {"uri": uri,
             "range": {"start": {"line": line, "character": start},
-                      "end": {"line": line, "character": start + len(U16_TALLY)}}}
+                      "end": {"line": line, "character": start + u16(U16_TALLY)}}}
+
+
+def ref_cols(result):
+    """The (line, start, end) triples of a references answer, for the checks that pin them.
+
+    The shape every references check in this file compares against; end LINE is left out because
+    a references answer is one line per location -- except a whole-line declaration, which is
+    pinned by full JSON equality instead."""
+    return [(l["range"]["start"]["line"], l["range"]["start"]["character"],
+             l["range"]["end"]["character"]) for l in result]
 
 
 U16_EXPECT = [u16_loc(U16_URI, ln, U16_COL[ln]) for ln in (U16_DECL, U16_NARROW, U16_AST)]
@@ -753,12 +790,10 @@ expect((by_id.get(112, {}).get("result") or {}).get("changes", {}).get(U16_URI) 
 # added -- the two `writeln' tokens of this file and nothing else, no disclosure log either.
 lib_name_refs = by_id.get(115, {}).get("result")
 expect(isinstance(lib_name_refs, list) and
-       [(l["range"]["start"]["line"], l["range"]["start"]["character"],
-         l["range"]["end"]["character"]) for l in lib_name_refs] ==
-       [(U16_NARROW, 4, 11), (U16_AST, 4, 11)] and
-       len(U16_LOGS) == 0,
-       "references on a library name lists this file's two tokens and says nothing extra (%s, %s)"
-       % (lib_name_refs, U16_LOGS))
+       ref_cols(lib_name_refs) == [(U16_NARROW, 4, 11), (U16_AST, 4, 11)],
+       "references on a library name lists this file's two tokens (%s)" % lib_name_refs)
+expect(len(U16_LOGS) == 0,
+       "and a library-resolved name says nothing extra (%s)" % U16_LOGS)
 # The BMP control: the same shape with 2-byte characters instead of 4-byte ones. Its column is
 # its character count, so this is the arm that rules out "the feature emits byte columns".
 expect((by_id.get(113, {}).get("result") or {}).get("changes", {}).get(U16_BMP_URI) ==
@@ -767,6 +802,7 @@ expect((by_id.get(113, {}).get("result") or {}).get("changes", {}).get(U16_BMP_U
        % ([e["range"]["start"]["character"] for e in U16_BMP_EDIT], U16_BMP_BYTES,
           by_id.get(113, {}).get("result")))
 expect(junk == 0, "the astral run put only frames on stdout (junk=%d)" % junk)
+one_answer_per_request(U16_MSGS, replies, "the astral run")
 
 # --- M5 Task 10 gap 6, recorded: the astral character does not arrive as one character ----
 # A DEFECT PIN, not a property. `json.dumps` writes one astral character as the JSON escape
@@ -819,15 +855,15 @@ RN_LIB_USE = RL.index("    ticks +:= 1;")
 RN_LIB_DECL_COL = u16(RL[RN_LIB_DECL][:RL[RN_LIB_DECL].index("ticks")])
 RN_LIB_USE_COL = u16(RL[RN_LIB_USE][:RL[RN_LIB_USE].index("ticks")])
 RN_LIB_COL = RN_LIB_USE_COL + 2
-replies, code, err, junk = run([frame(m) for m in [
-    APPLY, msgs[1], opened(RN_LIB_URI, RN_LIB_TEXT),
-    req(120, "textDocument/references",
-        dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL),
-             context={"includeDeclaration": True})),
-    req(121, "textDocument/prepareRename", pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL)),
-    req(122, "textDocument/rename",
-        dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL), newName="beats")),
-    shutdown(123), exit_()]])
+S7I_MSGS = [APPLY, msgs[1], opened(RN_LIB_URI, RN_LIB_TEXT),
+            req(120, "textDocument/references",
+                dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL),
+                     context={"includeDeclaration": True})),
+            req(121, "textDocument/prepareRename", pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL)),
+            req(122, "textDocument/rename",
+                 dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL), newName="beats")),
+            shutdown(123), exit_()]
+replies, code, err, junk = run([frame(m) for m in S7I_MSGS])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 lib_refs = by_id.get(120, {}).get("result")
 expect(isinstance(lib_refs, list) and
@@ -847,23 +883,35 @@ LIB_WHY = " is a library buffer whose symbols come from disk while R-F10"
 
 
 def lib_log(method):
-    """The index of the one log line that refuses this buffer under `method', or None."""
-    return next((i for i, m in enumerate(LIB_MSGS)
-                 if m.startswith(method + ": " + RN_LIB_PATH) and LIB_WHY in m
-                 and "so an edit could land on the wrong line" in m), None)
+    """The index IN `replies' of the one log frame that refuses this buffer under `method'.
+
+    Both sides of the ordering below have to be reply indices. An index into LIB_MSGS counts log
+    frames only -- a different space, where the log is always 0 or 1 and the answer is always
+    further on -- so `log < answer' would hold even in a build that answers FIRST and logs after,
+    which is the regression this check exists to catch."""
+    for i, r in enumerate(replies):
+        m = r.get("params", {}).get("message", "")
+        if (r.get("method") == "window/logMessage" and
+                m.startswith(method + ": " + RN_LIB_PATH) and LIB_WHY in m and
+                "so an edit could land on the wrong line" in m):
+            return i
+    return None
 
 
 LIB_PREP_LOG = lib_log("prepareRename")
 LIB_RENAME_LOG = lib_log("rename")
 LIB_PREP_ANS = next((i for i, r in enumerate(replies) if r.get("id") == 121), None)
 LIB_RENAME_ANS = next((i for i, r in enumerate(replies) if r.get("id") == 122), None)
-expect(LIB_PREP_LOG is not None and LIB_PREP_ANS is not None and LIB_PREP_LOG < LIB_PREP_ANS and
-       LIB_RENAME_LOG is not None and LIB_RENAME_ANS is not None and
+expect(LIB_PREP_LOG is not None and LIB_PREP_ANS is not None and LIB_PREP_LOG < LIB_PREP_ANS,
+       "the prepareRename refusal names the buffer by its disk path and R-F10 in a log that "
+       "arrives before its null (reply %s before reply %s: %s)"
+       % (LIB_PREP_LOG, LIB_PREP_ANS, LIB_MSGS))
+expect(LIB_RENAME_LOG is not None and LIB_RENAME_ANS is not None and
        LIB_RENAME_LOG < LIB_RENAME_ANS,
-       "both refusals name the buffer by its disk path and R-F10 in a log that arrives before "
-       "their nulls (prepareRename %s before %s, rename %s before %s: %s)"
-       % (LIB_PREP_LOG, LIB_PREP_ANS, LIB_RENAME_LOG, LIB_RENAME_ANS, LIB_MSGS))
+       "and the rename refusal does the same (reply %s before reply %s: %s)"
+       % (LIB_RENAME_LOG, LIB_RENAME_ANS, LIB_MSGS))
 expect(junk == 0, "the library-buffer run put only frames on stdout (junk=%d)" % junk)
+one_answer_per_request(S7I_MSGS, replies, "the library-buffer run")
 
 # --- M5 Task 10 gap 3: the two lifecycle edges, per method --------------------------
 # main.sd7 gates before handle(), so it cannot tell a new method from an old one -- and a pin
@@ -874,22 +922,29 @@ LIFE_PARAMS = [(130, "textDocument/references",
                (131, "textDocument/prepareRename", pos(RN_URI, RN_USE, RN_CHAR)),
                (132, "textDocument/rename",
                 dict(pos(RN_URI, RN_USE, RN_CHAR), newName="count2"))]
-replies, code, err, junk = run([frame(m) for m in
-                                [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()]])
+LIFE_PRE = [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()]
+replies, code, err, junk = run([frame(m) for m in LIFE_PRE])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS] ==
        [-32002, -32002, -32002],
        "references, prepareRename and rename before initialize are each -32002 (%s)"
        % [(i, by_id.get(i, {}).get("error")) for i, _, _ in LIFE_PARAMS])
-replies, code, err, junk = run([frame(m) for m in
-                                [APPLY, msgs[1], opened(RN_URI, SYMS), shutdown(139)] +
-                                [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()]])
+# Read BEFORE the next run(), which overwrites `junk'. This is the one path where a raise could
+# reach stdout before any handler exists, so the bytes on the channel are the observable here.
+expect(junk == 0, "the before-initialize run put only frames on stdout (junk=%d)" % junk)
+expect(code == 1, "and the session ends on `exit' with no shutdown as status 1, not a crash (%d)"
+       % code)
+one_answer_per_request(LIFE_PRE, replies, "the before-initialize run")
+LIFE_POST = ([APPLY, msgs[1], opened(RN_URI, SYMS), shutdown(139)] +
+             [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()])
+replies, code, err, junk = run([frame(m) for m in LIFE_POST])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS] ==
        [-32600, -32600, -32600],
        "the same three after shutdown are each -32600 (%s)"
        % [(i, by_id.get(i, {}).get("error")) for i, _, _ in LIFE_PARAMS])
 expect(junk == 0, "the after-shutdown run put only frames on stdout (junk=%d)" % junk)
+one_answer_per_request(LIFE_POST, replies, "the after-shutdown run")
 
 # --- M5 Task 10 gap 4: `workspace': null, the malformed client shape ----------------
 # A missing `workspace' key is pinned by the refusal runs above (msgs[0] has no such key). This
@@ -902,32 +957,154 @@ NULL_WS = req(1, "initialize", {"capabilities": {}, "processId": None, "rootUri"
 NW_URI = "file:///tmp/tt_syms_nullws.sd7"
 NW_HOVER = REF_LINES.index("    writeln(totalSize(prototype, 2));")
 NW_HCHAR = REF_LINES[NW_HOVER].index("totalSize") + 4
-replies, code, err, junk = run([frame(m) for m in [
-    NULL_WS, msgs[1], opened(NW_URI, SYMS),
-    req(140, "textDocument/prepareRename", pos(NW_URI, RN_USE, RN_CHAR)),
-    req(141, "textDocument/rename", dict(pos(NW_URI, RN_USE, RN_CHAR), newName="count2")),
-    req(142, "textDocument/references",
-        dict(pos(NW_URI, RN_USE, RN_CHAR), context={"includeDeclaration": True})),
-    req(143, "textDocument/references",
-        dict(pos(NW_URI, RN_USE, RN_CHAR), context=None)),
-    req(144, "textDocument/hover", pos(NW_URI, NW_HOVER, NW_HCHAR)),
-    shutdown(145), exit_()]])
+NW_MSGS = [NULL_WS, msgs[1], opened(NW_URI, SYMS),
+           req(140, "textDocument/prepareRename", pos(NW_URI, RN_USE, RN_CHAR)),
+           req(141, "textDocument/rename", dict(pos(NW_URI, RN_USE, RN_CHAR), newName="count2")),
+           req(142, "textDocument/references",
+               dict(pos(NW_URI, RN_USE, RN_CHAR), context={"includeDeclaration": True})),
+           req(143, "textDocument/references",
+                dict(pos(NW_URI, RN_USE, RN_CHAR), context=None)),
+           req(144, "textDocument/hover", pos(NW_URI, NW_HOVER, NW_HCHAR)),
+           shutdown(145), exit_()]
+replies, code, err, junk = run([frame(m) for m in NW_MSGS])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(answered_null(by_id, 140),
        "workspace: null -> prepareRename answers null, not an error frame (%r)"
        % by_id.get(140, {}))
 expect(answered_null(by_id, 141),
        "and rename answers null, not an error frame (%r)" % by_id.get(141, {}))
-expect(isinstance(by_id.get(142, {}).get("result"), list) and
-       isinstance(by_id.get(143, {}).get("result"), list),
-       "references answers a list for a context object AND for a context that is JSON null "
-       "(object: %s; null: %s)" % (by_id.get(142, {}).get("result"),
-                                    by_id.get(143, {}).get("result")))
+# The VALUES, not "is a list": `[]' satisfies isinstance(x, list) twice over, so a build that
+# dropped every occurrence through a null context would have passed the type test. Measured on
+# this cursor: the two answers are the SAME list, because reportWidget's `counter' is declared on
+# the header line, which IS the line its body region opens on, so the declaration is already one
+# of the occurrences and includeDeclaration has nothing to add (tests/features_test.sd7:596 says
+# the same for the unit fixture). If the null context ever cost the client its locations, the
+# first check below stays green and this one reddens on `[18, 59, 66], [21, 4, 11]` -> `[]'.
+NW_EXPECT = [(l, PR_LINES[l].index("counter"), PR_LINES[l].index("counter") + 7)
+             for l in (RN_HEAD, RN_USE)]
+nw_obj = by_id.get(142, {}).get("result")
+nw_null = by_id.get(143, {}).get("result")
+expect(isinstance(nw_obj, list) and ref_cols(nw_obj) == NW_EXPECT,
+       "references with a context object answers exactly %s (%s)" % (NW_EXPECT, nw_obj))
+expect(isinstance(nw_null, list) and ref_cols(nw_null) == NW_EXPECT,
+       "and a JSON null context answers the same %s, not an empty list (%s)"
+       % (NW_EXPECT, nw_null))
 hv_nw = (by_id.get(144, {}).get("result") or {}).get("contents", {}).get("value", "")
 expect("totalSize" in hv_nw, "the same session still answers hover (%r)" % hv_nw)
 expect(code == 0 and junk == 0,
        "nothing raised to stdout and the session shut down normally (code=%d, junk=%d)"
        % (code, junk))
+one_answer_per_request(NW_MSGS, replies, "the workspace-null run")
+
+# --- M5 Task 10 fix round 1: the one cursor where includeDeclaration decides ----------
+# Every other wire references request sends TRUE (ids 110, 115, 120, 130, 142) or sends no
+# `context' at all (id 41, which defaults to FALSE and is not asked about the flag), so a
+# production regression that ignored the flag entirely was visible only in units. This document is
+# the shape the flag exists for: a TWO-LINE routine header puts the first parameter's declaration
+# on the line ABOVE the one the body region opens on, so inScope does not hold it and
+# includeDeclaration is the only thing that can add it (spec 11.9; the unit pin is
+# tests/features_test.sd7:614-619, and it never crossed a frame). The whole-line location is what
+# production emits -- start of the declaration line to start of the next -- because reflection
+# gives a declaration no column.
+HDR_TEXT = ('$ include "seed7_05.s7i";\n'
+            '  include "console.s7i";\n'
+            '\n'
+            'const proc: pair (in integer: left,\n'
+            '                   in integer: right) is func\n'
+            '  begin\n'
+            '    writeln(left + right);\n'
+            '  end func;\n'
+            '\n'
+            'const proc: main is func\n'
+            '  begin\n'
+            '    pair(2, 3);\n'
+            '  end func;\n')
+HDR_URI = "file:///tmp/tt_hdr_wire.sd7"
+HDR_LINES = HDR_TEXT.split("\n")
+HDR_DECL = HDR_LINES.index("const proc: pair (in integer: left,")
+HDR_USE = HDR_LINES.index("    writeln(left + right);")
+HDR_COL = HDR_LINES[HDR_USE].index("left")
+HDR_EXPECT = [{"uri": HDR_URI,
+               "range": {"start": {"line": HDR_DECL, "character": 0},
+                         "end": {"line": HDR_DECL + 1, "character": 0}}},
+              {"uri": HDR_URI,
+               "range": {"start": {"line": HDR_USE, "character": HDR_COL},
+                         "end": {"line": HDR_USE, "character": HDR_COL + 4}}}]
+HDR_MSGS = [APPLY, msgs[1], opened(HDR_URI, HDR_TEXT),
+            req(150, "textDocument/references",
+                dict(pos(HDR_URI, HDR_USE, HDR_COL + 2), context={"includeDeclaration": True})),
+            req(151, "textDocument/references",
+                 dict(pos(HDR_URI, HDR_USE, HDR_COL + 2), context={"includeDeclaration": False})),
+            shutdown(152), exit_()]
+replies, code, err, junk = run([frame(m) for m in HDR_MSGS])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+hdr_true = by_id.get(150, {}).get("result")
+hdr_false = by_id.get(151, {}).get("result")
+expect(hdr_true == HDR_EXPECT,
+       "includeDeclaration: true adds the declaration that sits above the region (%s)" % hdr_true)
+expect(hdr_false == HDR_EXPECT[1:],
+       "and the identical cursor asked with FALSE answers just the use -- the flag decides, it is "
+       "not ignored (%s; true was %s)" % (hdr_false, hdr_true))
+one_answer_per_request(HDR_MSGS, replies, "the includeDeclaration run")
+expect(junk == 0, "the includeDeclaration run put only frames on stdout (junk=%d)" % junk)
+
+# --- M5 Task 10 F1: a DEFECT RECORD -- a non-ASCII byte in a request body desyncs the read ---
+# `frame' writes json.dumps' DEFAULT ensure_ascii=True, which escapes every non-ASCII character
+# out of the body, so no frame this suite sent before this pin ever held a byte over 127. A real
+# client sends raw UTF-8 and a BYTE Content-Length; transport.sd7:73 hands that number to `gets` on
+# a UTF-8 file, which counts CHARACTERS, so the read runs one byte past the body and eats the first
+# byte of the next header. Measured today: the answered ids are [1] of 3 requests -- the hover and
+# the shutdown behind the non-ASCII body are never answered -- and stderr logs the mangled header.
+# After Task 12 reads a frame by BYTE this reddens with [1, 160, 161], which is the passing shape
+# and the check Task 12 needs. The control below is the SAME hand-built raw framing with a
+# BMP-free body: without it, a build that answered nothing at all would pass this pin.
+def raw_frame(obj):
+    """One frame with the body a real client sends: raw UTF-8, Content-Length its BYTE length.
+
+    `frame' is left alone -- it computes Content-Length from the encoded body too, but json.dumps'
+    escaping means that body is ASCII, so the two numbers always agreed there."""
+    body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    return b"Content-Length: %d\r\n\r\n" % len(body) + body
+
+
+def raw_msgs(text, uri):
+    """initialize, didOpen, hover, shutdown, exit -- as messages, so the run can count them."""
+    return [initialize(1), opened(uri, text),
+            req(160, "textDocument/hover", pos(uri, 2, 6)), shutdown(161), exit_()]
+
+
+def raw_seq(msgs_):
+    """Frame every message, EXCEPT the didOpen, which goes out raw: the byte-counted body is the
+    only difference between the two runs below, so the desync cannot be blamed on the builder."""
+    return [raw_frame(m) if m.get("method") == "textDocument/didOpen" else frame(m)
+            for m in msgs_]
+
+
+RAW_URI = "file:///tmp/tt_raw_utf8.sd7"
+RAW_TEXT = 'const proc: main is func\n  begin\n    writeln("\u03c0");\n  end func;\n'
+RAW_CTRL_URI = "file:///tmp/tt_raw_ascii.sd7"
+RAW_CTRL_TEXT = RAW_TEXT.replace("\u03c0", "p")
+replies, code, err, junk = run(raw_seq(raw_msgs(RAW_TEXT, RAW_URI)))
+raw_answered = sorted(r["id"] for r in replies if "id" in r and
+                      ("result" in r or "error" in r))
+expect(raw_answered == [1],
+       "DEFECT F1 (flips at Task 12): a didOpen body with ONE non-ASCII byte swallows the next "
+       "header, so the 2 requests behind it go unanswered -- ids answered %s of [1, 160, 161]"
+       % raw_answered)
+expect("frame without Content-Length" in err,
+       "and the desync surfaces as the mangled header the transport refuses (%r)" % err[-160:])
+expect(junk == 0, "the F1 run put only frames on stdout (junk=%d)" % junk)
+# one_answer_per_request is deliberately NOT applied to the run above: 3 requests and 1 answer IS
+# the defect. It is applied to the control, which has no excuse.
+CTRL_MSGS = raw_msgs(RAW_CTRL_TEXT, RAW_CTRL_URI)
+replies, code, err, junk = run(raw_seq(CTRL_MSGS))
+ctrl_answered = sorted(r["id"] for r in replies if "id" in r and
+                       ("result" in r or "error" in r))
+expect(ctrl_answered == [1, 160, 161],
+       "positive control: the same raw framing, BMP-free, is answered end to end (%s)"
+       % ctrl_answered)
+one_answer_per_request(CTRL_MSGS, replies, "the F1 control run")
+expect(junk == 0, "the F1 control run put only frames on stdout (junk=%d)" % junk)
 
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
