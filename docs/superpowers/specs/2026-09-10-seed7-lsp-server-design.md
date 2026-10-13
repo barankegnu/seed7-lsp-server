@@ -66,7 +66,7 @@ Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(S
   leaving `xtra-tail` to be read as the next frame's header,
   so any inbound body containing a non-ASCII byte consumes past its own frame and the next header
   read is garbage — the server stops answering mid-session (`/tmp/tp3.sd7`, re-run against
-  `src/transport.sd7:98`). The harness never saw it because `json.dumps` escapes every non-ASCII
+  `src/transport.sd7:73`). The harness never saw it because `json.dumps` escapes every non-ASCII
   character to `\uXXXX` unless `ensure_ascii=False` is passed, so no test body was ever non-ASCII.
   Real clients do not escape. Tracked as the inbound-framing defect; `tests/transcript.py` carries a
   pin that records today's behaviour and is written to flip when it is fixed.
