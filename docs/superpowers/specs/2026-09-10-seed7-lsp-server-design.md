@@ -60,7 +60,15 @@ Invariants — a violation of any of these is a defect, not a style preference:
 Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(STD_OUT, ...)` raises `RANGE_ERROR` on non-ASCII in a C locale, so the non-UTF8 std files are unusable for payload.
 
 - Headers: `getln(STD_UTF8_IN)` yields header lines with `\r\n` already stripped; an empty line terminates the header block.
-- Body: `gets(STD_UTF8_IN, n)` counts **bytes**, so `n` is `Content-Length` verbatim; a 104-byte body with multibyte URIs returns 97 characters, correctly decoded.
+- Body: **corrected 2026-10-13 — this line was wrong, and the correction is a shipped defect.** It
+  claimed `gets(STD_UTF8_IN, n)` counts bytes, so `Content-Length` could be passed verbatim. It
+  counts CHARACTERS: reading 3 from a buffer holding `éa` yields 3 characters and consumes 5 bytes,
+  so any inbound body containing a non-ASCII byte consumes past its own frame and the next header
+  read is garbage — the server stops answering mid-session (`/tmp/tp.sd7`, re-run against
+  `src/transport.sd7:98`). The harness never saw it because `json.dumps` escapes every non-ASCII
+  character to `\uXXXX` unless `ensure_ascii=False` is passed, so no test body was ever non-ASCII.
+  Real clients do not escape. Tracked as the inbound-framing defect; `tests/transcript.py` carries a
+  pin that records today's behaviour and is written to flip when it is fixed.
 - Outbound: `Content-Length` must be the UTF-8 byte length of the payload, which Seed7's `length()` does not give (it counts characters). `transport.sd7` provides `utf8Length(stri)` — 1/2/3/4 bytes per code point by `ord(c)` thresholds — and writes `"Content-Length: " <& utf8Length(payload) <& "\r\n\r\n" <& payload` to `STD_UTF8_OUT` then flushes.
 
 ### 3.2 JSON (verified, one trap)
