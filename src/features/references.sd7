@@ -31,17 +31,20 @@ const proc: emitLocation (inout jsonWriter: w, in string: docUri,
     closeObject(w);
   end func;
 
-# TRUE when the declaration line is already among the occurrences about to be published. The
-# declaration of a local or a global always carries the name, so this is the ordinary case; it
-# holds the answer to one location per occurrence instead of two for the same line.
-const func boolean: declPublished (in array occurrence: scoped,
+# TRUE when the declaration line is already among the occurrences that ARE about to be
+# published -- `emitted' of them, not `length(scoped)'. On a capped answer the record past
+# MAX_OCCURRENCES is the sentinel and is not published, so a declaration on THAT line is not
+# among the published locations and has to be added. The declaration of a local or a global
+# always carries the name, so the ordinary case is the one that is skipped: it keeps the answer
+# to one location per occurrence instead of two for the same line.
+const func boolean: declPublished (in array occurrence: scoped, in integer: emitted,
                                    in integer: declLine1) is func
   result
     var boolean: out is FALSE;
   local
     var integer: i is 0;
   begin
-    for i range 1 to length(scoped) do
+    for i range 1 to emitted do
       if scoped[i].line0 = pred(declLine1) then
         out := TRUE;
       end if;
@@ -73,21 +76,28 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
       # number or a bracket, both of which wordAt does report as a word. Either would otherwise
       # search for the literal text, find nothing, and report the name as unused (spec 5).
       # The empty word is the guard above -- a comment, a literal, a suppressed operator
-      # character, or a position past the line's last token. A position BETWEEN tokens is not
-      # empty: wordAt is left-of-character, so a cursor one past a name answers that name.
+      # character, an illegal byte, or whitespace with NO TOKEN TO ITS LEFT, which in practice
+      # is a line's leading indentation. Anywhere else between tokens the answer is not empty:
+      # wordAt is left-of-character, so a cursor one past a name -- and one past the line's
+      # LAST token -- answers that token.
       if not b.keyword and length(oc) <> 0 then
         scoped := inScope(oc, b);
-        openArray(w);
-        # A declaration outside this document is never emitted: its line numbers a file the
-        # client did not open, and that jump is the shipped definitionProvider's job.
-        # `declLine1' is 0 exactly when no declaration OF THIS DOCUMENT has the name.
-        if includeDeclaration and b.declLine1 <> 0 and not declPublished(scoped, b.declLine1) then
-          emitLocation(w, docUri, lspWholeLine(b.declLine1));
-        end if;
         emitted := length(scoped);
         if emitted > MAX_OCCURRENCES then
           # The record past the cap is the sentinel that proves truncation, not a location.
           emitted := MAX_OCCURRENCES;
+        end if;
+        openArray(w);
+        # A declaration outside this document is never emitted: its line numbers a file the
+        # client did not open, and that jump is the shipped definitionProvider's job.
+        # `declLine1' is 0 exactly when no declaration OF THIS DOCUMENT has the name.
+        # Both bounds are `emitted': the dedupe test below may not count a record the loop
+        # after it does not publish.
+        # The cap counts occurrence RECORDS, not locations, so a capped answer asked with
+        # includeDeclaration carries MAX_OCCURRENCES + 1 locations.
+        if includeDeclaration and b.declLine1 <> 0 and
+             not declPublished(scoped, emitted, b.declLine1) then
+          emitLocation(w, docUri, lspWholeLine(b.declLine1));
         end if;
         for i range 1 to emitted do
           emitLocation(w, docUri,

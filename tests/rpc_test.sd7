@@ -34,5 +34,7 @@ const proc: main is func
           str(boolAt(bp, "gone", TRUE)), "TRUE");
     check("a number in a boolean slot answers the fallback, not a raise",
           str(boolAt(bp, "n", TRUE)), "TRUE");
+    check("a string in a boolean slot answers the fallback, not a raise",
+          str(boolAt(bp, "s", TRUE)), "TRUE");
     report("rpc");
   end func;

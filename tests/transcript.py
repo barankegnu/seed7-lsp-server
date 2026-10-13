@@ -283,22 +283,25 @@ REF_EXPECT = [(REF_DECL, REF_LINES[REF_DECL].index("pix"),
                REF_LINES[REF_DECL].index("pix") + 3),
               (REF_USE, REF_LINES[REF_USE].index("pix"),
                REF_LINES[REF_USE].index("pix") + 3)]
-replies, code, err, junk = run([
-    frame(msgs[0]), frame(msgs[1]),
-    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+REF_MSGS = [
+    msgs[0], msgs[1],
+    notify("textDocument/didOpen",
            {"textDocument": {"uri": "file:///tmp/tt_syms.sd7", "languageId": "seed7",
-                             "version": 1, "text": SYMS}}}),
+                             "version": 1, "text": SYMS}}),
     # line 31 is `    writeln(totalSize(prototype, 2));`; character 16 is inside
     # "totalSize", so hover must report the func declared in this buffer.
-    frame({"jsonrpc": "2.0", "id": 40, "method": "textDocument/hover", "params":
-           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
-            "position": {"line": 31, "character": 16}}}),
-    frame({"jsonrpc": "2.0", "id": 41, "method": "textDocument/references", "params":
-           {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
-            "position": {"line": REF_DECL, "character": REF_CHAR}}}),
-    frame({"jsonrpc": "2.0", "id": 42, "method": "shutdown"}),
-    frame({"jsonrpc": "2.0", "method": "exit"}),
-])
+    req(40, "textDocument/hover", pos("file:///tmp/tt_syms.sd7", 31, 16)),
+    req(41, "textDocument/references", pos("file:///tmp/tt_syms.sd7", REF_DECL, REF_CHAR)),
+    # The dispatcher's unknown-method branch needs a method that stays unimplemented for the
+    # whole of M5: typeDefinition is not on this milestone's list, so this pin cannot go
+    # falsely red two tasks from now. (rename/prepareRename are Tasks 8-9 -- do NOT pin those.)
+    req(43, "textDocument/typeDefinition", pos("file:///tmp/tt_syms.sd7", REF_DECL, REF_CHAR)),
+    # The other half of the same rule: an unknown NOTIFICATION is answered with silence.
+    notify("$/unknownThing", {}),
+    shutdown(42),
+    exit_(),
+]
+replies, code, err, junk = run([frame(m) for m in REF_MSGS])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 hv = (by_id.get(40, {}).get("result") or {}).get("contents", {}).get("value", "")
 expect("func integer: totalSize" in hv, "hover on a buffer symbol shows its signature (%r)" % hv)
@@ -314,10 +317,19 @@ log_at = next((i for i, r in enumerate(replies)
                r.get("params", {}).get("type") == 3 and
                "pix" in r["params"].get("message", "")), None)
 ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 41), None)
-expect(log_at is not None and ans_at is not None and log_at < ans_at and junk == 0,
-       "an unproved binding logs to the client before the answer, frames only (%s, %s)"
-       % (log_at, ans_at))
-
+expect(log_at is not None and ans_at is not None and log_at < ans_at,
+       "an unproved binding logs to the client before the answer (%s, %s)" % (log_at, ans_at))
+expect(junk == 0, "the references run put only frames on stdout (junk=%d)" % junk)
+expect(by_id.get(43, {}).get("error", {}).get("code") == -32601,
+       "a method not implemented in M5 is -32601, got %r" % by_id.get(43, {}))
+# An answer to a notification would be a frame carrying result or error, so the number of
+# answers must equal the number of requests sent. Counted from the messages, so adding a
+# request to the run cannot silently move the number -- and one answer too many is the red.
+REQUESTS = len([m for m in REF_MSGS if "id" in m])
+answered = [r for r in replies if "result" in r or "error" in r]
+expect(len(answered) == REQUESTS,
+       "an unknown notification gets no reply (%d requests, %d answers)"
+       % (REQUESTS, len(answered)))
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
 # so editing the fixture cannot silently move it -- and one attempt at this check had

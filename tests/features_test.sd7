@@ -52,16 +52,16 @@ const func wordRef: exact (in string: nm) is func
     out.width := length(nm);
   end func;
 
-# referencesAnswer keys on `word.word' and `word.line1' only, so this fabricated wordRef
-# carries those plus the column the cursor sits at; `character1' stays 0 rather than inventing
-# a UTF-16 column -- a real request's wordRef comes from wordAt, which fills it.
-const func wordRef: atLine (in string: nm, in integer: ln1, in integer: column1) is func
+# referencesAnswer keys on `word.word' and `word.line1' ONLY, so this carrier takes no column:
+# position granularity is not under test here and a reader must not believe it is. A real
+# request's wordRef comes from wordAt, which fills column1/character1/width -- the checks that
+# need a real column call wordAt on the fixture instead of fabricating one.
+const func wordRef: atLine (in string: nm, in integer: ln1) is func
   result
     var wordRef: out is wordRef.value;
   begin
     out.word := nm;
     out.line1 := ln1;
-    out.column1 := column1;
     out.width := length(nm);
   end func;
 
@@ -132,17 +132,19 @@ const func string: refsText is func
            "  end func;\n";
   end func;
 
-# One buffer declaration named `count', at line 1, with no scope entries. Enough for
-# resolveBinding's global row, and the only way to reach the occurrence cap with a BINDING --
-# 2 000 lines of `count := 1;' is not a program, and the cap is a property of the pass.
-const func array symRec: countGlobalSyms is func
+# A buffer declaration named `count', with no scope entries. Enough for resolveBinding's global
+# row, and the only way to reach the occurrence cap with a BINDING -- 2 000 lines of
+# `count := 1;' is not a program, and the cap is a property of the pass. `declLine1' is the line
+# the declaration sits on, so the capped answer can be asked with its declaration placed past
+# the cut.
+const func array symRec: countGlobalSyms (in integer: declLine1) is func
   result
     var array symRec: out is 0 times symRec.value;
   local
     var symRec: rec is symRec.value;
   begin
     rec.name := "count"; rec.cat := "INTOBJECT"; rec.ty := "integer";
-    rec.file := BUFFER_FILE; rec.line1 := 1; rec.sign := "var integer: count";
+    rec.file := BUFFER_FILE; rec.line1 := declLine1; rec.sign := "var integer: count";
     out &:= rec;
   end func;
 
@@ -472,7 +474,7 @@ const proc: main is func
     check("the references fixture analyses clean", str(length(rd.parsed.diags)), "0");
     # A local: only its own routine's region. Broken value if the global row answered instead
     # is 2 (the two lines outside show), and if nothing bound at all it is 5 (every `counter').
-    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15, 5), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15), refUri, FALSE);
     check("a local's references are its own region only", str(uriCount(ra.json)), "3");
     check("every location carries an exact character range", str(endCount(ra.json)), "3");
     check("a bound symbol is not reported unresolved", str(ra.unresolved), "FALSE");
@@ -480,13 +482,13 @@ const proc: main is func
     # includeDeclaration on the local adds nothing: its declaration line is already one of the
     # occurrences above, published with an exact column. Broken value is 4 -- two locations for
     # one line, one of them the worse whole-line range.
-    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15, 5), refUri, TRUE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15), refUri, TRUE);
     check("a declaration already in the list is not published twice", str(uriCount(ra.json)), "3");
     # The global, at the cursor on the astral line. The whole answer is pinned because this is
     # the first feature whose ranges are not line-based: `counter' sits at UTF-16 column 19
     # there, and routing the location through lspRange (which converts a CHARACTER column)
     # would report 20-27.
-    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 25, 20), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 25), refUri, FALSE);
     check("the global loses the shadowing routine's occurrences, with exact columns",
           ra.json,
           "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
@@ -496,10 +498,10 @@ const proc: main is func
     # The two-line header: reflection reports `left' at line 10 while show's body region opens
     # at line0 10, so the declaration is NOT among the published occurrences and
     # includeDeclaration is the only thing that puts it in the answer. FALSE must be 1.
-    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15, 16), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15), refUri, FALSE);
     check("without includeDeclaration the declaration above the region stays out",
           str(uriCount(ra.json)), "1");
-    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15, 16), refUri, TRUE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15), refUri, TRUE);
     check("includeDeclaration adds it as a whole line, because reflection has no column",
           ra.json,
           "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
@@ -508,7 +510,7 @@ const proc: main is func
           & "{\"start\":{\"line\":14,\"character\":15},\"end\":{\"line\":14,\"character\":19}}}]");
     # A struct field: no declaration source exists (spec 11.10), so the binding is unproved and
     # the answer is every same-named token plus the log line (spec 2's over-inclusive read).
-    ra := referencesAnswer(rdoc, rsyms, atLine("pix", 23, 9), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("pix", 23), refUri, FALSE);
     check("a field answers every same-named token", str(uriCount(ra.json)), "3");
     check("a field says the binding was unresolved", str(ra.unresolved), "TRUE");
     check("the log line names the reason", ra.why,
@@ -517,11 +519,11 @@ const proc: main is func
     # The same name on its OWN declaration line is not dot-selected, so resolveBinding answers
     # owner "" there and owner "field" here. R40: the feature branches on `resolved', so the two
     # answers must be identical -- a check that reddens any special case built on owner.
-    fb := referencesAnswer(rdoc, rsyms, atLine("pix", 5, 18), refUri, FALSE);
+    fb := referencesAnswer(rdoc, rsyms, atLine("pix", 5), refUri, FALSE);
     check("an unbound name and a field get the same answer", str(ra.json = fb.json), "TRUE");
     # A library symbol is resolved, so it does not log; and its declarations live in files the
     # client never opened, so declLine1 0 must not become a whole-line location at line -1.
-    ra := referencesAnswer(rdoc, rsyms, atLine("writeln", 25, 5), refUri, TRUE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("writeln", 25), refUri, TRUE);
     check("a library symbol answers this file's occurrences, and no library declaration",
           str(uriCount(ra.json)), "2");
     check("a library symbol is resolved, so it has nothing to log",
@@ -532,15 +534,21 @@ const proc: main is func
     # occurrences are also the `const type:' of Widget -- so references must answer them. A
     # feature that gated on keywordList before resolving would answer null here: the feature-level
     # witness for the ordering occurrences.sd7 pins in its own suite.
-    ra := referencesAnswer(rdoc, rsyms, atLine("type", 28, 20), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("type", 28), refUri, FALSE);
     check("a declared name that is also a vocabulary word still gets its references",
           str(uriCount(ra.json)), "2");
     # The null answers. A keyword binds to nothing by the gate and an empty word is no token at
     # all; both answer null rather than [], which would read "unused".
-    ra := referencesAnswer(rdoc, rsyms, atLine("begin", 22, 3), refUri, FALSE);
+    ra := referencesAnswer(rdoc, rsyms, atLine("begin", 22), refUri, FALSE);
     check("a keyword answers null, not an empty list", ra.json, "null");
     check("a keyword is not unresolved either", str(ra.unresolved), "FALSE");
-    ra := referencesAnswer(rdoc, rsyms, wordRef.value, refUri, FALSE);
+    # The empty word, from real input rather than a hand-built record: a line's LEADING
+    # indentation is the state most Seed7 source answers (every indented line), and wordAt has
+    # no token to its left there. doc_store_test pins the same rule for `two'; this is the
+    # references-side witness that the guard above is reached by an ordinary cursor.
+    realWord := wordAt(rdoc, 14, 1);
+    check("leading indentation reaches the feature as the empty word", realWord.word, "");
+    ra := referencesAnswer(rdoc, rsyms, realWord, refUri, FALSE);
     check("a position with no token answers null", ra.json, "null");
     # A number and a bracket ARE words to wordAt -- the client sends the cursor there -- but the
     # index holds neither, so searching for the literal text would answer [] instead of null.
@@ -550,12 +558,23 @@ const proc: main is func
     check("a number token answers null, not an empty list", ra.json, "null");
     ra := referencesAnswer(rdoc, rsyms, wordAt(rdoc, 23, 9), refUri, FALSE);
     check("a bracket token answers null, not an empty list", ra.json, "null");
+    # An OPERATOR run is TK_OP, which IS indexable, so it is neither gated nor empty: the answer
+    # is a real list of every occurrence in the file. Measured: the analyzer's table carries `+',
+    # so resolveBinding's library row RESOLVES it and `unresolved' is FALSE. That is the seam
+    # Task 8 inherits -- rename must refuse this cursor on the binding's owner, not on
+    # `unresolved', because an operator can be both answered and resolved here.
+    ra := referencesAnswer(rdoc, rsyms, wordAt(rdoc, 14, 20), refUri, FALSE);
+    check("an operator cursor answers its occurrences, not null", ra.json,
+          "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":14,\"character\":20},\"end\":{\"line\":14,\"character\":21}}}]");
+    check("and a TK_OP can be resolved, so rename cannot key its refusal on unresolved",
+          str(ra.unresolved), "FALSE");
     # ---- the occurrence cap, and whose length `capped' reads (R39) ---------------
     for k range 1 to MAX_OCCURRENCES do
       capText &:= "count := 1;\n";
     end for;
     setVersion(capDoc, capText, 1);
-    capAns := referencesAnswer(capDoc, countGlobalSyms(), atLine("count", 1, 1), capUri, FALSE);
+    capAns := referencesAnswer(capDoc, countGlobalSyms(1), atLine("count", 1), capUri, FALSE);
     check("exactly MAX_OCCURRENCES locations is not a truncated answer",
           str(capAns.unresolved), "FALSE");
     check("and all of them are published", str(uriCount(capAns.json)), "2000");
@@ -563,13 +582,30 @@ const proc: main is func
     setVersion(capDoc, capText, 1);
     check("the capped text really holds one occurrence more than the cap",
           str(length(occurrencesOf(capText, "count"))), str(MAX_OCCURRENCES + 1));
-    capAns := referencesAnswer(capDoc, countGlobalSyms(), atLine("count", 1, 1), capUri, FALSE);
+    capAns := referencesAnswer(capDoc, countGlobalSyms(1), atLine("count", 1), capUri, FALSE);
     check("one more occurrence truncates the list, and says so", str(capAns.unresolved), "TRUE");
     check("the 2001st record is the sentinel, not a location to publish",
           str(uriCount(capAns.json)), "2000");
     check("the truncated answer names the truncation", capAns.why,
           "references: count has more occurrences than this server lists," <&
           " so the result is truncated");
+    # Both disclosures at once, from real input. The `else' arm that composes the two sentences
+    # needs `not b.resolved' AND `b.capped' together, and every capped check above passes a
+    # RESOLVED global, so without this line that arm is reachable only from a mutation. An
+    # undeclared name with more occurrences than the cap is what separates them: no symbols at
+    # all, so nothing binds `count', while the same 2 001-line document is still truncated.
+    capAns := referencesAnswer(capDoc, 0 times symRec.value, atLine("count", 1), capUri, FALSE);
+    check("an undeclared name past the cap names both reasons", capAns.why,
+          "references: count does not bind to a declaration of this file, so every occurrence" <&
+          " of it is listed, and the list is truncated at 2000");
+    # The declaration is the 2001st occurrence, the record the publish loop stops before. The
+    # dedupe test must be bounded by `emitted' as the loop is, or that line is in neither list:
+    # neither published as an occurrence nor added as a whole line. With both bounds it is added
+    # -- and the answer carries MAX_OCCURRENCES + 1 locations, because the cap counts occurrence
+    # RECORDS, not locations.
+    capAns := referencesAnswer(capDoc, countGlobalSyms(2001), atLine("count", 1), capUri, TRUE);
+    check("a capped answer still publishes the declaration past the cut",
+          str(uriCount(capAns.json)), "2001");
     # R39: `capped' is a fact about the ARRAY the caller hands resolveBinding -- which is the
     # list it publishes. The text above has MAX_OCCURRENCES + 1 occurrences, so a resolveBinding
     # that measured the text instead of its parameter would report a truncated document as
