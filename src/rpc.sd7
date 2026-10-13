@@ -62,6 +62,23 @@ const func integer: intAt (in jsonValue: obj, in string: name,
     end if;
   end func;
 
+# The boolean reader. Total like intAt: `boolean(jsonValue)' raises ILLEGAL_ACTION for anything
+# that is not JSON_BOOLEAN, and a client may send a number or a string in a boolean slot --
+# `context.includeDeclaration' and `workspace.applyEdit' are both read through this.
+const func boolean: boolAt (in jsonValue: obj, in string: name,
+                            in boolean: fallback) is func
+  result
+    var boolean: value is FALSE;
+  local
+    var jsonValue: found is jsonValue.value;
+  begin
+    value := fallback;
+    found := atKey(obj, name);
+    if category(found) = JSON_BOOLEAN then
+      value := boolean(found);
+    end if;
+  end func;
+
 const func jsonValue: itemAt (in jsonValue: arr, in integer: index) is func
   result
     var jsonValue: value is jsonValue.value;

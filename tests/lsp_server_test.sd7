@@ -5,11 +5,11 @@ $ include "seed7_05.s7i";
 const array string: HANDLED is
   []("textDocumentSync", "positionEncoding", "completionProvider",
      "hoverProvider", "signatureHelpProvider", "definitionProvider",
-     "documentSymbolProvider", "foldingRangeProvider",
+     "documentSymbolProvider", "referencesProvider", "foldingRangeProvider",
      "selectionRangeProvider", "semanticTokensProvider");
 
 const array string: UNHANDLED is
-  []("diagnosticProvider", "referencesProvider", "renameProvider",
+  []("diagnosticProvider", "renameProvider",
      "implementationProvider", "typeDefinitionProvider", "declarationProvider",
      "workspaceSymbolProvider", "documentFormattingProvider",
      "documentHighlightProvider", "codeActionProvider", "colorProvider",

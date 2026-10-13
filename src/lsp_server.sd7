@@ -15,8 +15,13 @@ $ include "seed7_05.s7i";
   include "features/folding_range.sd7";
   include "features/selection_range.sd7";
   include "features/semantic_tokens.sd7";
+  include "features/references.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
+
+# window/logMessage MessageType.Info. Deliberately not diagnostics.sd7's SEV_INFORMATION: the
+# two enums share the number 3 and nothing else.
+const integer: MSG_INFO is 3;
 
 const type: docMap is hash [string] lsDoc;
 
@@ -52,6 +57,21 @@ const proc: handlerFailed (in string: kind, in string: body) is func
     sendError(0, -32603, "internal error: " <& kind);
   end func;
 
+# A line the feature said it needed the user to see, sent to the client as a window/logMessage
+# BEFORE whatever answer follows, and mirrored to stderr. Both halves are frames or stderr: this
+# is the only place a log line reaches the protocol channel, and nothing writes it to stdout.
+const proc: logMessage (in string: text) is func
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    note(text);
+    openObject(w);
+      field(w, "type");    addInt(w, MSG_INFO);
+      field(w, "message"); addStr(w, text);
+    closeObject(w);
+    sendNotification("window/logMessage", finishJson(w));
+  end func;
+
 const func string: capabilitiesJson is func
   result
     var string: out is "";
@@ -78,6 +98,7 @@ const func string: capabilitiesJson is func
       field(w, "hoverProvider"); addBool(w, TRUE);
       field(w, "definitionProvider"); addBool(w, TRUE);
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
+      field(w, "referencesProvider"); addBool(w, TRUE);
       field(w, "foldingRangeProvider"); addBool(w, TRUE);
       field(w, "selectionRangeProvider"); addBool(w, TRUE);
       field(w, "semanticTokensProvider");
@@ -244,6 +265,7 @@ const proc: handle (in rpcMsg: msg) is func
     var integer: fromLine is 0;
     var integer: toLine is 0;
     var jsonValue: span is jsonValue.value;
+    var refsAnswer: refs is refsAnswer.value;
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
@@ -283,6 +305,22 @@ const proc: handle (in rpcMsg: msg) is func
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, definitionResult(symbolsOfDocument(uri),
                      wordOfRequest(msg), uri));
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/references" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        refs := referencesAnswer(openDocs[uri], symbolsOfDocument(uri), wordOfRequest(msg),
+                                 uri,
+                                 boolAt(atKey(msg.params, "context"), "includeDeclaration",
+                                        FALSE));
+        # The disclosure goes out before the answer it describes, so a client that shows the
+        # notification cannot be handed a wider list than the symbol without being told.
+        if refs.unresolved then
+          logMessage(refs.why);
+        end if;
+        sendResult(msg.id, refs.json);
       else
         sendResult(msg.id, "null");
       end if;

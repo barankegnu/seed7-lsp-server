@@ -269,7 +269,20 @@ expect(isinstance(lib, list) and bool(lib) and
        "definition into the library returns .s7i locations, got %d" % len(lib or []))
 expect(by_id.get(32, {}).get("result") is None, "definition on punctuation is null")
 
-# --- M3: hover on a symbol declared in the buffer, and an unimplemented method ---
+# --- M5: references, and the log line an unproved binding owes the client ---
+# The cursor is on the struct field declaration `var integer: pix is 0;', whose name no
+# declaration source reaches (spec 11.10), so the binding is unproved: the answer is every
+# `pix' token in the file AND a window/logMessage that arrives BEFORE the answer. The
+# positions come from the fixture text, as everywhere else here, so editing symbols.sd7
+# cannot silently move them.
+REF_LINES = SYMS.split("\n")
+REF_DECL = REF_LINES.index("    var integer: pix is 0;")
+REF_USE = REF_LINES.index("    total := w.pix * factor;")
+REF_CHAR = REF_LINES[REF_DECL].index("pix") + 1        # inside the three letters
+REF_EXPECT = [(REF_DECL, REF_LINES[REF_DECL].index("pix"),
+               REF_LINES[REF_DECL].index("pix") + 3),
+              (REF_USE, REF_LINES[REF_USE].index("pix"),
+               REF_LINES[REF_USE].index("pix") + 3)]
 replies, code, err, junk = run([
     frame(msgs[0]), frame(msgs[1]),
     frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
@@ -282,7 +295,7 @@ replies, code, err, junk = run([
             "position": {"line": 31, "character": 16}}}),
     frame({"jsonrpc": "2.0", "id": 41, "method": "textDocument/references", "params":
            {"textDocument": {"uri": "file:///tmp/tt_syms.sd7"},
-            "position": {"line": 31, "character": 24}}}),
+            "position": {"line": REF_DECL, "character": REF_CHAR}}}),
     frame({"jsonrpc": "2.0", "id": 42, "method": "shutdown"}),
     frame({"jsonrpc": "2.0", "method": "exit"}),
 ])
@@ -290,8 +303,20 @@ by_id = {r.get("id"): r for r in replies if "id" in r}
 hv = (by_id.get(40, {}).get("result") or {}).get("contents", {}).get("value", "")
 expect("func integer: totalSize" in hv, "hover on a buffer symbol shows its signature (%r)" % hv)
 expect(hv.startswith("```seed7"), "hover body is a seed7 fence (%r)" % hv[:12])
-expect(by_id.get(41, {}).get("error", {}).get("code") == -32601,
-       "references is still unimplemented -> -32601")
+refs = by_id.get(41, {}).get("result")
+expect(isinstance(refs, list) and
+       [(l["range"]["start"]["line"], l["range"]["start"]["character"],
+         l["range"]["end"]["character"]) for l in refs] == REF_EXPECT and
+       all(l["uri"] == "file:///tmp/tt_syms.sd7" for l in refs),
+       "references answers this file's occurrences with exact columns (%s)" % refs)
+log_at = next((i for i, r in enumerate(replies)
+               if r.get("method") == "window/logMessage" and
+               r.get("params", {}).get("type") == 3 and
+               "pix" in r["params"].get("message", "")), None)
+ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 41), None)
+expect(log_at is not None and ans_at is not None and log_at < ans_at and junk == 0,
+       "an unproved binding logs to the client before the answer, frames only (%s, %s)"
+       % (log_at, ans_at))
 
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
