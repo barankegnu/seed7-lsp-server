@@ -632,7 +632,7 @@ Nothing in Tasks 7–9 is believed until it has been through a real frame with a
 - Consumes: the running server, unchanged.
 - Produces: the golden transcript checks named below; no production file is touched by this task, and if one must be, that is a defect found here.
 
-- [ ] **Step 1: Write the failing run.** Add to `tests/transcript.py`, in the existing `req`/`notify` idiom and against the fixture already open:
+- [ ] **Step 1: Write the failing run.** *(Partly superseded — Tasks 7–9 shipped wire checks as they went and Task 10 closed the remainder; its report's inventory is the authority. What survives here is the astral/UTF-16 case, which Task 12 unblocks.)* Add to `tests/transcript.py`, in the existing `req`/`notify` idiom and against the fixture already open:
 
 ```python
 expect(caps["referencesProvider"] is True, "initialize advertises referencesProvider")
@@ -697,3 +697,78 @@ make test                                        # 0 failed, and the new totals
 git add docs/ README.md AGENTS.md tools/corpus_scan.sh
 git commit -m "M5 shipped: the design's M5 row, two corrected numbers, and a corpus gate"
 ```
+
+---
+
+## Task 12: `src/transport.sd7` — read a frame body by BYTE, as `Content-Length` says
+
+Found by Task 10 and reproduced by the controller. `src/transport.sd7:73` does
+`body := gets(STD_UTF8_IN, contentLength)`, and `gets` on a `utf8File` (`seed7/lib/utf8.s7i:132` →
+`utf8_gets`) counts **characters**. Measured: reading 3 from a buffer holding `éa` consumes 5 bytes
+and leaves the remainder unread, so any inbound body with a non-ASCII byte reads past its own frame
+and the next header read is garbage. It hid for four milestones because `tests/transcript.py` writes
+bodies with `json.dumps`, which escapes non-ASCII to `\uXXXX` unless `ensure_ascii=False` is passed —
+so no test body was ever non-ASCII. Real clients do not escape. The parent design's §3.1 claimed the
+opposite and called it verified; that sentence is corrected in this plan's history. Do not
+re-litigate it.
+
+**Files:** Modify: `src/transport.sd7`; Modify: `tests/transport_test.sd7`; Modify:
+`tests/transcript.py` (raw-UTF-8 bodies become sendable here, which closes the wire gap Task 10
+reported as unreachable).
+**Interfaces:** Consumes: `utf8bytes.utf8Length`, the outbound byte count this module already owns.
+Produces: `readMessage` with an unchanged signature, returning a body whose bytes were consumed
+exactly.
+
+- [ ] **Step 1: Write the failing check.** Two frames in one stream where the first body contains a
+  2-byte and a 4-byte character; the second frame must be parsed and answered. Expected red: the
+  answer for the second id is absent, because the reader resyncs mid-frame. Name that red.
+- [ ] **Step 2: Find the byte-exact route by measurement, not by assumption.** Candidates to probe
+  before trusting: read `STD_IN` as bytes and decode (measure whether `string(bstring)` at
+  `seed7/lib/bstring.s7i:59` performs UTF-8 decoding or a byte-per-character copy — the controller
+  could not even construct a `bstring` from `chr(195) & chr(165)`, `Match for
+  {CHR_ICONV1(chr(195)) & chr(165) } failed`, so the construction itself needs measuring); or read
+  characters and consume the residual bytes the frame arithmetic implies. Record in the module
+  comment how many bytes each candidate consumes for the fixture string. `utf8_gets` has no proven
+  byte mode; do not assume one.
+- [ ] **Step 3: Implement and prove both directions.** `make test-transport` green with every
+  existing check unchanged in value, plus the new two-frame check. Reverting to
+  `gets(STD_UTF8_IN, contentLength)` must redden it; so must a decode that emits one character per
+  byte. State the value each produces.
+- [ ] **Step 4: Close Task 10's unreachable wire gap.** With raw bodies surviving, add the wire
+  check Task 10 could not write: an astral character delivered raw in `didOpen` text, arriving as
+  ONE character, with a `references` or `rename` column that separates UTF-16 from characters
+  (`x := "é😀"; amount := 1;` → char 11, UTF-16 12, byte 15). Leave Task 10's defect pin where it
+  is; Task 13 flips it.
+- [ ] **Step 5: Commit.** Report: bytes consumed per candidate, both proofs, and whether the
+  README's client snippets may now claim non-ASCII documents.
+
+## Task 13: the RPC string readers join surrogate pairs, so `"\ud83d\ude00"` is one character
+
+Also from Task 10, measured by the controller: `readJson` expands `"\uD83D\uDE00"` into TWO
+characters (`ord` = 55357, a lone surrogate), so an astral character sent in JSON escape form arrives
+as two code points. `doc_store` then counts 2 characters and 2 UTF-16 units where the client meant 1
+character and 2 units — the columns coincidentally agree, which is the only reason the wire could not
+see the `lspRange` bug class in Tasks 4 and 9. The user-visible damage is worse than a column: the
+analyzer's scanner rejects each lone surrogate, so a file containing an emoji publishes bogus Errors —
+measured as 4 diagnostics for 2 astral characters.
+
+**Files:** Modify: `src/rpc.sd7` (`strAt` and any sibling that reads a string out of a parsed
+value); Modify: `tests/rpc_test.sd7`; Modify: `tests/transcript.py` — the F2 defect pin at
+`tests/transcript.py:786-791` MUST flip in this commit; that flip is the acceptance test.
+**Interfaces:** Consumes `readJson`'s output. Produces `const func string: joinSurrogates (in
+string: stri) is func`, total — a stray lone surrogate passes through unchanged rather than raising,
+because an exception in this module reaches the protocol channel.
+
+- [ ] **Step 1: Write the failing checks.** `joinSurrogates` over: a valid pair, two pairs, a lone
+  high, a lone low, a BMP-only string, and the empty string. Build the pair from the value
+  `readJson` actually produced (55357 / 0xD83D), not from a `\uD83D` literal typed into the test
+  file — the typed literal is a different input and would test the wrong thing.
+- [ ] **Step 2: Implement** the arithmetic `(high − 0xD800) × 0x400 + (low − 0xDC00) + 0x10000` in
+  one pass, with the totality rule above, and call it from the string readers so the fix lands where
+  every caller benefits.
+- [ ] **Step 3: Flip the pin.** Task 10's F2 expectation becomes "the astral document publishes NO
+  diagnostics". Keep its comment and history rather than rewriting it as if the bug never existed.
+  Prove the flip: revert `joinSurrogates` to identity and require the wire check to go red.
+- [ ] **Step 4: Commit.** Then report whether `hover`'s reconstructed signatures and the analyzer's
+  byte-column diagnostics now agree about astral text. If they do not, that is a finding for the
+  whole-branch review, not a change to make here.
