@@ -158,6 +158,9 @@ const proc: main is func
     var string: oneLine is "";
     var docAnalysis: od is docAnalysis.value;
     var array symRec: osyms is 0 times symRec.value;
+    var string: nested is "";
+    var docAnalysis: nd is docAnalysis.value;
+    var array symRec: nsyms is 0 times symRec.value;
     var string: capText is "";
     var array symRec: noSyms is 0 times symRec.value;
     var integer: i is 0;
@@ -285,6 +288,37 @@ const proc: main is func
     b := resolveBinding(oneLine, osyms, "count", 0, pred(linesIn(oneLine)), DOC);
     check("an unpaired routine captures no line, not even line 0",
           bindPin(b), "count|global|TRUE|FALSE|FALSE|3");
+
+    # ---- row 1's measured limit: a nested routine is not a globalObjects entry -----
+    # `inner' appears only as an entry of outer's own scope (BLOCKOBJECT, line1 5) and has no
+    # symRec of its own, so its locals are invisible: a cursor inside inner's body binds
+    # OUTER's `count' and outer's wider region. Over-inclusive on well-formed code -- spec
+    # section 4's nested case -- recorded here rather than left for a rename to discover while
+    # rewriting two declarations that were meant to be one.
+    nested := "$ include \"seed7_05.s7i\";\n" <&
+              "const proc: outer is func\n" <&
+              "  local\n" <&
+              "    var integer: count is 0;\n" <&
+              "    const proc: inner is func\n" <&
+              "      local\n" <&
+              "        var integer: count is 0;\n" <&
+              "      begin\n" <&
+              "        count := 2;\n" <&
+              "      end func;\n" <&
+              "  begin\n" <&
+              "    count := 1;\n" <&
+              "    inner;\n" <&
+              "  end func;\n" <&
+              "const proc: main is func\n" <&
+              "  begin\n" <&
+              "    outer;\n" <&
+              "  end func;\n";
+    nd := analysisOf(nested, DOC);
+    nsyms := nd.syms;
+    check("the nested fixture analyses clean", str(length(nd.parsed.diags)), "0");
+    b := resolveBinding(nested, nsyms, "count", 8, pred(linesIn(nested)), DOC);
+    check("a nested routine's own scope is invisible, so the outer one binds",
+          bindPin(b) <& " " <& scopePin(b), "count|local|TRUE|FALSE|FALSE|4 1-13");
 
     # ---- the cap: MAX_OCCURRENCES + 1 is the truncation test, no second pass -----
     # Not analysed, deliberately: the cap is a property of the occurrence pass, and 2000
