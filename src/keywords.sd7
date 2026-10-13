@@ -1,0 +1,72 @@
+$ include "seed7_05.s7i";
+
+# The words the language refuses, measured on the interpreter instead of copied from a list.
+# Two absences make the measurement necessary: Seed7 declares NO reserved words
+# (Seed7Home/manual/intro.htm:230) -- every keyword is a $ syntax symbol -- and globalObjects
+# cannot enumerate syntax declarations (M5 spec 11.1 and 11.5), so "is this word a keyword" has
+# neither a documented list nor a runtime answer. The criterion is behavioural: a word belongs to
+# the gate exactly when the interpreter will not let it be a plain declared name.
+#
+# REGENERATE with `sh tools/keyword_gate.sh` (measured with s7 5.4.10, one word per program,
+# `s7 -q -a`). It exits 0 only when its output equals the array below, so the list and the
+# measurement cannot silently drift. A word's status is a property of the interpreter release,
+# not of this file: re-measure on upgrade rather than editing entries by hand.
+#
+# This module is the predicate the references/rename gate consults (Tasks 6 and 9) and nothing
+# else. It resolves no binding -- the gate runs AFTER resolution fails, R28 -- imports nothing
+# beyond seed7_05.s7i, and builds no LSP shape (invariants 1 and 4).
+
+# THE GATE: the 63 words s7 5.4.10 will not accept as a declared name, so no user symbol can be
+# spelled with one. Over-refusing here would deny a rename of a real symbol for a reason the
+# language does not have; under-refusing offers to rewrite syntax. `while`, `raise` and `syntax`
+# are in this list only because the probe found them -- the hand-built 60-word draft of
+# spec 11.11 missed exactly those three.
+const array string: CANNOT_BE_NAME is
+  []("action", "array", "assert", "attr", "begin", "block", "case", "catch", "class", "conj",
+     "const", "default", "do", "downto", "elem", "else", "elsif", "end", "exception", "fixLen",
+     "for", "func", "getfunc", "getobj", "global", "hash", "if", "in", "include", "inout",
+     "interface", "is", "key", "len", "local", "new", "not", "of", "otherwise", "param",
+     "raise", "range", "ref", "repeat", "return", "set", "step", "struct", "sub", "subrange",
+     "subtype", "symb", "syntax", "system", "then", "to", "tuple", "until", "val", "var",
+     "varfunc", "when", "while");
+
+# Exact comparison, linear scan, because `in` has no array overload in this language. Total:
+# every string outside the list -- "", "writeln", "::=", "main", "BEGIN" -- answers FALSE.
+const func boolean: isKeyword (in string: nm) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(CANNOT_BE_NAME) do
+      if CANNOT_BE_NAME[i] = nm then
+        out := TRUE;
+      end if;
+    end for;
+  end func;
+
+# THE COMPLETION CANDIDATES, first half: the 39 words features/completion.sd7 has always
+# offered (copied from ~/seed7-mode/seed7-mode.el's seed7--statement-enclosing-keywords and
+# seed7--declaration-intro-keywords), kept verbatim so its two pinned checks cannot go
+# red. A typist's vocabulary, not the gate: it overlaps (while is in both), it keeps legal names
+# the gate does not refuse (type, proc, result, enum, nested, out), and it omits gate words
+# nobody types (conj, elem, key, len).
+const array string: CANDIDATES_BASE is
+  []("attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end", "enum",
+     "exception", "for", "func", "global", "if", "in", "inout", "interface", "is", "local",
+     "nested", "new", "otherwise", "out", "proc", "range", "ref", "repeat", "result",
+     "return", "struct", "then", "type", "until", "val", "var", "varfunc", "while");
+
+# THE COMPLETION CANDIDATES, second half: the nine words the 39 never offered (M5 spec 11.5).
+# Three of them are gate words (begin, when, include) and six are legal names (switch, leave,
+# exit, static, member, forward) -- the two lists overlap but neither contains the other, and
+# that difference is deliberate: this one serves a typist, the gate serves a destructive edit.
+const array string: CANDIDATES_GAP is
+  []("begin", "when", "include", "switch", "leave", "exit", "static", "member", "forward");
+
+const func array string: keywordList is func
+  result
+    var array string: out is CANDIDATES_BASE;
+  begin
+    out := CANDIDATES_BASE & CANDIDATES_GAP;
+  end func;

@@ -1,0 +1,90 @@
+$ include "seed7_05.s7i";
+  include "lsp_tst.sd7";
+  include "keywords.sd7";
+
+# What would make each check nonzero, since a gate membership list can pass for the wrong
+# reason: dropping a word from CANNOT_BE_NAME reddens its TRUE check or the 63 length check;
+# adding a word the probe measured as declarable reddens that word's FALSE check; isKeyword
+# answering TRUE unconditionally reddens every FALSE check; isKeyword answering with a
+# substring test reddens the "only contains" checks; deleting one of the nine candidates
+# added to completion's list reddens its "completion offers" check and the 48 length check.
+
+# `in` has no array overload, so membership is a linear scan -- the same one keywords.sd7 uses.
+const func boolean: hasWord (in array string: words, in string: nm) is func
+  result
+    var boolean: found is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(words) do
+      if words[i] = nm then
+        found := TRUE;
+      end if;
+    end for;
+  end func;
+
+const proc: main is func
+  local
+    # Words the probe measured as legal declared names, so the gate must not refuse them.
+    var array string: declarable is
+      []("type", "proc", "result", "enum", "switch", "static", "member", "exit", "leave",
+         "forward", "nested", "out", "and", "or", "div", "mod", "cast", "conv", "parse",
+         "find", "value", "by");
+    # The nine words completion's own list never offered (spec section 11.5).
+    var array string: added is
+      []("begin", "when", "include", "switch", "leave", "exit", "static", "member",
+         "forward");
+    var string: nm is "";
+    var integer: i is 0;
+  begin
+    # The pure $ syntax symbols of spec section 11.3: globalObjects cannot see them, so
+    # nothing else in the server can tell the gate they are language furniture.
+    check("begin is a keyword", str(isKeyword("begin")), "TRUE");
+    check("end is a keyword", str(isKeyword("end")), "TRUE");
+    check("then is a keyword", str(isKeyword("then")), "TRUE");
+    check("otherwise is a keyword", str(isKeyword("otherwise")), "TRUE");
+    check("in is a keyword", str(isKeyword("in")), "TRUE");
+    check("val is a keyword", str(isKeyword("val")), "TRUE");
+    # The three words the hand-built draft of spec 11.11 missed and the probe found (a draft
+    # entry had no program behind it). Reverting to that draft reddens these three and the
+    # length check below.
+    check("while is a keyword", str(isKeyword("while")), "TRUE");
+    check("raise is a keyword", str(isKeyword("raise")), "TRUE");
+    check("syntax is a keyword", str(isKeyword("syntax")), "TRUE");
+
+    # isKeyword is total: every string outside the list answers FALSE, including the ones
+    # that look like names, merely contain one, or came from the analyzer's tables.
+    check("an empty word is not a keyword", str(isKeyword("")), "FALSE");
+    check("a library name is not a keyword", str(isKeyword("writeln")), "FALSE");
+    check("an operator symbol is not a keyword word", str(isKeyword("::=")), "FALSE");
+    check("a word that only contains a keyword is not one", str(isKeyword("main")), "FALSE");
+    check("a longer spelling is not a keyword", str(isKeyword("length")), "FALSE");
+    check("a capitalized spelling is not a keyword", str(isKeyword("BEGIN")), "FALSE");
+
+    # The honest half of the measurement. Without it the list could be any vocabulary and
+    # still pass every check above.
+    for i range 1 to length(declarable) do
+      nm := declarable[i];
+      check("the gate does not refuse " <& nm, str(isKeyword(nm)), "FALSE");
+    end for;
+
+    check("the gate holds the 63 words the probe measured",
+          str(length(CANNOT_BE_NAME)), "63");
+
+    # keywordList is the completion candidate product, a different set with a different
+    # standard: it offers legal identifiers (nested, out, type) and omits gate words (conj,
+    # elem), and it is completion's 39 words plus the nine words completion never offered.
+    check("keywordList is completion's 39 plus the 9 it missed",
+          str(length(keywordList)), "48");
+    for i range 1 to length(added) do
+      nm := added[i];
+      check("completion offers " <& nm, str(hasWord(keywordList, nm)), "TRUE");
+    end for;
+    # tests/features_test.sd7 pins that "const" is offered; the check is here because a
+    # candidate list rebuilt from the gate would lose a legal-but-refused word like "const"
+    # and the features suite would not say which half of the list went wrong.
+    check("completion still offers const", str(hasWord(keywordList, "const")), "TRUE");
+    check("completion still offers while", str(hasWord(keywordList, "while")), "TRUE");
+
+    report("keywords");
+  end func;

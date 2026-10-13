@@ -7,7 +7,7 @@ SRC     := src
 # passing run of the rest.
 G        := grep -E
 S7TOTAL  := '^[a-z0-9_]+: [0-9]+ checks, 0 failed$$'
-TESTS   := jsonw uris utf8bytes scan occurrences blocks folding selection_range semantic_tokens transport doc_store rpc analysis diagnostics doc_index features lsp_server
+TESTS   := jsonw uris utf8bytes scan occurrences keywords blocks folding selection_range semantic_tokens transport doc_store rpc analysis diagnostics doc_index features lsp_server
 
 .PHONY: test server $(addprefix test-,$(TESTS)) transcript
 
