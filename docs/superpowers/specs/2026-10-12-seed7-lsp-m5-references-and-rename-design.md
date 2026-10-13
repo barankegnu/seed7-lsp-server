@@ -382,8 +382,13 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
 8. **`lspRange` takes a character column, not a UTF-16 column** (`src/doc_store.sd7:104-125`,
    which converts with `utf16Before`), while `src/features/selection_range.sd7:60` passes
    `succ(tk.col16)` into it. On a line with multi-byte text ahead of the token that is a
-   double conversion. `selectionRange` therefore reports wrong ranges today, and M5 must not
-   copy the pattern.
+   double conversion, and it OVERSHOOTS: measured on `x := "😀😀"; count := 1;` the shipped code
+   answers `15..20` where the token really sits at `13..18`, because the first 13 CHARACTERS
+   expand to 15 UNITS. `selectionRange` therefore reports wrong ranges today, and M5 must not
+   copy the pattern. Measured during Task 4: the same branch's sibling (the no-token else-branch,
+   which passes the client's own UTF-16 `char0` through `lspRange`) is wrong the same way — a
+   request at character 10 answers 12 — so both branches are fixed together, each with its own
+   falsifiable astral check.
 9. **Declaration line ≠ region start.** For a multi-line header, reflection reports the name line
    and `blocks` reports the body region from the `is func` line (measured: `bigHeader` at
    `line = 5`, region start 8). Scope pairing cannot be a containment test on the declaration

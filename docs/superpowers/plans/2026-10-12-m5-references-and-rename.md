@@ -275,7 +275,21 @@ git commit -m "blocks records which region is a routine, so scope has a floor an
 
 - [ ] **Step 3: Implement `lspRangeUnits`, then point `selection_range.sd7:60` at it** with `lspRangeUnits(doc, tk.line0, tk.col16, tk.width16)`. Do not delete `lspRange`: diagnostics and the analyzer's byte columns still use `lspRangeBytes` → `lspRange`, and that path is pinned by three existing checks.
 
-- [ ] **Step 4: Add the regression check the defect deserves** in `tests/selection_range_test.sd7`: a `selectionRange` request on the line `x := "😀😀"; count := 1;` at the column of `count` must report `13..18`, not `11..16`. Run it before Step 3 and see it fail; that is Review Focus 3 pinned on shipped code.
+- [ ] **Step 4: Add the regression check the defect deserves** in `tests/selection_range_test.sd7`: a `selectionRange` request on the line `x := "😀😀"; count := 1;` at the column of `count` must report `13..18`. Run it before Step 3 and see it fail; that is Review Focus 3 pinned on shipped code.
+
+  *Corrected after Task 4 measured it:* the pre-fix answer is `15..20`, not the `11..16` this step
+  predicted, and the direction is the point. Feeding a UTF-16 column into a parameter documented
+  as a character column makes `lspRange` expand the first 13 **characters** into 15 **units**, so
+  the defect **overshoots**. My prediction assumed a loss, which is the same unit confusion as the
+  defect itself.
+- [ ] **Step 4b: The same defect exists twice in `selection_range.sd7`** (found by Task 4's
+  implementer, ruled in scope): the else-branch for a position with no token builds
+  `lspRange(doc, succ(line0), succ(char0))`, and `char0` is the client's UTF-16 column, so it
+  double-converts identically — measured as answering 12 for a request at character 10 on the
+  astral line. Fix both branches with `lspRangeUnits`, one falsifiable astral check per branch,
+  because "there is a token here" and "there is no token here" are different rules that happen to
+  share a bug. Leaving the second means the shipped behaviour differs by branch and the only way
+  to learn is a later defect report.
 
 - [ ] **Step 5: Run to green, commit.**
 
