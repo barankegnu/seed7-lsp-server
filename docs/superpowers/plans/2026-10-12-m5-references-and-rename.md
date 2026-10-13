@@ -330,19 +330,17 @@ The keyword gate decides whether a destructive operation runs, and the list it w
 - [ ] **Step 3: Write the two lists from measurement, not from a hand-built union.** There is no runtime enumeration (spec §11.5) and Seed7 has **no reserved words** at all
   (`Seed7Home/manual/intro.htm:230`: words are syntax symbols, not reserved identifiers), so the
   only honest criterion is behavioural: a word is gate-worthy exactly when it cannot be a declared
-  name. Measured by probing one word per program (`/tmp/kwgate`, `const proc: main is func local
+  name. Measured by probing one word per program (`const proc: main is func local
   var integer: <WORD> is 1; ... end func;` analysed with `s7 -q -a`, reserved iff it reports
-  errors) — 48 of 98 candidates cannot be a plain identifier:
+  errors). The answer for `s7` 5.4.10 is **63 words** — and this step deliberately does not
+  transcribe them, because my own first hand sweep transcribed **48** and was wrong twice over
+  (`while` appeared in the candidate file with no program behind it; `raise` and `syntax` were never
+  candidates at all). `tools/keyword_gate.sh` IS the list: it prints the set and exits 1 when
+  `src/keywords.sd7` drifts from it, so the array is regenerated per interpreter release rather than
+  copied from a document.
 
 ```seed7
-const array string: CANNOT_BE_NAME is
-  []("action", "array", "assert", "attr", "begin", "block", "case", "catch", "class", "conj",
-     "const", "default", "do", "downto", "elem", "else", "elsif", "end", "exception", "fixLen",
-     "for", "func", "getfunc", "getobj", "global", "hash", "if", "in", "include", "inout",
-     "interface", "is", "key", "len", "local", "new", "not", "of", "otherwise", "param",
-     "range", "ref", "repeat", "return", "set", "step", "struct", "sub", "subrange",
-     "subtype", "symb", "system", "then", "to", "tuple", "until", "val", "var", "varfunc",
-     "when");
+const array string: CANNOT_BE_NAME is /* the generator's output, verbatim */;
 
 const func boolean: isKeyword (in string: nm) is func
   result
