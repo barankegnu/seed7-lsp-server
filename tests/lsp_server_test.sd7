@@ -223,6 +223,7 @@ const proc: main is func
     clientCanApplyEdits := TRUE;
     p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri);
     check("a resolved local of this buffer is accepted", str(p.refused), "FALSE");
+    check("and an accepted cursor has nothing to log", p.why, "");
     check("and answers the cursor's own range with the name as placeholder", p.json,
           "{\"range\":{\"start\":{\"line\":6,\"character\":4},\"end\":{\"line\":6," <&
           "\"character\":10}},\"placeholder\":\"amount\"}");

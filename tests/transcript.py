@@ -347,6 +347,16 @@ PR_KW = PR_LINES.index("  begin")     # the first `begin' in the file, main's is
 PR_KW_CHAR = 4
 
 
+def answered_null(by_id, rid):
+    """True when the frame for `rid' carries `result: null'.
+
+    A refusal must be null, NEVER an error (spec 6): an editor greys the menu item out on null and
+    shows the user a failure on an error frame. `"result" not in frame' is what an error frame
+    looks like, so the key has to be PRESENT -- checking the value alone would pass a -32603."""
+    reply = by_id.get(rid, {})
+    return "result" in reply and reply["result"] is None and "error" not in reply
+
+
 def pr_msgs(init):
     """One framed session: initialize, open the fixture, ask prepareRename four times."""
     return [frame(m) for m in [init, msgs[1], opened("file:///tmp/tt_syms.sd7", SYMS),
@@ -372,9 +382,9 @@ expect(init_caps.get("renameProvider") == {"prepareProvider": True},
 expect("workspaceSymbolProvider" not in init_caps,
        "workspace/symbol stays unadvertised (%s)"
        % [k for k in init_caps if k.startswith("workspace")])
-expect(by_id.get(60, {}).get("result") is None,
+expect(answered_null(by_id, 60),
        "no workspace.applyEdit -> prepareRename answers null (%r)" % by_id.get(60, {}))
-expect(all(by_id.get(i, {}).get("result") is None for i in (61, 62, 63)),
+expect(all(answered_null(by_id, i) for i in (61, 62, 63)),
        "and so does every other cursor: the capability gate is asked first")
 log_at = next((i for i, r in enumerate(replies) if r.get("method") == "window/logMessage"
                and "applyEdit" in r.get("params", {}).get("message", "")), None)
@@ -395,15 +405,18 @@ by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(60, {}).get("result") == PR_EXPECT,
        "workspace.applyEdit -> prepareRename answers the token's range and name (%r)"
        % by_id.get(60, {}).get("result"))
-expect(by_id.get(61, {}).get("result") is None,
+expect(answered_null(by_id, 61),
        "a library symbol still refuses, one file is the milestone (%r)" % by_id.get(61, {}))
 expect("writeln is declared outside this buffer" in err,
        "and says so on the log")
-expect(by_id.get(62, {}).get("result") is None,
-       "a keyword refuses as syntax, not as an unbound name")
+expect(answered_null(by_id, 62), "a keyword refuses as syntax, not as an unbound name")
 expect("begin is a Seed7 keyword" in err, "and says which it is")
-expect(by_id.get(63, {}).get("result") is None,
-       "prepareRename for an unopened uri is null, not an error")
+expect(answered_null(by_id, 63), "prepareRename for an unopened uri is null, not an error")
+# 60 is accepted and 63 never reaches the feature, so only the library and the keyword refusals
+# owe the client a sentence. An accept that logs is the user reading a log they did not ask for.
+expect(len([r for r in replies if r.get("method") == "window/logMessage"]) == 2,
+       "only the refusals speak (%d log frames)"
+       % len([r for r in replies if r.get("method") == "window/logMessage"]))
 expect(junk == 0, "the accepted run put only frames on stdout (junk=%d)" % junk)
 
 # A client that declares applyEdit as something that is not a boolean has not declared it.
@@ -412,7 +425,7 @@ replies, code, err, junk = run(pr_msgs(req(1, "initialize",
                                             "rootUri": None,
                                             "workspace": {"applyEdit": "yes"}})))
 by_id = {r.get("id"): r for r in replies if "id" in r}
-expect(by_id.get(60, {}).get("result") is None,
+expect(answered_null(by_id, 60),
        "a non-boolean applyEdit leaves the flag down (%r)" % by_id.get(60, {}))
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
