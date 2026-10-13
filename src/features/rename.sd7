@@ -251,6 +251,10 @@ const func renameAnswer: renameResult (in lsDoc: doc, in array symRec: syms,
             # region (spec 11.9), so inScope drops it -- and references papers over that gap with a
             # whole-line location, which here would be an edit DELETING the line. The token's own
             # measured range comes from the same `oc' array the decision used (R39).
+            # The add-back can only ever sit ABOVE the window -- holdsRecord compares line AND
+            # column, so a declaration the window holds is already in `scoped' -- which is what
+            # makes the emitted array document order by construction, not by luck: the exact-json
+            # pins in features_test.sd7 and transcript.py would all redden if it were not.
             declIdx := declOccurrence(no.oc, no.b.declLine1);
             if declIdx <> 0 then
               if not holdsRecord(scoped, no.oc[declIdx].line0, no.oc[declIdx].col16) then

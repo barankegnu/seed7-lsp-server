@@ -72,6 +72,35 @@ const func integer: cursorName (in array occurrence: oc, in wordRef: word) is fu
     end for;
   end func;
 
+# TRUE when the declaration has to be picked out of more than one record on its own line. A Seed7
+# parameter may be named after its own routine -- measured legal (`const proc: show (in integer:
+# show) is func begin writeln(show); end func;' analyses with no error and prints 3), and
+# reflection reports the routine and that parameter at the SAME line1 -- so the line
+# `declOccurrence' searches (rename.sd7) holds the routine's record as well as the parameter's,
+# and the line `inScope' filters by holds both too because it is line-granular. Whichever way the
+# edit list is built, renaming one of the two rewrites the other: rename the parameter and the
+# routine's declaration loses its name while every call site keeps it; rename the routine and a
+# parameter that is a different symbol gains the new name. A READ may over-include with a log line
+# (spec 12.2), a WRITE may not (spec 12.1), so both methods refuse from here. Counted out of the
+# caller's own `oc' -- the same list the edits come from (R39), which is every token equal to
+# `word.word', so no kind test is needed to keep an operator out of the count: an arm this far
+# down the chain has already refused one. `declLine1' is 0 for anything with no declaration in
+# this document and pred(0) names no line, so a library or unbound symbol is never refused here.
+const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+    var integer: candidates is 0;
+  begin
+    for i range 1 to length(oc) do
+      if oc[i].line0 = pred(b.declLine1) then
+        candidates +:= 1;
+      end if;
+    end for;
+    out := candidates > 1;
+  end func;
+
 # A WRITE refuses where a READ over-includes (spec 12.1): references can list a wider set with a
 # log line, an edit cannot, so anything this resolution cannot prove is refused here. That is the
 # whole refusal list: no client that can apply the edit, a library buffer (R-F10 unpaid, so its
@@ -110,8 +139,9 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
           # ("`count` is not a name" about a token that plainly is one).
           # "names", not "ones": the list DOES carry this token when it is an operator run, and
           # cursorName returned 0 on its KIND. Measured on the 2 002-statement fixture with the
-          # cursor at line 5 character 8: `:=' is record 4 of the truncated list, so any wording
-          # about what is not listed has to name the class that is missing, which is names.
+          # cursor at line 5 character 8: `:=' is record 6 of the 2 001 the truncated list keeps
+          # (lsp_server_test pins capOps[6] = 5:6), so any wording about what is not listed has to
+          # name the class that is missing, which is names.
           out.reason := word.word <& " has more occurrences than this server lists (more than " <&
                         str(MAX_OCCURRENCES) <& "), and the token under the cursor is not among"
                         <& " the names listed, so its range is not known";
@@ -132,6 +162,16 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
         elsif out.b.scopeUncertain then
           out.reason := "the scope of " <& word.word <& " is not fully visible to this server," <&
                         " so a rename could rewrite a shadowing declaration";
+        elsif declLineAmbiguous(out.oc, out.b) then
+          # R51. Ahead of `capped', because it describes the SYMBOL and leaves the cap sentence
+          # last, speaking only for a document too long to list -- the same ordering rule R47
+          # states. Shared here so prepareRename and rename cannot diverge on it (R45), and
+          # reached from rename through the predicate rather than as logic in rename.sd7.
+          out.reason := word.word <& " shares its declaration line with another occurrence of" <&
+                        " it, the shape a parameter takes when it is named after its routine, and"
+                        <& " a declaration found by line cannot choose between the two, so a"
+                        <& " rename could rewrite the routine or the parameter when the cursor"
+                        <& " named the other one";
         elsif out.b.capped then
           # R47, and the case the slot = 0 branch above cannot speak for: there the cursor is
           # missing from the list, here the CURSOR IS LISTED and its range is known, but the list

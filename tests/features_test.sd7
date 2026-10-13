@@ -147,6 +147,46 @@ const func string: refsText is func
            "  end func;\n";
   end func;
 
+# The R51 fixture: a routine that shares its name with one of its parameters, in the one-line
+# header shape and in a two-line header shape, plus a control parameter that shares nothing. Seed7
+# accepts `const proc: show (in integer: show)' -- measured: no analysis error, and running it
+# prints 3 -- and reflection reports the routine and that parameter at the SAME line1, which is
+# what makes a write that locates a declaration by line unsafe. Pinned at errorCount 0 below, so
+# every column of the expected json is a line of this text.
+const func string: ambigText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "  include \"console.s7i\";\n" <&
+           "\n" <&
+           "const proc: show (in integer: show) is func\n" <&
+           "  begin\n" <&
+           "    writeln(show);\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: tally (in integer: tally,\n" <&
+           "                    in integer: delta) is func\n" <&
+           "  begin\n" <&
+           "    writeln(tally + delta);\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    show(3);\n" <&
+           "    tally(1, 2);\n" <&
+           "  end func;\n";
+  end func;
+
+# The refusal sentence's tail, spelled once because the word under the cursor is the only part
+# that differs: prepareRename prefixes one method name, rename the other, and each of the three
+# measured reaches names its own symbol.
+const string: DECL_AMBIG_TAIL is
+    " shares its declaration line with another occurrence of it, the shape a parameter takes" <&
+    " when it is named after its routine, and a declaration found by line cannot choose between" <&
+    " the two, so a rename could rewrite the routine or the parameter when the cursor named the" <&
+    " other one";
+
 # A buffer declaration named `count', with no scope entries. Enough for resolveBinding's global
 # row, and the only way to reach the occurrence cap with a BINDING -- 2 000 lines of
 # `count := 1;' is not a program, and the cap is a property of the pass. `declLine1' is the line
@@ -316,6 +356,12 @@ const proc: main is func
     var array symRec: nsyms is 0 times symRec.value;
     var symRec: nrec is symRec.value;
     var string: renameUri is "file:///tmp/tt_rename.sd7";
+    var lsDoc: adoc is lsDoc.value;
+    var array symRec: asyms is 0 times symRec.value;
+    var docAnalysis: ad is docAnalysis.value;
+    var wordRef: aword is wordRef.value;
+    var string: ambigPath is "/tmp/tt_ambig.sd7";
+    var string: ambigUri is "file:///tmp/tt_ambig.sd7";
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -688,10 +734,14 @@ const proc: main is func
     check("and a long array caps even when the text is short", str(rb.capped), "TRUE");
     # ---- R47: the cap must refuse a WRITE whose cursor IS in the truncated list ----------
     # capDoc now holds MAX_OCCURRENCES + 1 statements and the cursor is on the FIRST of them, so
-    # `slot' is found, a range exists, and every other arm of renameDecision is silent -- while
-    # the list itself stops 2000 records into a 2002-occurrence document. Before the `capped' arm
-    # these two checks were the accept they should never have been: prepareRename offered this
-    # cursor and rename would have edited a truncated list. Deleting the arm reddens BOTH.
+    # `slot' is found, a range exists, and every other arm of renameDecision is silent. Note what
+    # this fixture does and does not hold: the pass keeps MAX_OCCURRENCES + 1 records, so all 2 001
+    # occurrences of THIS document are listed and the refusal is conservative by exactly one
+    # record. The genuinely-partial shape -- a record past the last one kept, invisible to whoever
+    # edits next -- is the 2 002-occurrence document, which is what tests/lsp_server_test.sd7's cap
+    # section and the wire run's CAP_TEXT build. Before the `capped' arm these two checks were the
+    # accept they should never have been: prepareRename offered this cursor and rename would have
+    # edited a truncated list. Deleting the arm reddens BOTH.
     capWord := wordAt(capDoc, 0, 5);
     check("the cursor on the first of a capped document is on the name", capWord.word, "count");
     pc := prepareRenameAnswer(capDoc, countGlobalSyms(1), capWord, capUri, TRUE);
@@ -759,6 +809,50 @@ const proc: main is func
     check("and a .s7i buffer refuses while R-F10 stands", rn.why,
           "rename: /tmp/tt_rename.s7i is a library buffer whose symbols come from disk while" <&
           " R-F10 stands, so an edit could land on the wrong line");
+    # ---- R51: two name records on the declaration line ------------------------------------
+    # A WRITE finds a declaration by LINE: `declOccurrence' takes the first occurrence record on
+    # it and `inScope' filters line-granularly, so when the routine and one of its parameters
+    # share a name -- legal Seed7, measured, and reflection reports BOTH at the same line1 -- the
+    # line holds two candidates and the edit cannot be proved. Three reaches, each measured on
+    # this fixture at errorCount 0 BEFORE the arm existed: the cursor on the parameter `show'
+    # answered 3 edits including the ROUTINE's own name and left `show(3);' at line 16 under the
+    # old name (no add-back was involved -- the declaration line IS the line the body region opens
+    # on, so inScope kept both records); the cursor on a body use of `tally' answered 2 edits, the
+    # routine's name and the use, leaving the parameter's declaration and the call site; the cursor
+    # on `tally(1, 2);' answered 3 edits INCLUDING the unrelated parameter, which spec 6's
+    # "and nothing else" forbids. All three answer null now, and `delta' is the control: the same
+    # two-line header, one record on its declaration line, renamed completely.
+    setVersion(adoc, ambigText(), 1);
+    ad := analyzeAll(adoc.text, noDirs, ambigPath);
+    asyms := ad.syms;
+    check("the shared-name fixture analyses clean", str(length(ad.parsed.diags)), "0");
+    aword := wordAt(adoc, 3, 31);
+    check("the cursor is on the parameter, not the routine name beside it",
+          aword.word <& ":" <& str(aword.character1), "show:30");
+    pc := prepareRenameAnswer(adoc, asyms, aword, ambigUri, TRUE);
+    check("an ambiguous declaration line refuses prepareRename", str(pc.refused), "TRUE");
+    check("and names the shape it cannot tell apart", pc.why, "prepareRename: show" <&
+          DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, aword, ambigUri, "amount", TRUE);
+    check("rename refuses the identical cursor rather than renaming the routine",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("with the predicate's own sentence under this method's name", rn.why,
+          "rename: show" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 11, 13), ambigUri, "amount", TRUE);
+    check("so does the body use, whose add-back has two candidates, with no result frame",
+          str(rn.json = "null") <& " " <& rn.why,
+          "TRUE rename: tally" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 17, 5), ambigUri, "amount", TRUE);
+    check("and so does the call site, where the cursor is on the routine itself",
+          str(rn.json = "null") <& " " <& rn.why,
+          "TRUE rename: tally" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 11, 21), ambigUri, "amount", TRUE);
+    check("the other parameter of the same header is renamed, both its records", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_ambig.sd7\":[{\"range\":{\"start\":{\"line\":9,"
+          <& "\"character\":32},\"end\":{\"line\":9,\"character\":37}},\"newText\":\"amount\"},"
+          <& "{\"range\":{\"start\":{\"line\":11,\"character\":20},\"end\":{\"line\":11,"
+          <& "\"character\":25}},\"newText\":\"amount\"}]}}");
+
     # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
     # FIRST of them, so the record the range would take IS in the truncated list -- the gap that
     # made prepareRename accept a document rename can only half-edit.
@@ -792,10 +886,12 @@ const proc: main is func
     check("and is named as syntax, not as a word that happens to be unbound", rn.why,
           "rename: begin is a Seed7 keyword, so it would rewrite syntax");
     # The gate is the 63 words the INTERPRETER refuses, not completion's vocabulary: `type' is in
-    # that vocabulary, is a legal name, and is declared in this very file, so it must be allowed.
+    # that vocabulary and is a legal name, so renaming onto it must be allowed. A LOCAL's collision
+    # set is its own routine's scope entries plus the routine's name (rename.sd7's `collides'), so
+    # this cursor never consults the buffer's routine records -- what it exercises is the gate.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "type", TRUE);
-    check("renaming a local onto a routine declared elsewhere is allowed -- type is not gated",
-          rn.error, "");
+    check("renaming a local onto a word only completion's vocabulary knows is allowed",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 3");
     # Validation runs BEFORE the predicate, so a cursor that would be refused anyway still gets
     # -32602 for a name that could never be written. Swap the two and this answers null.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 24, 6), refUri, "1bad", TRUE);
@@ -812,12 +908,14 @@ const proc: main is func
           "rename: Widget is already declared in the scope of counter, so the rename would" <&
           " not compile");
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 7, 15), refUri, "show", TRUE);
-    check("a same-named routine elsewhere in the file is not a collision", rn.error, "");
+    check("a same-named routine elsewhere in the file is not a collision",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 2");
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "left", TRUE);
     check("a local collides with its own routine's parameter", rn.error, "invalid");
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "show", TRUE);
     check("a local collides with its own routine's name", rn.error, "invalid");
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "writeln", TRUE);
-    check("a stdlib name is not a collision", rn.error, "");
+    check("a stdlib name is not a collision",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 3");
     report("features");
   end func;

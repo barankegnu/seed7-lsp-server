@@ -569,6 +569,68 @@ expect(by_id.get(82, {}).get("error", {}).get("code") == -32602,
        "a bad name is still -32602 on a capped document (%r)" % by_id.get(82, {}))
 expect(junk == 0, "the capped run put only frames on stdout (junk=%d)" % junk)
 
+# --- M5 Task 9 R51: a declaration line with two name records is refused ------------------
+# `const proc: show (in integer: show)' is legal Seed7 (measured: no analysis error, and running
+# the file prints 3) and reflection reports the routine and its parameter at the SAME line1, so
+# the line the declaration lives on holds two candidates and a write that finds the declaration by
+# line cannot prove which token to edit. Both methods must refuse the identical cursor: a rename
+# measured before the arm rewrote the ROUTINE's name and its body use while `show(3);' kept the
+# old one. `samples' is the control in the same document -- one record on its parameter's
+# declaration line, so it is still offered.
+AMB_TEXT = ('$ include "seed7_05.s7i";\n'
+            '  include "console.s7i";\n'
+            '\n'
+            'const proc: show (in integer: show) is func\n'
+            '  begin\n'
+            '    writeln(show);\n'
+            '  end func;\n'
+            '\n'
+            'const proc: samples (in integer: total) is func\n'
+            '  begin\n'
+            '    writeln(total);\n'
+            '  end func;\n'
+            '\n'
+            'const proc: main is func\n'
+            '  begin\n'
+            '    show(3);\n'
+            '    samples(4);\n'
+            '  end func;\n')
+AMB_URI = "file:///tmp/tt_ambig_wire.sd7"
+AMB_LINES = AMB_TEXT.split("\n")
+AMB_HEAD = AMB_LINES.index("const proc: show (in integer: show) is func")
+# The SECOND `show' on that line is the parameter; +1 sits inside the token, the way PR_CHAR does.
+AMB_HEAD_TEXT = AMB_LINES[AMB_HEAD]
+AMB_PARAM = AMB_HEAD_TEXT.index("show", AMB_HEAD_TEXT.index("show") + 1) + 1
+AMB_CTRL = AMB_LINES.index("const proc: samples (in integer: total) is func")
+AMB_CTRL_TEXT = AMB_LINES[AMB_CTRL]
+AMB_CTRL_CHAR = AMB_CTRL_TEXT.index("total") + 1
+replies, code, err, junk = run([frame(m) for m in [
+    APPLY, msgs[1], opened(AMB_URI, AMB_TEXT),
+    req(90, "textDocument/prepareRename", pos(AMB_URI, AMB_HEAD, AMB_PARAM)),
+    req(91, "textDocument/rename", dict(pos(AMB_URI, AMB_HEAD, AMB_PARAM), newName="amount")),
+    req(92, "textDocument/prepareRename", pos(AMB_URI, AMB_CTRL, AMB_CTRL_CHAR)),
+    shutdown(93), exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(answered_null(by_id, 90),
+       "prepareRename refuses a cursor whose declaration line holds two records (%r)"
+       % by_id.get(90, {}))
+expect(answered_null(by_id, 91),
+       "and rename refuses the identical cursor, so nothing is half-rewritten (%r)"
+       % by_id.get(91, {}))
+expect("show shares its declaration line with another occurrence of it" in err,
+       "and the refusal says which shape it cannot tell apart (%r)" % err[-260:])
+expect("could rewrite the routine or the parameter when the cursor named the other one" in err,
+       "in the sentence that names both directions of the corruption it prevents")
+expect(by_id.get(92, {}).get("result") ==
+       {"range": {"start": {"line": AMB_CTRL,
+                           "character": AMB_CTRL_TEXT.index("total")},
+                  "end": {"line": AMB_CTRL,
+                          "character": AMB_CTRL_TEXT.index("total") + 5}},
+        "placeholder": "total"},
+       "the unambiguous parameter of the same document is still offered (%r)"
+       % by_id.get(92, {}).get("result"))
+expect(junk == 0, "the shared-name run put only frames on stdout (junk=%d)" % junk)
+
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
 # so editing the fixture cannot silently move it -- and one attempt at this check had
