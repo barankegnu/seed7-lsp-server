@@ -300,7 +300,7 @@ git commit -m "a range from a UTF-16 column, and selectionRange stops double-con
 
 ## Task 5: `src/keywords.sd7` — one list, and the word it was missing
 
-The keyword gate decides whether a destructive operation runs, and the list it would have inherited from `completion.sd7` holds 39 entries and is missing nine words the language owns — `begin`, `when`, `static`, `forward`, `member`, `switch`, `leave`, `exit`, `include` (spec §11.5). A gate on a destructive op cannot share a convenience list.
+The keyword gate decides whether a destructive operation runs, and the list it would have inherited from `completion.sd7` holds 39 entries and is missing nine words the language owns — `begin`, `when`, `static`, `forward`, `member`, `switch`, `leave`, `exit`, `include` (spec §11.5). A gate on a destructive op cannot share a convenience list. And because Seed7 declares **no** reserved words (`Seed7Home/manual/intro.htm:230`), the gate's membership is established behaviourally — one probe per word — not copied from any list, which is what Task 5's Step 3 now does.
 
 **Files:**
 - Create: `src/keywords.sd7`
@@ -327,22 +327,22 @@ The keyword gate decides whether a destructive operation runs, and the list it w
 ```
 
 - [ ] **Step 2: Run, and name the failure.** `make test-keywords`. Expected: `FALSE` where `TRUE` was asked for `begin` — the exact gap, and the reason this task exists before the gate.
-- [ ] **Step 3: Write the two sets, from the data below.** There is no runtime enumeration (spec §11.5), so this is the copy, made once from `lib/syntax.s7i`.
-
-`GATE_KEYWORDS` — the 90 bare identifiers extracted from the `$ syntax` templates of `lib/syntax.s7i`, used by `isKeyword`. It is deliberately a superset: it keeps dot-selector words (`key`, `len`, `value`, `attr`, `cast`, `conv`, `parse`, `find`, `set`, `default`), because a false positive here refuses a rename that would have been legal, and a false negative renames a word of the language. Over-refusal is the cheap direction; the other one is not.
+- [ ] **Step 3: Write the two lists from measurement, not from a hand-built union.** There is no runtime enumeration (spec §11.5) and Seed7 has **no reserved words** at all
+  (`Seed7Home/manual/intro.htm:230`: words are syntax symbols, not reserved identifiers), so the
+  only honest criterion is behavioural: a word is gate-worthy exactly when it cannot be a declared
+  name. Measured by probing one word per program (`/tmp/kwgate`, `const proc: main is func local
+  var integer: <WORD> is 1; ... end func;` analysed with `s7 -q -a`, reserved iff it reports
+  errors) — 48 of 98 candidates cannot be a plain identifier:
 
 ```seed7
-const array string: GATE_KEYWORDS is
-  []("action", "and", "array", "assert", "attr", "begin", "block", "by", "case", "cast",
-     "catch", "ceilDiv", "class", "conj", "const", "conv", "default", "digits", "div",
-     "divRem", "do", "downto", "elem", "else", "elsif", "end", "enum", "exception", "exp",
-     "find", "fixLen", "for", "forward", "func", "getfunc", "getobj", "global", "hash",
-     "if", "in", "include", "inout", "interface", "is", "key", "len", "local", "lpad",
-     "lpad0", "mdiv", "mod", "mult", "new", "not", "of", "or", "otherwise", "param",
-     "parse", "radix", "range", "ref", "rem", "repeat", "result", "return", "rpad", "sci",
-     "set", "step", "struct", "struct2", "sub", "subrange", "subtype", "symb", "system",
-     "then", "times", "to", "tuple", "until", "val", "value", "var", "varConv", "varfunc",
-     "when", "while", "type", "proc", "exit", "leave", "static", "member", "switch");
+const array string: CANNOT_BE_NAME is
+  []("action", "array", "assert", "attr", "begin", "block", "case", "catch", "class", "conj",
+     "const", "default", "do", "downto", "elem", "else", "elsif", "end", "exception", "fixLen",
+     "for", "func", "getfunc", "getobj", "global", "hash", "if", "in", "include", "inout",
+     "interface", "is", "key", "len", "local", "new", "not", "of", "otherwise", "param",
+     "range", "ref", "repeat", "return", "set", "step", "struct", "sub", "subrange",
+     "subtype", "symb", "system", "then", "to", "tuple", "until", "val", "var", "varfunc",
+     "when");
 
 const func boolean: isKeyword (in string: nm) is func
   result
@@ -350,15 +350,31 @@ const func boolean: isKeyword (in string: nm) is func
   local
     var integer: i is 0;
   begin
-    for i range 1 to length(GATE_KEYWORDS) do
-      if GATE_KEYWORDS[i] = nm then
+    for i range 1 to length(CANNOT_BE_NAME) do
+      if CANNOT_BE_NAME[i] = nm then
         out := TRUE;
       end if;
     end for;
   end func;
 ```
 
-The trailing five entries are the words the `syntax.s7i` templates do not carry alone: `type` and `proc` report as `TYPEOBJECT`s in `globalObjects` (spec §11.2) rather than as template tokens, and `exit`, `leave`, `static`, `member` are section words from `seed7_05.s7i`'s pragmas, with `switch` its alias for `case`. `keywordList` — the *completion* candidates — is `SEED7_KEYWORDS`'s existing 39 words plus `begin`, `when`, `include`, `switch`, `leave`, `exit`, `static`, `member`, `forward`: the words a typist wants offered, without the selector noise. A comment above each array names which product it serves, because the two lists must drift apart on purpose and not by accident.
+  The words this probe **rejected** from the gate are the interesting half: `type`, `proc`,
+  `result`, `enum`, `switch`, `static`, `member`, `exit`, `leave`, `forward`, `and`, `or`, `div`,
+  `mod`, `rem`, `exp`, `times`, `cast`, `conv`, `parse`, `find`, `value`, `nested`, `out` and the
+  dot-selector fragments (`ceilDiv`, `divRem`, `mdiv`, `lpad`, `lpad0`, `rpad`, `sci`, `digits`,
+  `radix`, `mult`, `sub`, `conj`, `elem`, `symb`, `tuple`, `param`, `class`, `array`, `hash`,
+  `struct2`, `varConv`, `getobj`, `getfunc`, `fixLen` excepted) are all LEGAL identifiers —
+  `const func integer: type (in integer: n)` analyses and prints `3`. A gate that refused them
+  would refuse renames of real symbols for a reason the language does not have.
+  Put the probe itself in the module's comment: which command produced the list, and the fact that
+  a word's status is measured per interpreter release rather than derived from any of the seven
+  hand-written lists.
+
+  `keywordList` — the *completion* candidates, a different product with a different standard — is
+  `SEED7_KEYWORDS`'s existing 39 words plus `begin`, `when`, `include`, `switch`, `leave`, `exit`,
+  `static`, `member`, `forward`: the words a typist wants offered. It is NOT the gate, and a
+  comment above each array must say which product it serves, because the two lists drift apart on
+  purpose.
 - [ ] **Step 4: Point `completion.sd7` at it** and delete its private list. Its checks must pass unchanged — if a completion candidate disappears, the list you built is wrong, and that is this task's real test.
 
 ```bash
@@ -417,12 +433,13 @@ The four rows of spec §4, with shadowing subtraction, and the only place that s
 
 - [ ] **Step 3: Implement the resolution in this order** — the order is the decision, the body is the implementer's:
 
-1. `isKeyword(name)` → `owner = ""`, `keyword = TRUE`, `resolved = FALSE`.
+1. Resolution runs FIRST (R28): the keyword predicate is consulted only after resolution fails. The first draft of this plan gated on `isKeyword` before resolving, which would answer `null` for a program that declares a symbol named `type` — legal, analysable, and documented by `documentSymbol`/`hover` today — so the gate would have manufactured the exact silent lie §12.1 exists to prevent.
 2. `enclosingDeclarations(text, line0, lastLine)` innermost-first. For the innermost routine region, if `name` appears in that routine's `symRec.locals` → `owner = "local"`, scope = that region.
 3. Else a `symRec` whose `file` is `BUFFER_FILE` or the document path and whose `name = name` → `owner = "global"`, scope = whole document **minus** every region of every routine whose `locals` carry the same name. Keep the subtraction as a list of excluded regions on the `binding`, not as a pre-filtered occurrence array: Task 7 needs both the regions and the declaration's own line.
 4. Else any `symRec` with that name → `owner = "library"`, `resolved = TRUE`, scope = whole document.
 5. Else the name appears as a `locals` entry of some routine that does not enclose `line0`, or the token follows a `.` (a field use) → `owner = "field"`, `resolved = FALSE`, scope = whole document.
-6. Else `owner = ""`, `resolved = FALSE`, scope = whole document — the over-inclusive row.
+6. Else the name is in `CANNOT_BE_NAME` → `owner = ""`, `keyword = TRUE`, `resolved = FALSE` — language furniture, so `references` answers `null` rather than listing every `begin` in the file, and `rename` refuses.
+7. Else `owner = ""`, `keyword = FALSE`, `resolved = FALSE`, scope = whole document — the over-inclusive row.
 
 - [ ] **Step 4: Set `capped`** when the occurrence pass reached `MAX_OCCURRENCES`.
 

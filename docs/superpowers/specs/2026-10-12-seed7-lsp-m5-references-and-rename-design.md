@@ -174,13 +174,17 @@ Request `ReferenceParams { textDocument, position, context { includeDeclaration 
   for a declaration. A declaration that lives in `seed7_05.s7i` is not emitted: this method
   answers "what uses this name in the file I'm editing", and cross-file declaration jumps are
   what the `definitionProvider` we already ship is for.
-- A position in a comment or string, on whitespace, on a suppressed operator character
-  (`.`, `$`, `` ` ``, which `wordAt` already refuses), on a **number or bracket token**, or on a
-  keyword yields `null`. The first draft listed only the first three, and the gap matters: a
-  cursor on `16#beef` or on `(` otherwise reaches §4's row 4 and searches for the literal name
-  `16#beef`, finds nothing, and returns an empty list — the "reads as unused" answer §2 calls a
-  lie. Row 4 applies only to a token that is *name-shaped* (`scan.nameStart`/`nameMore`) and not
-  a keyword.
+- A position in a comment or string, on whitespace, or on a suppressed operator character
+  (`.`, `$`, `` ` ``, which `wordAt` already refuses), or on a **number or bracket token** yields
+  `null`. The first draft listed only the first three, and the gap matters: a cursor on `16#beef`
+  or on `(` otherwise reaches §4's row 4 and searches for the literal name `16#beef`, finds
+  nothing, and returns an empty list — the "reads as unused" answer §2 calls a lie. Row 4 applies
+  only to a name-shaped token that §4 could not bind (§11.11).
+- A word that cannot be a declared identifier also yields `null` — but the keyword test runs
+  AFTER resolution fails, never before (§11.11, R28). Seed7 has no reserved words
+  (`Seed7Home/manual/intro.htm:230`), so `type`, `proc`, `result` and `enum` are legal names, and a
+  program that declares `const func integer: type (in integer: n)` has a real symbol that
+  `documentSymbol` and `hover` already list; gating on the word first would answer `null` for it.
 - A name bound to nothing yields every occurrence plus the log line (§2, §4). For a rename the
   same state is an open question (§12.1).
 - No capability key is needed: `referencesProvider` is a boolean.
@@ -401,6 +405,23 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     that half I did not re-run. Either way there is no declaration source for a field, so a
     "find references" cursor on `pix` in `w.pix` is a permanent row-4 case on well-formed code —
     not the truncated-buffer exception §9 pins — and it is §12.2's question.
+11. **Which words the language refuses is measurable, and the answer is 48, not 90.** Seed7 has no
+    reserved words (`Seed7Home/manual/intro.htm:230`), so a word's status is a property of the
+    interpreter, not of a list — and the interpreter answers the question directly: declare
+    `var integer: <WORD> is 1;` in a one-program-per-word sweep and see whether `s7 -q -a` reports
+    errors. Measured over 98 candidates (`/tmp/kwgate`): **48 cannot be a plain declared name** —
+    `action array assert attr begin block case catch class conj const default do downto elem else
+    elsif end exception fixLen for func getfunc getobj global hash if in include inout interface is
+    key len local new not of otherwise param range ref repeat return set step struct sub subrange
+    subtype symb system then to tuple until val var varfunc when` — and 50 can, including `type`,
+    `proc`, `result`, `enum`, `switch`, `static`, `member`, `exit`, `leave`, `forward`, `and`, `or`,
+    `div`, `mod`, `rem`, `exp`, `times`, `cast`, `conv`, `parse`, `find`, `value`, `nested`, `out`
+    and the dot-selector fragments. Direct check: `const func integer: type (in integer: n)`
+    analyses and prints `3`. Three consequences, all carried into the plan: §5's gate must run after
+    resolution (R28); the §11.5 template extraction is a *vocabulary* list and must not be used as
+    a gate, because over-refusal here would deny a rename of a legal symbol rather than protect the
+    user; and `completion`'s 39-word candidate list and this 48-word gate are different products
+    that must not be merged.
 
 ## 12. Open questions put to the partner
 
