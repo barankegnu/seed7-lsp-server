@@ -20,6 +20,8 @@
 # Candidates are every identifier in a `$ syntax` template body of the library (where the
 # language's own words live) plus EXTRA below (words the manual and editor lists carry that no
 # template body mentions, so the clean half of the measurement is measured too).
+# shortcut: a syntax word in neither source is probed, so the gate under-reports silently. Re-test
+#           on a release change: grep -l '\$ syntax' "$SEED7_LIB"/*.s7i must print only syntax.s7i.
 #
 # Usage:  sh tools/keyword_gate.sh   # prints the words, then compares with the shipped array
 #         SEED7_LIB=/path/to/seed7/lib sh tools/keyword_gate.sh
@@ -47,20 +49,25 @@ command -v "$S7" >/dev/null || { echo "keyword_gate: $S7 not on PATH" >&2; exit 
 PROBE=$(mktemp -d)
 trap 'rm -rf "$PROBE"' EXIT
 
-candidates=$(
-  {
-    grep '\$ syntax' "$SYNTAX" | sed 's/.*\$ syntax [a-zA-Z]*:*//' | sed 's/ is .*//' |
-      grep -o '[A-Za-z_][A-Za-z0-9_]*'
-    printf '%s\n' "$EXTRA" | tr ' ' '\n'
-  } | sort -u
-)
+{
+  grep '\$ syntax' "$SYNTAX" | sed 's/.*\$ syntax [a-zA-Z]*:*//' | sed 's/ is .*//' |
+    grep -o '[A-Za-z_][A-Za-z0-9_]*'
+  printf '%s\n' "$EXTRA" | tr ' ' '\n'
+} | sort -u > "$PROBE/candidates"
 
-for word in $candidates
+for word in $(cat "$PROBE/candidates")
 do
   printf '$ include "seed7_05.s7i";\n\nconst proc: main is func\n  local\n    var integer: %s is 1;\n  begin\n    writeln(1);\n  end func;\n' \
     "$word" > "$PROBE/t.sd7"
-  if [ -n "$("$S7" -q -a "$PROBE/t.sd7" 2>&1 >/dev/null)" ]; then
-    printf '%s\n' "$word"
+  # `|| true`: s7 exits 1 for an analysis error, and `set -e` would abort on the first refusal.
+  err=$("$S7" -q -a "$PROBE/t.sd7" 2>&1 >/dev/null || true)
+  if [ -n "$err" ]; then
+    # Enforce the criterion above rather than trusting it: a word refused for redeclaration or an
+    # internal error is not syntax, and putting it in the gate would be a claim about the language.
+    case $err in
+      *expected*) printf '%s\n' "$word" ;;
+      *) echo "keyword_gate: $word refused for a non-syntax reason: $err" >&2; exit 1 ;;
+    esac
   fi
 done > "$PROBE/measured"
 
@@ -81,7 +88,7 @@ cat "$PROBE/measured"
 sed -n '/CANNOT_BE_NAME is/,/");/p' "$MODULE" |
   grep -o '"[A-Za-z_][A-Za-z0-9_]*"' | tr -d '"' | sort > "$PROBE/shipped"
 if cmp -s "$PROBE/measured" "$PROBE/shipped"; then
-  echo "keyword_gate: $(wc -l < "$PROBE/measured") words, equal to $MODULE" >&2
+  echo "keyword_gate: $(wc -l < "$PROBE/candidates") candidates, $(wc -l < "$PROBE/measured") words, equal to $MODULE" >&2
 else
   echo "keyword_gate: MISMATCH with $MODULE (measured < , shipped >)" >&2
   diff -u "$PROBE/measured" "$PROBE/shipped" >&2 || true
