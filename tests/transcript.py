@@ -320,6 +320,12 @@ ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 41), None)
 expect(log_at is not None and ans_at is not None and log_at < ans_at,
        "an unproved binding logs to the client before the answer (%s, %s)" % (log_at, ans_at))
 expect(junk == 0, "the references run put only frames on stdout (junk=%d)" % junk)
+# The capability that lets a client ask at all. Every other M5 capability is pinned somewhere
+# (renameProvider, foldingRangeProvider, selectionRangeProvider, semanticTokensProvider, and
+# workspaceSymbolProvider ABSENT) and this one was the only M5 name with no wire check.
+expect(replies[0].get("result", {}).get("capabilities", {}).get("referencesProvider") is True,
+       "initialize advertises referencesProvider (%r)"
+       % replies[0].get("result", {}).get("capabilities", {}).get("referencesProvider"))
 expect(by_id.get(43, {}).get("error", {}).get("code") == -32601,
        "a method not implemented in M5 is -32601, got %r" % by_id.get(43, {}))
 # An answer to a notification would be a frame carrying result or error, so the number of
@@ -511,6 +517,16 @@ expect(answered_null(by_id, 73),
        "an unprovable symbol answers null, not an error (%r)" % by_id.get(73, {}))
 expect("pix does not bind to one declaration of this file" in err,
        "and the reason is on the log")
+# The client-side half of the same rule, which the two lines above do not pin: the sentence has
+# to ARRIVE AS A window/logMessage BEFORE the null that grey the menu item out. Counted on the
+# frames this run already produced, so no request is added and no request/answer count moves.
+PIX_LOG = next((i for i, r in enumerate(replies) if r.get("method") == "window/logMessage"
+                and "pix does not bind to one declaration" in
+                r.get("params", {}).get("message", "")), None)
+PIX_ANS = next((i for i, r in enumerate(replies) if r.get("id") == 73), None)
+expect(PIX_LOG is not None and PIX_ANS is not None and PIX_LOG < PIX_ANS,
+       "an unresolved rename speaks the reason to the client before its null (%s, %s)"
+       % (PIX_LOG, PIX_ANS))
 # A request with no newName at all: strAt falls back to the empty string, which is a rejected
 # name rather than a crash -- and the frame must still be an answer, not a -32603.
 expect(by_id.get(74, {}).get("error", {}).get("code") == -32602,
@@ -630,6 +646,288 @@ expect(by_id.get(92, {}).get("result") ==
        "the unambiguous parameter of the same document is still offered (%r)"
        % by_id.get(92, {}).get("result"))
 expect(junk == 0, "the shared-name run put only frames on stdout (junk=%d)" % junk)
+
+# --- M5 Task 10: the columns an LSP client can only be right about in UTF-16 ----------
+# Every range pinned above comes from tests/programs/symbols.sd7, which is pure ASCII, so
+# `str.index` and a UTF-16 count are the same number there and the wire could not tell an
+# lspRangeUnits answer from an lspRange one. This fixture puts three different answers on the
+# table for the token the cursor is on: 19 characters, 21 UTF-16 units, 25 bytes. Only the
+# middle one is a column a client can act on, and the second document below (13/18/19 units,
+# 13/19/21 bytes) is the BMP control that separates the byte rule from the other two.
+#
+# Expectations are computed from the fixture text with `u16`, never from anything the server
+# sent, so a server that answers BYTE columns shows 25 and is red -- measured, mutant M8. What
+# this run provably CANNOT see is stated at the CESU-8 pin below: an astral character never
+# reaches doc.text as one character, so the server's own character column IS 21 here too, and a
+# regression from col16 to a character count is invisible to every frame this suite can send.
+def u16(stri):
+    """UTF-16 code units in `stri` -- the count an LSP position calls a `character'.
+
+    Python indexes a str by CHARACTER, so the harness's usual `line.index(word)` is the client's
+    column only while the text stays in the BMP. One helper, used by every expectation below."""
+    return len(stri.encode("utf-16-le")) // 2
+
+
+U16_TEXT = ('$ include "seed7_05.s7i";\n'
+            '  include "console.s7i";\n'
+            '\n'
+            'var integer: tally is 0;\n'
+            '\n'
+            'const proc: main is func\n'
+            '  begin\n'
+            '    writeln("\u03c0"); tally := 1;\n'
+            '    writeln("\U0001F600\U0001F600"); tally := 2;\n'
+            '  end func;\n')
+U16_URI = "file:///tmp/tt_u16_wire.sd7"
+U16_BMP_URI = "file:///tmp/tt_u16_bmp.sd7"
+U16_BMP_TEXT = U16_TEXT.replace("\U0001F600\U0001F600", "\u03c0\u03c0")
+U16_LINES = U16_TEXT.split("\n")
+U16_DECL = U16_LINES.index("var integer: tally is 0;")
+U16_NARROW = U16_LINES.index('    writeln("\u03c0"); tally := 1;')
+U16_AST = U16_LINES.index('    writeln("\U0001F600\U0001F600"); tally := 2;')
+U16_TALLY = "tally"
+
+
+def u16_col(lines, line):
+    """The UTF-16 column at which this fixture's `tally' starts on `line'."""
+    return u16(lines[line][:lines[line].index(U16_TALLY)])
+
+
+U16_COL = {ln: u16_col(U16_LINES, ln) for ln in (U16_DECL, U16_NARROW, U16_AST)}
+U16_PREFIX = U16_LINES[U16_AST][:U16_LINES[U16_AST].index(U16_TALLY)]
+expect(U16_COL[U16_AST] != len(U16_PREFIX) and
+       U16_COL[U16_AST] != len(U16_PREFIX.encode("utf-8")),
+       "the astral fixture's UTF-16 column (%d) differs from its character count (%d) and its "
+       "byte count (%d) -- if this reddens, the fixture stopped separating the three rules and "
+       "the checks below are vacuous" % (U16_COL[U16_AST], len(U16_PREFIX),
+                                          len(U16_PREFIX.encode("utf-8"))))
+
+
+def u16_loc(uri, line, start):
+    return {"uri": uri,
+            "range": {"start": {"line": line, "character": start},
+                      "end": {"line": line, "character": start + len(U16_TALLY)}}}
+
+
+U16_EXPECT = [u16_loc(U16_URI, ln, U16_COL[ln]) for ln in (U16_DECL, U16_NARROW, U16_AST)]
+U16_EDIT = [{"range": loc["range"], "newText": "count2"} for loc in U16_EXPECT]
+U16_BMP_LINES = U16_BMP_TEXT.split("\n")
+U16_BMP_COL = {ln: u16_col(U16_BMP_LINES, ln) for ln in (U16_DECL, U16_NARROW, U16_AST)}
+U16_BMP_EDIT = [{"range": u16_loc(U16_BMP_URI, ln, U16_BMP_COL[ln])["range"],
+                 "newText": "count2"} for ln in (U16_DECL, U16_NARROW, U16_AST)]
+# The same three columns counted in UTF-8 bytes, for the failure message only.
+U16_BMP_BYTES = [len(U16_BMP_LINES[ln][:U16_BMP_LINES[ln].index(U16_TALLY)].encode("utf-8"))
+                 for ln in (U16_DECL, U16_NARROW, U16_AST)]
+U16_MSGS = [APPLY, msgs[1], opened(U16_URI, U16_TEXT), opened(U16_BMP_URI, U16_BMP_TEXT),
+            req(110, "textDocument/references",
+                dict(pos(U16_URI, U16_NARROW, U16_COL[U16_NARROW] + 2),
+                     context={"includeDeclaration": True})),
+            req(111, "textDocument/prepareRename", pos(U16_URI, U16_AST, U16_COL[U16_AST] + 2)),
+            req(112, "textDocument/rename",
+                dict(pos(U16_URI, U16_AST, U16_COL[U16_AST] + 2), newName="count2")),
+            req(113, "textDocument/rename",
+                dict(pos(U16_BMP_URI, U16_AST, U16_BMP_COL[U16_AST] + 2), newName="count2")),
+            # The brief's third references cursor: a name this buffer does not declare. The
+            # library row resolves it, declLine1 stays 0, and the answer is this file's tokens.
+            req(115, "textDocument/references",
+                  dict(pos(U16_URI, U16_NARROW, 7), context={"includeDeclaration": True})),
+            shutdown(114), exit_()]
+replies, code, err, junk = run([frame(m) for m in U16_MSGS])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+u16_refs = by_id.get(110, {}).get("result")
+U16_LOGS = [r["params"]["message"] for r in replies
+                 if r.get("method") == "window/logMessage"]
+expect(isinstance(u16_refs, list) and u16_refs == U16_EXPECT,
+       "references on non-ASCII lines answers the UTF-16 locations %s, got %s"
+       % ([(l["range"]["start"]["line"], l["range"]["start"]["character"],
+           l["range"]["end"]["character"]) for l in U16_EXPECT], u16_refs))
+expect(by_id.get(111, {}).get("result") ==
+       {"range": u16_loc(U16_URI, U16_AST, U16_COL[U16_AST])["range"],
+        "placeholder": U16_TALLY},
+       "prepareRename's range is the same UTF-16 span, not the cursor it was asked with (%r)"
+       % by_id.get(111, {}).get("result"))
+expect((by_id.get(112, {}).get("result") or {}).get("changes", {}).get(U16_URI) == U16_EDIT,
+       "rename edits all three occurrences at their UTF-16 columns (%s)"
+       % (by_id.get(112, {}).get("result"),))
+# A library name: declared outside this buffer, so declLine1 is 0 and no whole-line location is
+# added -- the two `writeln' tokens of this file and nothing else, no disclosure log either.
+lib_name_refs = by_id.get(115, {}).get("result")
+expect(isinstance(lib_name_refs, list) and
+       [(l["range"]["start"]["line"], l["range"]["start"]["character"],
+         l["range"]["end"]["character"]) for l in lib_name_refs] ==
+       [(U16_NARROW, 4, 11), (U16_AST, 4, 11)] and
+       len(U16_LOGS) == 0,
+       "references on a library name lists this file's two tokens and says nothing extra (%s, %s)"
+       % (lib_name_refs, U16_LOGS))
+# The BMP control: the same shape with 2-byte characters instead of 4-byte ones. Its column is
+# its character count, so this is the arm that rules out "the feature emits byte columns".
+expect((by_id.get(113, {}).get("result") or {}).get("changes", {}).get(U16_BMP_URI) ==
+       U16_BMP_EDIT,
+       "the BMP control document edits at its UTF-16 columns %s, not its byte columns %s (%s)"
+       % ([e["range"]["start"]["character"] for e in U16_BMP_EDIT], U16_BMP_BYTES,
+          by_id.get(113, {}).get("result")))
+expect(junk == 0, "the astral run put only frames on stdout (junk=%d)" % junk)
+
+# --- M5 Task 10 gap 6, recorded: the astral character does not arrive as one character ----
+# A DEFECT PIN, not a property. `json.dumps` writes one astral character as the JSON escape
+# pair \ud83d\ude00, Seed7's readJson turns each escape into its own char, and so doc.text
+# holds TWO code points (U+d83d, U+de00) where the client sent ONE. The user sees the result:
+# the analyzer's scanner rejects each lone surrogate and the buffer publishes an Error for them.
+# Measured here: four errors for the two astral characters of U16_TEXT, and none at all for
+# U16_BMP_TEXT, whose characters are all in the BMP and so survive the escape round trip.
+# The day the decode joins the pair, this check goes RED with an empty list -- and the stronger
+# form becomes available: expect no diagnostics on U16_URI, and expect 19 (the client's own
+# character column) to become the number that separates lspRange from lspRangeUnits. Measured
+# with the mutant `utf16CharLength always 1`: it reddens 18 unit checks (5 scan, 6 doc_store,
+# 4 features, 1 occurrences, 2 utf8bytes) and ZERO wire checks -- including the three above.
+U16_DIAGS = [d for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+             for d in r["params"]["diagnostics"] if r["params"]["uri"] == U16_URI]
+U16_BMP_DIAGS = [d for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+                 for d in r["params"]["diagnostics"] if r["params"]["uri"] == U16_BMP_URI]
+expect(len([d for d in U16_DIAGS if "surrogate" in d["message"]]) == 4 and
+       len(U16_BMP_DIAGS) == 0,
+       "GAP: an astral character in didOpen text reaches the analyzer as a surrogate pair -- "
+       "%d surrogate errors on the astral document, %d diagnostics on the BMP control (%s)"
+       % (len([d for d in U16_DIAGS if "surrogate" in d["message"]]),
+          len(U16_BMP_DIAGS), [d["message"] for d in U16_DIAGS]))
+
+# --- M5 Task 10 gap 2: a .s7i buffer on the wire -- the read answers, the writes refuse --
+# The library buffer is analysed through the synthetic driver, which reads the file back from
+# DISK while the client's unsaved edits live only in doc_store (R-F10). So a symbol line the
+# edit would use can be the wrong line: spec 12.3 settles it as a split, not a gate -- a READ
+# still answers, because over-including with a log line is honest, and a WRITE refuses, because
+# a half-applied edit is not. Both halves need the wire, because the frame path is where the
+# uri's `.s7i' suffix is decided.
+RN_LIB_PATH = "/tmp/seed7_lsp_transcript_rn_lib.s7i"
+RN_LIB_TEXT = ('const type: Counter is new struct\n'
+               '    var integer: amount is 0;\n'
+               '  end struct;\n'
+               '\n'
+               'var integer: ticks is 0;\n'
+               '\n'
+               'const proc: bump (inout integer: total) is func\n'
+               '  begin\n'
+               '    ticks +:= 1;\n'
+               '    writeln(total);\n'
+               '  end func;\n')
+with open(RN_LIB_PATH, "w") as f:
+    f.write(RN_LIB_TEXT)
+RN_LIB_URI = "file://" + RN_LIB_PATH
+RL = RN_LIB_TEXT.split("\n")
+RN_LIB_DECL = RL.index("var integer: ticks is 0;")
+RN_LIB_USE = RL.index("    ticks +:= 1;")
+RN_LIB_DECL_COL = u16(RL[RN_LIB_DECL][:RL[RN_LIB_DECL].index("ticks")])
+RN_LIB_USE_COL = u16(RL[RN_LIB_USE][:RL[RN_LIB_USE].index("ticks")])
+RN_LIB_COL = RN_LIB_USE_COL + 2
+replies, code, err, junk = run([frame(m) for m in [
+    APPLY, msgs[1], opened(RN_LIB_URI, RN_LIB_TEXT),
+    req(120, "textDocument/references",
+        dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL),
+             context={"includeDeclaration": True})),
+    req(121, "textDocument/prepareRename", pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL)),
+    req(122, "textDocument/rename",
+        dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL), newName="beats")),
+    shutdown(123), exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+lib_refs = by_id.get(120, {}).get("result")
+expect(isinstance(lib_refs, list) and
+       [(l["range"]["start"]["line"], l["range"]["start"]["character"],
+         l["range"]["end"]["character"]) for l in lib_refs] ==
+       [(RN_LIB_DECL, RN_LIB_DECL_COL, RN_LIB_DECL_COL + 5),
+        (RN_LIB_USE, RN_LIB_USE_COL, RN_LIB_USE_COL + 5)],
+       "references still ANSWERS inside a .s7i buffer, with the declaration and the use (%s)"
+       % lib_refs)
+expect(answered_null(by_id, 121),
+       "prepareRename refuses the same cursor in a .s7i buffer (%r)" % by_id.get(121, {}))
+expect(answered_null(by_id, 122),
+       "and rename refuses it too, so no edit can land on a stale line (%r)" % by_id.get(122, {}))
+LIB_MSGS = [r.get("params", {}).get("message", "") for r in replies
+            if r.get("method") == "window/logMessage"]
+LIB_WHY = " is a library buffer whose symbols come from disk while R-F10"
+
+
+def lib_log(method):
+    """The index of the one log line that refuses this buffer under `method', or None."""
+    return next((i for i, m in enumerate(LIB_MSGS)
+                 if m.startswith(method + ": " + RN_LIB_PATH) and LIB_WHY in m
+                 and "so an edit could land on the wrong line" in m), None)
+
+
+LIB_PREP_LOG = lib_log("prepareRename")
+LIB_RENAME_LOG = lib_log("rename")
+LIB_PREP_ANS = next((i for i, r in enumerate(replies) if r.get("id") == 121), None)
+LIB_RENAME_ANS = next((i for i, r in enumerate(replies) if r.get("id") == 122), None)
+expect(LIB_PREP_LOG is not None and LIB_PREP_ANS is not None and LIB_PREP_LOG < LIB_PREP_ANS and
+       LIB_RENAME_LOG is not None and LIB_RENAME_ANS is not None and
+       LIB_RENAME_LOG < LIB_RENAME_ANS,
+       "both refusals name the buffer by its disk path and R-F10 in a log that arrives before "
+       "their nulls (prepareRename %s before %s, rename %s before %s: %s)"
+       % (LIB_PREP_LOG, LIB_PREP_ANS, LIB_RENAME_LOG, LIB_RENAME_ANS, LIB_MSGS))
+expect(junk == 0, "the library-buffer run put only frames on stdout (junk=%d)" % junk)
+
+# --- M5 Task 10 gap 3: the two lifecycle edges, per method --------------------------
+# main.sd7 gates before handle(), so it cannot tell a new method from an old one -- and a pin
+# on `hover' alone cannot see a method that joins the chain on the other side of the gate. All
+# three of M5's methods, both edges, in their own runs.
+LIFE_PARAMS = [(130, "textDocument/references",
+                dict(pos(RN_URI, RN_USE, RN_CHAR), context={"includeDeclaration": True})),
+               (131, "textDocument/prepareRename", pos(RN_URI, RN_USE, RN_CHAR)),
+               (132, "textDocument/rename",
+                dict(pos(RN_URI, RN_USE, RN_CHAR), newName="count2"))]
+replies, code, err, junk = run([frame(m) for m in
+                                [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS] ==
+       [-32002, -32002, -32002],
+       "references, prepareRename and rename before initialize are each -32002 (%s)"
+       % [(i, by_id.get(i, {}).get("error")) for i, _, _ in LIFE_PARAMS])
+replies, code, err, junk = run([frame(m) for m in
+                                [APPLY, msgs[1], opened(RN_URI, SYMS), shutdown(139)] +
+                                [req(i, meth, p) for i, meth, p in LIFE_PARAMS] + [exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS] ==
+       [-32600, -32600, -32600],
+       "the same three after shutdown are each -32600 (%s)"
+       % [(i, by_id.get(i, {}).get("error")) for i, _, _ in LIFE_PARAMS])
+expect(junk == 0, "the after-shutdown run put only frames on stdout (junk=%d)" % junk)
+
+# --- M5 Task 10 gap 4: `workspace': null, the malformed client shape ----------------
+# A missing `workspace' key is pinned by the refusal runs above (msgs[0] has no such key). This
+# is the other shape: the key PRESENT and its value JSON null. atKey must hand the null back and
+# boolAt must fall through to FALSE rather than calling `boolean(jsonValue)', which raises
+# ILLEGAL_ACTION -- and a raise that reaches stdout corrupts the protocol channel, so the run
+# has to end with the ordinary answers and a clean exit.
+NULL_WS = req(1, "initialize", {"capabilities": {}, "processId": None, "rootUri": None,
+                                "workspace": None})
+NW_URI = "file:///tmp/tt_syms_nullws.sd7"
+NW_HOVER = REF_LINES.index("    writeln(totalSize(prototype, 2));")
+NW_HCHAR = REF_LINES[NW_HOVER].index("totalSize") + 4
+replies, code, err, junk = run([frame(m) for m in [
+    NULL_WS, msgs[1], opened(NW_URI, SYMS),
+    req(140, "textDocument/prepareRename", pos(NW_URI, RN_USE, RN_CHAR)),
+    req(141, "textDocument/rename", dict(pos(NW_URI, RN_USE, RN_CHAR), newName="count2")),
+    req(142, "textDocument/references",
+        dict(pos(NW_URI, RN_USE, RN_CHAR), context={"includeDeclaration": True})),
+    req(143, "textDocument/references",
+        dict(pos(NW_URI, RN_USE, RN_CHAR), context=None)),
+    req(144, "textDocument/hover", pos(NW_URI, NW_HOVER, NW_HCHAR)),
+    shutdown(145), exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(answered_null(by_id, 140),
+       "workspace: null -> prepareRename answers null, not an error frame (%r)"
+       % by_id.get(140, {}))
+expect(answered_null(by_id, 141),
+       "and rename answers null, not an error frame (%r)" % by_id.get(141, {}))
+expect(isinstance(by_id.get(142, {}).get("result"), list) and
+       isinstance(by_id.get(143, {}).get("result"), list),
+       "references answers a list for a context object AND for a context that is JSON null "
+       "(object: %s; null: %s)" % (by_id.get(142, {}).get("result"),
+                                    by_id.get(143, {}).get("result")))
+hv_nw = (by_id.get(144, {}).get("result") or {}).get("contents", {}).get("value", "")
+expect("totalSize" in hv_nw, "the same session still answers hover (%r)" % hv_nw)
+expect(code == 0 and junk == 0,
+       "nothing raised to stdout and the session shut down normally (code=%d, junk=%d)"
+       % (code, junk))
 
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
