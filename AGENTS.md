@@ -74,10 +74,19 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `h.EMPTY_HASH`, removal `excl(h, key)`, assignment `h @:= [k] v`.
 - A file that defines `main` cannot be included by a test (redeclaration). That is why
   `main.sd7` and `lsp_server.sd7` are separate files.
-- `-p` is NOT an optimization flag: `s7 -p file` writes a trace protocol log. Optimization lives in
-  the compiler — `s7c -On` (1..3) for the C compiler, `-ocN` to optimize generated C code, `-flto`
-  for link-time. The interpreter has no optimization switch; `-a` suppresses only the execution
-  phase, not constant folding.
+- **Profile with `s7c -p`, and never confuse the two `-p` flags.** `s7 -p file` writes a trace
+  protocol log. `s7c -p` activates function profiling: compile, run the executable, and it writes
+  `profile_out` — a tab-separated table of microseconds, call count, `file(line)` and function name
+  (`doc/faq.txt` "Can I profile Seed7 programs?"). Use it for every performance claim this repo
+  makes, instead of `time`-ing a whole suite: measured here as
+  `s7c -p -O2 -l src tests/occurrences_test.sd7`, running it gave 194 700 µs in `main`, of which
+  164 211 µs was 7 `analysisOf` calls (`src/analysis.sd7:333` `analyzeAll`, then
+  `collectSyms` at 78 441 µs) — i.e. analysis and the symbol walk dominate, which is the evidence
+  behind "one analysis per version" and the buffered-only `locals` guard.
+  `-p` measures; it does not optimize. Optimization is `-On` (C compiler), `-ocN` (generated C) and
+  `-flto`, and `-a` suppresses only the execution phase, never constant folding.
+  Compiled probes write a binary next to their source (`tests/occurrences_test`) plus `profile_out`
+  in the cwd — delete both; `git status --porcelain -uall` must be empty afterwards.
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
