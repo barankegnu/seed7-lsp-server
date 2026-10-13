@@ -123,6 +123,40 @@ const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: colum
            utf16Before(doc.text, start + ch) - utf16Before(doc.text, start) <& "}";
   end func;
 
+# The range for a token, from the (line0, col16, width16) the scanner measured. col16 is
+# ALREADY a UTF-16 column, so nothing here converts it -- lspRange would treat it as a
+# character column and convert, which is the double conversion that made selectionRange
+# report the wrong range on any line with multi-byte text before the token. Clamped to the
+# line's UTF-16 width, the way lspRange clamps an absurd character column.
+const func string: lspRangeUnits (in lsDoc: doc, in integer: line0, in integer: col16,
+                                  in integer: width16) is func
+  result
+    var string: out is "";
+  local
+    var integer: lineIdx is 0;
+    var integer: start is 1;
+    var integer: units is 0;
+    var integer: first is 0;
+    var integer: last is 0;
+  begin
+    lineIdx := lineIndexOf(doc, succ(line0));
+    start := doc.lineStart[lineIdx];
+    units := utf16Before(doc.text, start + lineWidth(doc.text, start)) -
+             utf16Before(doc.text, start);
+    first := col16;
+    if first < 0 then
+      first := 0;
+    elsif first > units then
+      first := units;
+    end if;
+    last := first + width16;
+    if last > units then
+      last := units;
+    end if;
+    out := "{\"start\":{\"line\":" <& lineIdx - 1 <& ",\"character\":" <& first <&
+           "},\"end\":{\"line\":" <& lineIdx - 1 <& ",\"character\":" <& last <& "}}";
+  end func;
+
 # The 1-based character column that holds the 1-based UTF-8 byte offset `byteCol`.
 # A byte in the middle of a multi-byte character names that character, and a byte past
 # the line's end names the character just after it, which lspRange clamps to the line

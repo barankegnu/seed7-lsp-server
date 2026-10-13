@@ -56,19 +56,22 @@ const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
     tk := tokenAt(doc.text, idx);
 
     # Build the token range (or empty range if no token).
+    # Which converter a column needs is decided by its PROVENANCE, not by its name: a value
+    # the scanner or the client already measured in UTF-16 units goes to lspRangeUnits and is
+    # never converted; a value counted in characters (lineWidth, a 1-based column) goes to
+    # lspRange, which converts it. Mixing the two is the selectionRange defect, spec 11.8.
     if tk.start > 0 then
-      tokenRange := "{\"start\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16)) <&
-                    ",\"end\":" <& lspRange(doc, succ(tk.line0), succ(tk.col16) + tk.width16) <& "}";
+      tokenRange := lspRangeUnits(doc, tk.line0, tk.col16, tk.width16);
     else
-      # Empty range at the position.
-      tokenRange := "{\"start\":" <& lspRange(doc, succ(line0), succ(char0)) <&
-                    ",\"end\":" <& lspRange(doc, succ(line0), succ(char0)) <& "}";
+      # Empty range at the position: char0 is the request's own UTF-16 column.
+      tokenRange := lspRangeUnits(doc, line0, char0, 0);
     end if;
 
     # Get enclosing regions (innermost first).
     regions := enclosingRegions(doc.text, line0, lastLine);
 
-    # Start with the document range (outermost, no parent).
+    # Start with the document range (outermost, no parent). docEndCol1 is a CHARACTER count
+    # from lineWidth, so it belongs on the converting side -- lspRange, not lspRangeUnits.
     docEndLine1 := succ(lastLine);
     lastLineStart := doc.lineStart[docEndLine1];
     lastLineWidth := lineWidth(doc.text, lastLineStart);
