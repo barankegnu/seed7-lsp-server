@@ -50,7 +50,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   Never extend or shorten the array by hand; run the generator.
 - A `local` variable cannot be initialised from a parameter of the same function.
   Declare with a constant, then assign in `begin`.
-- `key`, `len` and `line` are taken by the language and library. Choose other names.
+- `key`, `len` and `line` are taken by the language and library. Choose other names.  (The first bullet of this list is the generated, measured set.)
   So is `sum` — and a result variable that collides with a library function is worse than a
   warning, the whole declaration silently fails (`DECL_FAILED` after a `NO_MATCH`).
 - A `func` with a `result` clause **assigns** its result variable; Seed7 returns it
@@ -84,8 +84,17 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
   (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
   stays out of the dispatcher's way.
-- There is no char-to-string conversion: `str(ch)`, `string(ch)` and `ch & ""` all fail to
-  match. Slice the source text instead — `stri[i .. i]` — which is what `jsonw.sd7` does.
+- `str(ch)` DOES work — `str(chr(128512))` returns a one-character string, and `chr(n)` is how a
+  code point becomes text. What fails is `string(ch)` and concatenating a char (`ch & ""`,
+  `"" & ch`, even `chr(195) & chr(165)`): none match. Slicing the source (`stri[i .. i]`) is still
+  what `jsonw.sd7` does, but it is a choice, not a necessity. This line said "no char-to-string
+  conversion" and cost a wasted attempt building M5's surrogate joiner.
+- `writeln` and `write` take exactly ONE argument. `writeln("a=", n)` does not match — compose the
+  line with `<&` and `str()` first. An argument list that fails to match inside `main` reports
+  only "Declaration of main failed", which reads like a broken body.
+- `gets` on a UTF-8 file counts CHARACTERS, not bytes (`utf8.s7i:132` → `utf8_gets`), so handing
+  it a `Content-Length` over-reads any body holding non-ASCII. `transport.readFrameBody` exists
+  because of this; `readln` and `getl` are the safe reads.
 - A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
   block, so a brace-form array declaration fails somewhere far away in the error tree.
 - `x not in arr` does not parse when `x` is a struct-field select (`syms[i].sign not in
@@ -216,11 +225,25 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
 (documentSymbol, definition, hover, completion, signatureHelp), and M4's scanner and
 token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
-selectionRange, semanticTokens, one-analysis-per-version) are merged on
-`m4-scan-and-token-features`. Still open from M3: the trust gate, local-variable
+selectionRange, semanticTokens, one-analysis-per-version) are merged, and M5's cross-reference
+features (`occurrences.sd7`, references, file-local `prepareRename`/`rename`) are merged on
+`m5-references-and-rename`. Still open from M3: the trust gate, local-variable
 completion, and R-F10 — which is a conformance violation as well as stale data, because
 `textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
 not read a document's content through its uri.
+
+M5's `occurrences.sd7` is the only use-site index, and it is lexical by necessity, not by
+choice: re-measured in M5, reflection still yields declarations only — `body()` answers
+`CALLOBJECT` and `getValue(b, attr reference)` fails to match, so there is no use-site walk.
+`resolveBinding` decides whose name a token is (a routine's own locals come from
+`analysis.sd7`'s scope records, whose cost is measured: filling every library record would add
+7–10 ms per analysis) and `inScope` is the ONLY place scope is applied. Two refusals are
+invariants of the write path, not preferences: an unprovable binding and `scopeUncertain`
+(a nested routine's locals, or a one-line routine's absent region, mean the scope cannot be
+seen) both make `rename` answer `null` rather than guess — over-inclusive on a read,
+refusal on a write. `workspace/symbol` and project-wide rename are M6: they need an index of
+files the editor never opened, and with them the staleness and watching questions R-F10 already
+show are not free.
 
 M4's `scan.sd7` is the server's only lexical machine; `doc_store.codeText` is a
 projection of it. A token's UTF-16 column is carried forward incrementally by `nextToken`

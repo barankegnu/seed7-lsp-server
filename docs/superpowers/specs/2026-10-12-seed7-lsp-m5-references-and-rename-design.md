@@ -459,6 +459,15 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     depend on it. Two of the three pin it with a value that would change under a reordering; the
     dependency is stated here because no in-suite check can enforce an interpreter promise.
 
+14. **The occurrence pass holds on the whole Seed7 corpus.** `tools/corpus_scan.sh` takes the
+    first 12 indexable tokens off each file and asks `occurrencesOf` for each — a positive control,
+    since the name came from the same scanner, so a zero is a bug in the index and not a missing
+    fixture. Over every file in the checkout (`lib/*.s7i` 213, `prg/*.sd7` 129):
+    `files=342 names_probed=4104 occurrences=516044 misses=0`. Cost, measured on the same run:
+    about **40 ms per full-document pass** at an average of ~126 occurrences per name — the figure
+    behind "one request, one pass" in §3. It checks termination and finding, NOT columns; those are
+    pinned by the astral checks in Tasks 1, 4 and 9.
+
 ## 12. Open questions put to the partner
 
 These three are forks where both branches are buildable, the answer changes what gets built, and
