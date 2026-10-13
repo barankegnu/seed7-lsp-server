@@ -704,8 +704,9 @@ git commit -m "M5 shipped: the design's M5 row, two corrected numbers, and a cor
 
 Found by Task 10 and reproduced by the controller. `src/transport.sd7:73` does
 `body := gets(STD_UTF8_IN, contentLength)`, and `gets` on a `utf8File` (`seed7/lib/utf8.s7i:132` →
-`utf8_gets`) counts **characters**. Measured: reading 3 from a buffer holding `éa` consumes 5 bytes
-and leaves the remainder unread, so any inbound body with a non-ASCII byte reads past its own frame
+`utf8_gets`) counts **characters**. Measured (`/tmp/tp3.sd7`, the same call the transport makes): `gets(STD_UTF8_IN, 3)` on
+`éaextra-tail` returns `éae` and consumes 4 bytes, leaving `xtra-tail` for the next header read —
+so any inbound body with a non-ASCII byte reads past its own frame
 and the next header read is garbage. It hid for four milestones because `tests/transcript.py` writes
 bodies with `json.dumps`, which escapes non-ASCII to `\uXXXX` unless `ensure_ascii=False` is passed —
 so no test body was ever non-ASCII. Real clients do not escape. The parent design's §3.1 claimed the

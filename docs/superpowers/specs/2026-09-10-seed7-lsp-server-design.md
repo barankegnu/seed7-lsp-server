@@ -62,9 +62,10 @@ Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(S
 - Headers: `getln(STD_UTF8_IN)` yields header lines with `\r\n` already stripped; an empty line terminates the header block.
 - Body: **corrected 2026-10-13 — this line was wrong, and the correction is a shipped defect.** It
   claimed `gets(STD_UTF8_IN, n)` counts bytes, so `Content-Length` could be passed verbatim. It
-  counts CHARACTERS: reading 3 from a buffer holding `éa` yields 3 characters and consumes 5 bytes,
+  counts CHARACTERS: `gets(STD_UTF8_IN, 3)` on `éaextra-tail` returns `éae` — 3 characters, 4 bytes —
+  leaving `xtra-tail` to be read as the next frame's header,
   so any inbound body containing a non-ASCII byte consumes past its own frame and the next header
-  read is garbage — the server stops answering mid-session (`/tmp/tp.sd7`, re-run against
+  read is garbage — the server stops answering mid-session (`/tmp/tp3.sd7`, re-run against
   `src/transport.sd7:98`). The harness never saw it because `json.dumps` escapes every non-ASCII
   character to `\uXXXX` unless `ensure_ascii=False` is passed, so no test body was ever non-ASCII.
   Real clients do not escape. Tracked as the inbound-framing defect; `tests/transcript.py` carries a
