@@ -14,10 +14,12 @@ const type: blockRef is new struct
     var integer: startLine is 0;
     var integer: endLine is 0;
     var string: kind is "";
-    # "func" for the body of a routine, "" for everything else. `kind' cannot carry this: the
-    # two `# Strip internal marker' assignments in blockRegions blank it for routine bodies and
-    # for sections, and foldingRange serialises what survives. Seed7 closes a proc body with
-    # `end func' too -- there is no `end proc' -- so "proc" is a value no input reaches.
+    # "func" for the body of a routine, "" for everything else. `kind' cannot carry this:
+    # features/folding_range.sd7:31-32 serialises it into FoldingRange.kind, so it may only hold
+    # what a client is meant to read. The two `# Strip internal marker' assignments in
+    # blockRegions blank a CLAUSE region (:332) and a SECTION (:337); a routine body is
+    # pushed with kind "" (:240), so it was never marked to begin with. Seed7 closes a proc body
+    # with `end func' too -- there is no `end proc' -- so "proc" is a value no input reaches.
     var string: closer is "";
   end struct;
 
@@ -397,10 +399,16 @@ const func array blockRef: enclosingDeclarations (in string: text, in integer: l
 # line, below its own name, so the pair is the FIRST routine body that opens at or after
 # declLine1 -- and a one-line header, whose `is func' sits on the name line, pairs with itself.
 # Nothing pairs: the empty blockRef. startLine 0 is this file's "no match", and `closer = ""' is
-# what tells it apart, because a real region may legitimately start at line 0.
+# what tells it apart, because a real region may legitimately start at line 0. A declLine1 of 0 or
+# less -- the unset default of symRec.line1, not line 0 of the document -- pairs with nothing.
 # shortcut: a NON-routine declaration line above a routine pairs with that routine; the only
 #           caller (M5 binding resolution) asks about routine records. Upgrade to a category
-#           test there if a caller ever needs every declaration.
+#           test there if a caller ever needs every declaration. The rule is line-granular:
+#           closeFrom emits a region only when openLine < endLine (:92), so a routine whose whole
+#           body sits on one line yields no region and its name line pairs with the NEXT routine
+#           below, and two headers sharing a line are unpairable for the same reason (the
+#           ascending sort keeps the inner one first, so an outer declaration gets the inner's
+#           region).
 const func blockRef: declarationRegion (in string: text, in integer: lastLine,
                                         in integer: declLine1) is func
   result
@@ -411,11 +419,13 @@ const func blockRef: declarationRegion (in string: text, in integer: lastLine,
     var integer: declLine0 is 0;
   begin
     out := blockRef.value;
-    declLine0 := pred(declLine1);
-    all := blockRegions(text, lastLine);
-    for i range 1 to length(all) do
-      if out.closer = "" and all[i].closer <> "" and all[i].startLine >= declLine0 then
-        out := all[i];
-      end if;
-    end for;
+    if declLine1 > 0 then
+      declLine0 := pred(declLine1);
+      all := blockRegions(text, lastLine);
+      for i range 1 to length(all) do
+        if out.closer = "" and all[i].closer <> "" and all[i].startLine >= declLine0 then
+          out := all[i];
+        end if;
+      end for;
+    end if;
   end func;
