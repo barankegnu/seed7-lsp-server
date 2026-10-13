@@ -162,6 +162,7 @@ const proc: main is func
     var string: capText is "";
     var string: capUri is "file:///tmp/seed7_lsp_cap.sd7";
     var integer: k is 0;
+    var array occurrence: capOps is 0 times occurrence.value;
   begin
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
@@ -353,7 +354,23 @@ const proc: main is func
           str(p.refused) <& " " <& p.json, "TRUE null");
     check("and says the list is capped, not that the token is not a name", p.why,
           "prepareRename: count has more occurrences than this server lists (more than 2000)," <&
-          " and the token under the cursor is not among the ones listed, so its range is not" <&
+          " and the token under the cursor is not among the names listed, so its range is not" <&
+          " known");
+    # The sentence says NAMES for a reason. Five lines into the same document the cursor answers
+    # `:=', which is TK_OP, which occurrencesOf DOES index: that position is record 6 of the 2 001
+    # the capped list holds, cursorName returned 0 on its KIND, and "not among the ones listed"
+    # was a false statement about a token that is listed. Revert the one word and this check
+    # reddens.
+    capOps := occurrencesOf(capText, ":=");
+    check("five lines down the cursor is an operator, not a name",
+          cursor(capUri, 5, 8).word, ":=");
+    check("and that operator IS among the records the truncated list holds",
+          str(capOps[6].line0) <& ":" <& str(capOps[6].col16), "5:6");
+    p := prepareRenameAnswer(openDocs[capUri], 0 times symRec.value,
+                             cursor(capUri, 5, 8), capUri, clientCanApplyEdits);
+    check("so the refusal calls the missing class what it is: names",
+          p.why, "prepareRename: := has more occurrences than this server lists (more than 2000)," <&
+          " and the token under the cursor is not among the names listed, so its range is not" <&
           " known");
     # The read itself, driven through the dispatcher. Each frame writes an InitializeResult to
     # stdout; report()'s leading newline is what keeps it off the graded line.

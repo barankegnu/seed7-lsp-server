@@ -428,6 +428,145 @@ replies, code, err, junk = run(pr_msgs(req(1, "initialize",
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(answered_null(by_id, 60),
        "a non-boolean applyEdit leaves the flag down (%r)" % by_id.get(60, {}))
+# --- M5 Task 9: rename, the one method here that WRITES to the user's file ----------
+# The symbol is reportWidget's `counter' parameter: one use inside the body and its declaration
+# on the header line, which is above the routine's body region. Two edits, one document.
+RN_URI = "file:///tmp/tt_syms.sd7"
+RN_HEAD = PR_LINES.index("const proc: reportWidget (in string: label, "
+                         "inout integer: counter) is func")
+RN_USE = PR_LINES.index("    counter +:= 1;")
+RN_CHAR = PR_LINES[RN_USE].index("counter") + 1          # inside the seven letters
+
+
+def rn_edit(line, new):
+    col = PR_LINES[line].index("counter")
+    return {"range": {"start": {"line": line, "character": col},
+                      "end": {"line": line, "character": col + 7}},
+            "newText": new}
+
+
+RN_EXPECT = {"changes": {RN_URI: [rn_edit(RN_HEAD, "count2"), rn_edit(RN_USE, "count2")]}}
+
+
+def rn_msgs(init):
+    """The messages of one framed session: the accept, the two -32602 rejections, a refusal, and
+    the two dispatcher rules that must survive a new branch in the chain. Kept as messages, not
+    frames, so the checks can count the requests in the run they came from."""
+    return [init, msgs[1], opened(RN_URI, SYMS),
+            req(70, "textDocument/rename",
+                dict(pos(RN_URI, RN_USE, RN_CHAR), newName="count2")),
+            req(71, "textDocument/rename",
+                dict(pos(RN_URI, RN_USE, RN_CHAR), newName="1bad")),
+            req(72, "textDocument/rename",
+                dict(pos(RN_URI, RN_USE, RN_CHAR), newName="label")),
+            req(73, "textDocument/rename",
+                dict(pos(RN_URI, PR_LINES.index("    total := w.pix * factor;"),
+                     PR_LINES[PR_LINES.index("    total := w.pix * factor;")].index("pix") + 1),
+                     newName="pixels")),
+            req(74, "textDocument/rename", pos(RN_URI, RN_USE, RN_CHAR)),
+            req(75, "textDocument/typeDefinition", pos(RN_URI, RN_USE, RN_CHAR)),
+            notify("$/unknownThing", {}),
+            shutdown(76), exit_()]
+
+
+APPLY = req(1, "initialize", {"capabilities": {}, "processId": None, "rootUri": None,
+                              "workspace": {"applyEdit": True}})
+RN_RUN = rn_msgs(APPLY)
+replies, code, err, junk = run([frame(m) for m in RN_RUN])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+edit = by_id.get(70, {}).get("result")
+expect(isinstance(edit, dict) and list(edit.get("changes", {})) == [RN_URI],
+       "rename edits exactly one document, the requested uri (%r)"
+       % (list(edit.get("changes", {})) if isinstance(edit, dict) else edit))
+expect(isinstance(edit, dict) and len(edit["changes"].get(RN_URI, [])) == 2,
+       "and two TextEdits, one per occurrence in scope (%r)" % edit)
+expect(edit == RN_EXPECT, "with the header declaration and the use, at their own columns (%r)" % edit)
+expect(all(e["newText"] == "count2" for e in edit.get("changes", {}).get(RN_URI, [])),
+       "every edit carries the newName, not the word under the cursor")
+expect(by_id.get(70, {}).get("error") is None, "the accepted rename is a result, not an error")
+LOGS9 = [r for r in replies if r.get("method") == "window/logMessage"]
+expect(len(LOGS9) == 4,
+       "one sentence for each rejection and refusal, none for the accept (%d log frames)"
+       % len(LOGS9))
+expect(not [r for r in LOGS9 if "count2" in r.get("params", {}).get("message", "")],
+       "and nothing in the log is about the rename that worked")
+# A rejected newName is -32602 InvalidParams, an event a refusal is not.
+expect(by_id.get(71, {}).get("error", {}).get("code") == -32602,
+       "a name that is not an identifier is -32602, not null (%r)" % by_id.get(71, {}))
+expect("1bad is not a Seed7 identifier" in err,
+       "and the rejection is mirrored to stderr")
+expect("rename: 1bad is not a Seed7 identifier" in
+       " ".join(r.get("params", {}).get("message", "")
+                for r in replies if r.get("method") == "window/logMessage"),
+       "and reaches the client as a logMessage too")
+expect(by_id.get(72, {}).get("error", {}).get("code") == -32602,
+       "a name already declared in the symbol's scope is -32602 (%r)" % by_id.get(72, {}))
+expect("label is already declared in the scope of counter" in err,
+       "and says which scope it collides in")
+# A refusal is null, never an error frame: `pix' is a struct field, which binds to no
+# declaration this server has.
+expect(answered_null(by_id, 73),
+       "an unprovable symbol answers null, not an error (%r)" % by_id.get(73, {}))
+expect("pix does not bind to one declaration of this file" in err,
+       "and the reason is on the log")
+# A request with no newName at all: strAt falls back to the empty string, which is a rejected
+# name rather than a crash -- and the frame must still be an answer, not a -32603.
+expect(by_id.get(74, {}).get("error", {}).get("code") == -32602,
+       "a rename frame with no newName is -32602, not an internal error (%r)" % by_id.get(74, {}))
+# The dispatch chain, unchanged around the new branch.
+expect(by_id.get(75, {}).get("error", {}).get("code") == -32601,
+       "the unknown request beside rename is still -32601 (%r)" % by_id.get(75, {}))
+REQUESTS9 = len([m for m in RN_RUN if "id" in m])
+answered = [r for r in replies if "result" in r or "error" in r]
+expect(len(answered) == REQUESTS9,
+       "and the unknown notification is still silent (%d requests, %d answers)"
+       % (REQUESTS9, len(answered)))
+expect(junk == 0, "the rename run put only frames on stdout (junk=%d)" % junk)
+expect(replies[0].get("result", {}).get("capabilities", {}).get("renameProvider") ==
+       {"prepareProvider": True},
+       "renameProvider is still {\"prepareProvider\":true} with the handler wired (%r)"
+       % replies[0].get("result", {}).get("capabilities", {}).get("renameProvider"))
+
+# Without workspace.applyEdit the same request is a refusal, and a refusal is null: the client
+# that cannot apply an edit must not be handed an error it would show as a failed rename.
+replies, code, err, junk = run([frame(m) for m in rn_msgs(msgs[0])])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(answered_null(by_id, 70),
+       "no applyEdit -> rename answers null (%r)" % by_id.get(70, {}))
+expect("workspace.applyEdit" in err, "and says the capability it did not declare")
+
+# --- M5 Task 9 R47: a capped document refuses instead of half-editing ----------------
+# 2 002 uses of one global plus its declaration: occurrencesOf stops at its 2 001st record, so
+# the cursor on the FIRST use IS in the list and a range exists -- the gap that made prepareRename
+# accept a document rename could only edit partially. Both methods must refuse the same cursor.
+CAP_TEXT = ('$ include "seed7_05.s7i";\n  include "console.s7i";\n'
+            'var integer: count is 0;\n\n'
+            'const proc: main is func\n  begin\n' +
+            '    count := 1;\n' * 2001 + '  end func;\n')
+CAP_URI = "file:///tmp/tt_cap_wire.sd7"
+CAP_CURSOR = CAP_TEXT.split("\n").index("    count := 1;")
+replies, code, err, junk = run([frame(m) for m in [
+    APPLY, msgs[1], opened(CAP_URI, CAP_TEXT),
+    req(80, "textDocument/rename", dict(pos(CAP_URI, CAP_CURSOR, 5), newName="total")),
+    req(81, "textDocument/prepareRename", pos(CAP_URI, CAP_CURSOR, 5)),
+    req(82, "textDocument/rename", dict(pos(CAP_URI, CAP_CURSOR, 5), newName="1bad")),
+    shutdown(83), exit_()]])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(answered_null(by_id, 80),
+       "rename refuses a capped document whose cursor IS listed (%r)" % by_id.get(80, {}))
+expect(answered_null(by_id, 81),
+       "and prepareRename refuses the very same cursor (%r)" % by_id.get(81, {}))
+expect("count has more occurrences than this server lists" in err,
+       "both under the sentence that says an edit would be incomplete (%r)" % err[-200:])
+expect("so a rename could not rewrite all of them" in err and
+       "the token under the cursor is not among" not in err,
+       "and not the other truncation sentence, which speaks about the cursor")
+# The order still holds at the cap: a rejected name costs -32602 even where the document would
+# be refused anyway, because the name is checked before anything is scanned.
+expect(by_id.get(82, {}).get("error", {}).get("code") == -32602,
+       "a bad name is still -32602 on a capped document (%r)" % by_id.get(82, {}))
+expect(junk == 0, "the capped run put only frames on stdout (junk=%d)" % junk)
+
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
 # so editing the fixture cannot silently move it -- and one attempt at this check had

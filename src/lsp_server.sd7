@@ -17,6 +17,7 @@ $ include "seed7_05.s7i";
   include "features/semantic_tokens.sd7";
   include "features/references.sd7";
   include "features/prepare_rename.sd7";
+  include "features/rename.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
@@ -281,6 +282,8 @@ const proc: handle (in rpcMsg: msg) is func
     var jsonValue: span is jsonValue.value;
     var refsAnswer: refs is refsAnswer.value;
     var prepareAnswer: prep is prepareAnswer.value;
+    var renameAnswer: ren is renameAnswer.value;
+    var string: newName is "";
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
@@ -352,6 +355,29 @@ const proc: handle (in rpcMsg: msg) is func
           logMessage(prep.why);
         end if;
         sendResult(msg.id, prep.json);
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/rename" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        newName := strAt(msg.params, "newName", "");
+        ren := renameResult(openDocs[uri], symbolsOfDocument(uri), wordOfRequest(msg), uri,
+                            newName, clientCanApplyEdits);
+        # Two events, and the client reads them differently. A REFUSAL -- this cursor names a
+        # symbol this server will not rewrite -- is null, the same answer prepareRename gives for
+        # the same reason, from the same predicate. A REJECTED newName or a collision is a request
+        # the user can correct, so it is -32602 InvalidParams. Both mirror `why' to the log and
+        # stderr; only the second costs an error frame.
+        if ren.error = "invalid" then
+          logMessage(ren.why);
+          sendError(msg.id, -32602, ren.why);
+        else
+          if ren.why <> "" then
+            logMessage(ren.why);
+          end if;
+          sendResult(msg.id, ren.json);
+        end if;
       else
         sendResult(msg.id, "null");
       end if;

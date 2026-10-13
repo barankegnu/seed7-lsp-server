@@ -108,9 +108,13 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
           # The pass keeps MAX_OCCURRENCES + 1 records and stops, so both conjuncts below are
           # literally what this branch knows. Still a refusal -- only the sentence was wrong
           # ("`count` is not a name" about a token that plainly is one).
+          # "names", not "ones": the list DOES carry this token when it is an operator run, and
+          # cursorName returned 0 on its KIND. Measured on the 2 002-statement fixture with the
+          # cursor at line 5 character 8: `:=' is record 4 of the truncated list, so any wording
+          # about what is not listed has to name the class that is missing, which is names.
           out.reason := word.word <& " has more occurrences than this server lists (more than " <&
                         str(MAX_OCCURRENCES) <& "), and the token under the cursor is not among"
-                        <& " the ones listed, so its range is not known";
+                        <& " the names listed, so its range is not known";
         else
           out.reason := word.word <& " is not a name";
         end if;
@@ -128,6 +132,18 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
         elsif out.b.scopeUncertain then
           out.reason := "the scope of " <& word.word <& " is not fully visible to this server," <&
                         " so a rename could rewrite a shadowing declaration";
+        elsif out.b.capped then
+          # R47, and the case the slot = 0 branch above cannot speak for: there the cursor is
+          # missing from the list, here the CURSOR IS LISTED and its range is known, but the list
+          # stops at MAX_OCCURRENCES so everything past it is invisible to whoever edits next. A
+          # read truncates with a log line, as references does; a write would leave uses behind
+          # under the old name, which is the silently partial rename spec 2 refuses. It sits LAST
+          # in this chain so a symbol that is also a library name, a keyword or unbound still gets
+          # the reason that describes the SYMBOL, and this sentence only ever speaks for a document
+          # too long to list -- which is also why it does not repeat the other truncation claim.
+          # Shared here, in the one predicate, so prepareRename and rename cannot diverge (R45).
+          out.reason := word.word <& " has more occurrences than this server lists (more than " <&
+                        str(MAX_OCCURRENCES) <& "), so a rename could not rewrite all of them";
         end if;
       end if;
     end if;

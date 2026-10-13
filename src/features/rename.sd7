@@ -1,0 +1,269 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "occurrences.sd7";
+  include "scan.sd7";
+  include "keywords.sd7";
+  include "uris.sd7";
+  include "jsonw.sd7";
+  include "features/kinds.sd7";
+  include "features/prepare_rename.sd7";
+
+# textDocument/rename: the ONE method of this server that writes to the user's file (spec 6).
+#
+# It re-runs the resolution and trusts nothing: it calls renameDecision -- the same predicate
+# prepareRename answers with (R45), never a copy of its arms -- and edits the `oc' that decision
+# hands back instead of scanning the document a second time (R39). A cursor prepareRename refuses
+# is refused here for the same sentence with "rename: " in front of it, and the capped document is
+# refused rather than half-edited (R47).
+#
+# The answers come in two kinds, and the dispatcher must not confuse them:
+#   * a REFUSAL (renameDecision's arm list) leaves `json' at "null" and `error' empty -- null is
+#     what greys the menu item out, an error frame would show the user a failure;
+#   * a REJECTED newName or a collision sets `error' to "invalid", which the dispatcher sends as
+#     JSON-RPC -32602 InvalidParams.
+# `why' is non-empty for both of those and empty for a successful rename, which is the only thing
+# the dispatcher needs to decide whether to log; `error' tells the two apart.
+#
+# Order is load-bearing: the name's own shape is checked BEFORE the document is read, so a request
+# that can never be honoured costs no scan, and the collision test runs against the scope the
+# predicate already resolved, so it is the symbol's scope rather than the whole file (spec 6).
+#
+# No position is converted here (invariant 2: every range comes from lspRangeUnits, which takes the
+# columns the scanner measured) and no shape leaves the file except through jsonw (invariant 4).
+
+const type: renameAnswer is new struct
+    var string: json is "null";
+    # "" or "invalid" -- anything else would be a third event nobody dispatches on.
+    var string: error is "";
+    var string: why is "";
+  end struct;
+
+# The scanner's own name rule, applied to the first character and then to the rest, so the
+# definition of "is this a name" is not re-derived here (spec 6). nm[1] on the empty string raises
+# INDEX_ERROR, which is why length() is asked before the character is read.
+const func boolean: startsName (in string: nm) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    if length(nm) <> 0 then
+      out := nameStart(nm[1]);
+    end if;
+  end func;
+
+const func boolean: allNameChars (in string: nm) is func
+  result
+    var boolean: out is TRUE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 2 to length(nm) do
+      if out and not nameMore(nm[i]) then
+        out := FALSE;
+      end if;
+    end for;
+  end func;
+
+# "" when `nm' may be used as a name. Three rejections, all cheap, all before any document is
+# consulted: empty, not an identifier, and a word the interpreter refuses as a declared name --
+# keywords.sd7's MEASURED gate, which is 63 words and deliberately NOT completion's vocabulary.
+# `type', `proc', `result', `enum', `and', `or' and `div' are outside that gate (measured legal
+# names), so renaming onto them is allowed; the check in tests/features_test.sd7 renames onto
+# `type' to keep that true.
+const func string: newNameProblem (in string: nm) is func
+  result
+    var string: out is "";
+  begin
+    if length(nm) = 0 then
+      out := "the new name is empty";
+    elsif not startsName(nm) then
+      out := nm <& " is not a Seed7 identifier";
+    elsif not allNameChars(nm) then
+      out := nm <& " is not a Seed7 identifier";
+    elsif isKeyword(nm) then
+      out := nm <& " is a Seed7 keyword, so it would rewrite syntax";
+    end if;
+  end func;
+
+# The routine record that DECLARES the bound local, found by the declaration it names (name plus
+# line) rather than by walking regions again: scope stays in occurrences.sd7 (spec 4), and a local
+# always arrives with a declLine1 that came from exactly one such record. 0 is a degradation, not
+# a raise: it means the collision test has nothing to test against.
+const func integer: localOwner (in array symRec: syms, in string: docPath,
+                                in string: nm, in integer: declLine1) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+    var integer: j is 0;
+  begin
+    for i range 1 to length(syms) do
+      if out = 0 and isBufferFile(syms[i].file, docPath) then
+        for j range 1 to length(syms[i].locals) do
+          if out = 0 and syms[i].locals[j].name = nm then
+            if syms[i].locals[j].line1 = declLine1 then
+              out := i;
+            end if;
+          end if;
+        end for;
+      end if;
+    end for;
+  end func;
+
+# A Seed7 routine name and a data name live in different overload spaces. Measured on 5.4.10:
+# `var integer: other' written beside `const proc: other' analyses CLEAN, while two
+# `var integer: other' raise REDECLARATION and so does `var integer: Widget' beside
+# `const type: Widget'. spec 6's "a same-named routine elsewhere in the file is not a collision"
+# is that measurement, so a rename onto a routine name is allowed and only a same-named NON-routine
+# blocks. symbolKindOf hands 12 (LSP SymbolKind.Function) to every callable record, which is the
+# one place this server decides "this declaration is a routine" -- kinds.sd7's judgement, not a
+# fourth spelling of it here.
+const func boolean: bufferHasDataNamed (in array symRec: syms, in string: docPath,
+                                        in string: nm) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if isBufferFile(syms[i].file, docPath) then
+        if syms[i].name = nm then
+          if symbolKindOf(syms[i].cat, syms[i].ty) <> 12 then
+            out := TRUE;
+          end if;
+        end if;
+      end if;
+    end for;
+  end func;
+
+# TRUE when `nm' is already declared in the scope `b' resolved to -- the symbol's OWN scope, which
+# is what makes the same target name a collision for one cursor and free for another. A local
+# collides with its routine's scope entries and with its routine's own name: Seed7 accepts the
+# second (measured clean on 5.4.10) and spec 6 refuses it anyway, because the local would hide the
+# routine inside its own body and turn a recursive call into a variable read without a word of
+# warning. Library records are out of both sets by isBufferFile, or nothing could be renamed to
+# `writeln'. The comparison is by NAME, never by signature: an overload sibling is one symbol to
+# this feature (spec 2), and a rename that produces a REDECLARATION is what the caller sees next
+# from the diagnostic publisher either way.
+const func boolean: collides (in string: nm, in binding: b, in array symRec: syms,
+                              in string: docPath) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: owner is 0;
+  begin
+    if b.owner = "local" then
+      owner := localOwner(syms, docPath, b.name, b.declLine1);
+      if owner <> 0 then
+        out := scopeIndexOf(syms[owner].locals, nm) <> 0 or syms[owner].name = nm;
+      end if;
+    elsif b.owner = "global" then
+      out := bufferHasDataNamed(syms, docPath, nm);
+    end if;
+  end func;
+
+# The occurrence that IS the declaration: the first record on `declLine1'. 0 when the name has no
+# declaration in this document, and when the declaration line holds no indexable record of it.
+const func integer: declOccurrence (in array occurrence: oc, in integer: declLine1) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(oc) do
+      if out = 0 and oc[i].line0 = pred(declLine1) then
+        out := i;
+      end if;
+    end for;
+  end func;
+
+# TRUE when `list' already holds the record at this exact line and column -- identity by measured
+# position, because two occurrences on ONE line are two edits and a line-granular test would drop
+# one of them.
+const func boolean: holdsRecord (in array occurrence: list, in integer: line0,
+                                 in integer: col16) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(list) do
+      if list[i].line0 = line0 then
+        if list[i].col16 = col16 then
+          out := TRUE;
+        end if;
+      end if;
+    end for;
+  end func;
+
+const proc: emitEdit (inout jsonWriter: w, in lsDoc: doc, in occurrence: one,
+                      in string: newName) is func
+  begin
+    openObject(w);
+      field(w, "range");
+      raw(w, lspRangeUnits(doc, one.line0, one.col16, one.width16));
+      field(w, "newText");
+      addStr(w, newName);
+    closeObject(w);
+  end func;
+
+const func renameAnswer: renameResult (in lsDoc: doc, in array symRec: syms,
+                                       in wordRef: word, in string: docUri,
+                                       in string: newName,
+                                       in boolean: canApplyEdits) is func
+  result
+    var renameAnswer: out is renameAnswer.value;
+  local
+    var string: docPath is "";
+    var string: problem is "";
+    var renameCheck: no is renameCheck.value;
+    var array occurrence: scoped is 0 times occurrence.value;
+    var jsonWriter: w is jsonWriter.value;
+    var integer: declIdx is 0;
+    var integer: i is 0;
+  begin
+    problem := newNameProblem(newName);
+    if problem <> "" then
+      out.error := "invalid";
+      out.why := "rename: " <& problem;
+    else
+      docPath := pathOf(docUri);
+      no := renameDecision(doc, syms, word, docUri, canApplyEdits);
+      if no.refused then
+        # json stays "null": the same event prepareRename answers, from the same code (R45).
+        out.why := "rename: " <& no.reason;
+      elsif collides(newName, no.b, syms, docPath) then
+        out.error := "invalid";
+        out.why := "rename: " <& newName <& " is already declared in the scope of " <&
+                   word.word <& ", so the rename would not compile";
+      else
+        openObject(w);
+          field(w, "changes");
+          openObject(w);
+            field(w, docUri);
+            openArray(w);
+            # Every occurrence inScope returns, with NO dedupe: references may publish one
+            # location per line (its declPublished guard), but an edit left behind is a use that
+            # keeps the old name and a program that no longer compiles.
+            scoped := inScope(no.oc, no.b);
+            # The declaration is added back when the scope window does not hold it. Reflection
+            # reports a multi-line header's parameter on the header line, ABOVE the routine's body
+            # region (spec 11.9), so inScope drops it -- and references papers over that gap with a
+            # whole-line location, which here would be an edit DELETING the line. The token's own
+            # measured range comes from the same `oc' array the decision used (R39).
+            declIdx := declOccurrence(no.oc, no.b.declLine1);
+            if declIdx <> 0 then
+              if not holdsRecord(scoped, no.oc[declIdx].line0, no.oc[declIdx].col16) then
+                emitEdit(w, doc, no.oc[declIdx], newName);
+              end if;
+            end if;
+            for i range 1 to length(scoped) do
+              emitEdit(w, doc, scoped[i], newName);
+            end for;
+            closeArray(w);
+          closeObject(w);
+        closeObject(w);
+        out.json := finishJson(w);
+      end if;
+    end if;
+  end func;
