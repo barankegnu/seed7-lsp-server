@@ -3,22 +3,11 @@ $ include "seed7_05.s7i";
   include "doc_store.sd7";
   include "features/kinds.sd7";
   include "jsonw.sd7";
+  include "keywords.sd7";
 
 const integer: MAX_COMPLETIONS is 100;
 
 const type: nameSeen is hash [string] integer;
-
-# The base vocabulary, copied from the lists seed7-mode tests against
-# (~/seed7-mode/seed7-mode.el: seed7--statement-enclosing-keywords and
-# seed7--declaration-intro-keywords). Seed7 syntax is DECLARED by $-pragmas in
-# seed7_05.s7i, so no list of keywords can be complete -- this is what the base
-# language offers, not what a project may add.
-const array string: SEED7_KEYWORDS is
-  []("attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end",
-   "enum", "exception", "for", "func", "global", "if", "in", "inout", "interface",
-   "is", "local", "nested", "new", "otherwise", "out", "proc", "range", "ref",
-   "repeat", "result", "return", "struct", "then", "type", "until", "val", "var",
-   "varfunc", "while");
 
 # The part of the token left of the cursor. word.character1 is a UTF-16 unit column
 # from the scanner, and character0 is the request's UTF-16 column, so their difference
@@ -104,6 +93,7 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
     var nameSeen: seen is nameSeen.EMPTY_HASH;
     var string: prefix is "";
     var string: nm is "";
+    var array string: keywords is 0 times "";
     var integer: i is 0;
     var integer: emitted is 0;
   begin
@@ -111,8 +101,9 @@ const func string: completionResult (in array symRec: syms, in wordRef: word,
     openArray(w);
     emitted := emitSyms(w, seen, syms, prefix, emitted, ownFile, TRUE);
     emitted := emitSyms(w, seen, syms, prefix, emitted, ownFile, FALSE);
-    for i range 1 to length(SEED7_KEYWORDS) do
-      nm := SEED7_KEYWORDS[i];
+    keywords := keywordList;
+    for i range 1 to length(keywords) do
+      nm := keywords[i];
       if startsWith(nm, prefix) and nm <> prefix and nm not in seen and
          emitted < MAX_COMPLETIONS then
         seen @:= [nm] 1;

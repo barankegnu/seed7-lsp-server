@@ -30,6 +30,30 @@ const func integer: countChars (in string: text, in char: ch) is func
     end for;
   end func;
 
+# Every column/width pair on one line, counted where the UTF-16-unit entry point and the
+# character-column pair builder DISAGREE. On an ASCII line the two bases are the same
+# numbers, so the count must be 0; on the astral line it must not be, which is what makes
+# that 0 a claim about the rule instead of a tautology (a check that passes whichever way
+# the conversion goes is the defect class this suite keeps tripping over).
+const func integer: unitDisagreements (in lsDoc: doc, in integer: line0,
+                                       in integer: lastCol) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: col is 0;
+    var integer: wide is 0;
+  begin
+    out := 0;
+    for col range 0 to lastCol do
+      for wide range 1 to 5 do
+        if lspRangeUnits(doc, line0, col, wide) <>
+           lspRangePair(doc, succ(line0), succ(col), wide) then
+          out +:= 1;
+        end if;
+      end for;
+    end for;
+  end func;
+
 const proc: main is func
   local
     var lsDoc: doc is lsDoc.value;
@@ -196,5 +220,27 @@ const proc: main is func
     setVersion(doc, "const integer: q is 16#", 1);
     check("a document ending in a lone hash answers without raising",
           str(length(codeText(doc))), str(length(doc.text)));
+    # lspRangeUnits takes the UTF-16 column as the scanner measured it and does not convert
+    # it. This line is 22 characters but 24 UTF-16 units, and "count" starts at unit 13 --
+    # character 11 -- so the two bases name different columns and only one of them is LSP.
+    setVersion(doc, "x := \"\128512;\128512;\"; count := 1;\n", 1);
+    check("a UTF-16 column is used as given", lspRangeUnits(doc, 0, 13, 5),
+          "{\"start\":{\"line\":0,\"character\":13},\"end\":{\"line\":0,\"character\":18}}");
+    # that line is 22 characters but 24 UTF-16 units: an absurd column clamps to 24, twice
+    check("an absurd column clamps to the line width", lspRangeUnits(doc, 0, 999, 5),
+          "{\"start\":{\"line\":0,\"character\":24},\"end\":{\"line\":0,\"character\":24}}");
+    check("a column of 0 names the line start", lspRangeUnits(doc, 0, 0, 1),
+          "{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":1}}");
+    # Tasks 7-9 build ranges from (line0, col16, width16) on ASCII lines too, where the
+    # unit column and the character column are the same number. Sweeping every column of
+    # this ASCII line -- including the ones past its end, which both paths clamp -- is what
+    # pins that the new entry point does not shift the ordinary case.
+    setVersion(two, "writeln(count);\nconst integer: n is 1;\n", 1);
+    check("the unit path matches the character path on every ASCII column",
+          str(unitDisagreements(two, 0, 30)), "0");
+    # ...and the sweep can fail: the same columns on the astral line disagree, so the 0
+    # above is not a comparison of a function with itself.
+    checkTrue("the same sweep does disagree on the astral line",
+              unitDisagreements(doc, 0, 30) > 0);
     report("doc_store");
   end func;

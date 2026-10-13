@@ -12,7 +12,7 @@ Date: 2026-09-10 · Status: for review · Spec: LSP 3.18 · Analysis engine: SEE
 | Client | Client-agnostic. Editors get launch snippets only; no extension code in this repo. |
 | v1 | diagnostics, go-to-definition, hover, completion, signatureHelp, documentSymbol. |
 | v1 cheap | foldingRange, selectionRange, semanticTokens. |
-| Later | references, rename, `workspace/symbol`, workspace index, file watching. |
+| Later | ~~references, rename~~ — delivered by M5. Still later: `workspace/symbol`, workspace index, file watching. |
 | Cut | formatting (Emacs already indents; nothing else is served by us owning it). |
 
 Why the interpreter is not optional: Seed7's syntax is *declared*, not hard-coded — `include`, `if`, `for`, `::=` and operator precedences come from `$`-pragmas in `seed7_05.s7i`, executed by the parser. Only the analyzer knows what Seed7 is, and only its overload resolution can produce `Match for ... failed`.
@@ -60,7 +60,16 @@ Invariants — a violation of any of these is a defect, not a style preference:
 Use `utf8.s7i`'s `STD_UTF8_IN` / `STD_UTF8_OUT` / `STD_UTF8_ERR`. Plain `write(STD_OUT, ...)` raises `RANGE_ERROR` on non-ASCII in a C locale, so the non-UTF8 std files are unusable for payload.
 
 - Headers: `getln(STD_UTF8_IN)` yields header lines with `\r\n` already stripped; an empty line terminates the header block.
-- Body: `gets(STD_UTF8_IN, n)` counts **bytes**, so `n` is `Content-Length` verbatim; a 104-byte body with multibyte URIs returns 97 characters, correctly decoded.
+- Body: **corrected 2026-10-13 — this line was wrong, and the correction is a shipped defect.** It
+  claimed `gets(STD_UTF8_IN, n)` counts bytes, so `Content-Length` could be passed verbatim. It
+  counts CHARACTERS: `gets(STD_UTF8_IN, 3)` on `éaextra-tail` returns `éae` — 3 characters, 4 bytes —
+  leaving `xtra-tail` to be read as the next frame's header,
+  so any inbound body containing a non-ASCII byte consumes past its own frame and the next header
+  read is garbage — the server stops answering mid-session (`/tmp/tp3.sd7`, re-run against
+  `src/transport.sd7:73`). The harness never saw it because `json.dumps` escapes every non-ASCII
+  character to `\uXXXX` unless `ensure_ascii=False` is passed, so no test body was ever non-ASCII.
+  Real clients do not escape. Tracked as the inbound-framing defect; `tests/transcript.py` carries a
+  pin that records today's behaviour and is written to flip when it is fixed.
 - Outbound: `Content-Length` must be the UTF-8 byte length of the payload, which Seed7's `length()` does not give (it counts characters). `transport.sd7` provides `utf8Length(stri)` — 1/2/3/4 bytes per code point by `ord(c)` thresholds — and writes `"Content-Length: " <& utf8Length(payload) <& "\r\n\r\n" <& payload` to `STD_UTF8_OUT` then flushes.
 
 ### 3.2 JSON (verified, one trap)
@@ -100,6 +109,10 @@ For each `didOpen`/`didChange` of a `.sd7`/`.s7i`:
    - Deduplicate on `(line, column, message)`. A single missing terminator produced 13 raw errors.
    - Messages containing `END OF FILE` are downgraded to `DiagnosticSeverity.Information` when the document does not end in a complete program. While typing, an unterminated buffer is the normal state, not an error worth red squiggles.
    - Publish at most 100, ordered by line.
+     The interpreter's own 10-error display limit (`-n` / `error_maximum`, measured in
+     M5 as `src/analyze.c:526-530`) does NOT apply here: `parseStri`/`parseFile` report 26 errors for a
+     broken file with and without `NO_ERROR_LIMIT`, so the 100 is this server's policy cap and is
+     reachable.
 5. Pull diagnostics (`textDocument/diagnostic`) is **not advertised and not handled**;
 the capability shipped in error during M2 and is removed until the handler exists. When
 it lands, it goes behind the client capability and both paths call one function.
@@ -151,7 +164,7 @@ total rather than 21 entries at ~1.4 MiB each.
 | signatureHelp | candidates by name from `globalObjects`; callee and argument index from one walk over `doc_store.codeText`, so strings and comments contribute no parens or commas | **realised**; `match`-based overload disambiguation still unbuilt (v1 lists every overload, which reads well) |
 | completion | `globalObjects` filtered by prefix and `category` → `CompletionItemKind`, plus a copied keyword list | **locals still missing:** the spec's "enclosing function found by line range" was dropped rather than guessed at; it needs its own short plan |
 | folding / selectionRange / semanticTokens | tokens from `scan.sd7`, name classes from the cached symbol table | no `keyword` or `parameter` token class (§6.2 of M4 spec) |
-| references / rename | **no source in the reflection API** | needs an occurrence index over `scan.sd7` tokens; that is the "later" milestone |
+| references / rename | **no source in the reflection API** — measured again in M5: `body()` answers `CALLOBJECT` and `getValue(b, attr reference)` fails to match, so there is no use-site walk | **delivered by M5** as an occurrence index over one document. The 2-file criterion was replaced on 2026-10-12, not met: project-wide rename needs the index and watching that M5 declined (spec §8 of the M5 design) |
 
 `str(reference)` returns a bare name. Signatures are reconstructed in `analysis.sd7` from `category` + `formalParams` + `getType` (`resultVar` turned out to be unnecessary — and it raises on a `proc`). Anonymous types report a compiler marker instead of a name, which `buildSign` drops rather than printing. Those reconstructed signatures are the single source for hover, completion detail, signatureHelp, and documentSymbol detail.
 
@@ -192,7 +205,8 @@ No editor is required to test any of this, which is the point of the module spli
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
 | M3 | documentSymbol + definition + hover + signatureHelp + completion | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper; signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover. **Merged on `m3` — the hover/signatureHelp/completion deliverable landed with it — except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
 | M4 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
-| M5 | occurrence index → references, rename, workspace/symbol | rename in a 2-file project updates both |
+| M5 | occurrence index → `references`, file-local `prepareRename`/`rename` | references names every occurrence of the bound symbol in the open file, with exact columns; a rename updates that one file completely and refuses anything declared elsewhere, or whose scope it cannot see; **merged on `m5-references-and-rename`** |
+| M6 | workspace/symbol, project index, file watching | not scheduled; the analyzer answers library declarations for free, so the cost is only files the editor never opened |
 
 ## 9. Risks
 

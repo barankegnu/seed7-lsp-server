@@ -1,0 +1,219 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "occurrences.sd7";
+  include "scan.sd7";
+  include "uris.sd7";
+  include "jsonw.sd7";
+
+# textDocument/prepareRename, and the ONE rename refusal decision (spec 6, 12.1, 12.3).
+#
+# This file exists so `rename' can reach the refusal list. It lives in src/features/ and reads no
+# global: the client capability that arms the first refusal arrives as the `canApplyEdits'
+# parameter, which lsp_server.sd7 passes from its `clientCanApplyEdits'. Task 9's `rename' calls
+# renameDecision() below and MUST NOT copy its arm list -- the spec says rename "re-runs
+# resolution; prepareRename is not trusted to have happened", and that means THIS code, not the
+# same rules re-typed somewhere they can drift. A symbol accepted here and refused there (or the
+# reverse) is the failure mode this whole arrangement exists to prevent.
+#
+# No position is converted here (invariant 2) and no LSP shape leaves this file except through
+# jsonw (invariant 4).
+
+# prepareRename's answer. `refused' is a field of its own because a null answer is not one event:
+# a cursor on whitespace owes the user nothing and a cursor on a symbol this server will not
+# rewrite owes them the reason, which is what the dispatcher sends as window/logMessage.
+const type: prepareAnswer is new struct
+    var string: json is "null";
+    var boolean: refused is FALSE;
+    var string: why is "";
+  end struct;
+
+# The ONE rename refusal decision, shared by prepareRename and (Task 9) rename.
+#
+# `oc', `slot' and `b' come out of this record on purpose, and the reason is R39 rather than
+# convenience: rename re-runs the resolution ("prepareRename is not trusted to have happened"), and
+# if it called only a boolean predicate it would then run occurrencesOf and resolveBinding AGAIN to
+# find out what it is editing -- two arrays, two bindings, and the second is free to disagree with
+# the range prepareRename published. Handing the decision's own arrays out means one list serves
+# BOTH methods, so the range prepareRename promises IS the record rename edits, not a re-derivation
+# of it. A caller may read `b' for the facts it edits (declLine1, scopeStart/scopeStop, capped) and
+# may hand `b' to inScope, but must not branch on `b.owner = "field"' (R40) and must not re-derive
+# scope here (spec 4): the arm list below is the only refusal decision, and scope is inScope's.
+#
+# `reason' carries NO method prefix so each caller names the method that refused -- the same
+# sentence has to be reachable from prepareRename and from rename with only that name differing,
+# which is why the "prepareRename: " prefix belongs to prepareRenameAnswer, not to this function.
+const type: renameCheck is new struct
+    var boolean: refused is FALSE;
+    var string: reason is "";
+    var array occurrence: oc is 0 times occurrence.value;
+    var integer: slot is 0;
+    var binding: b is binding.value;
+  end struct;
+
+# The occurrence that IS the cursor's token, 0 when the token is not an indexable name. `wordAt'
+# stamps character1 from the same nextToken pass occurrencesOf runs, so line plus UTF-16 column
+# identifies the record -- and the range has to come from THAT record, because wordRef.width
+# counts CHARACTERS while a range is measured in UTF-16 units.
+const func integer: cursorName (in array occurrence: oc, in wordRef: word) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(oc) do
+      if out = 0 and oc[i].line0 = pred(word.line1) then
+        if oc[i].col16 = word.character1 then
+          if oc[i].kind = TK_NAME then
+            out := i;
+          end if;
+        end if;
+      end if;
+    end for;
+  end func;
+
+# TRUE when the declaration has to be picked out of more than one record on its own line. A Seed7
+# parameter may be named after its own routine -- measured legal (`const proc: show (in integer:
+# show) is func begin writeln(show); end func;' analyses with no error and prints 3), and
+# reflection reports the routine and that parameter at the SAME line1 -- so the line
+# `declOccurrence' searches (rename.sd7) holds the routine's record as well as the parameter's,
+# and the line `inScope' filters by holds both too because it is line-granular. Whichever way the
+# edit list is built, renaming one of the two rewrites the other: rename the parameter and the
+# routine's declaration loses its name while every call site keeps it; rename the routine and a
+# parameter that is a different symbol gains the new name. A READ may over-include with a log line
+# (spec 12.2), a WRITE may not (spec 12.1), so both methods refuse from here. Counted out of the
+# caller's own `oc' -- the same list the edits come from (R39), which is every token equal to
+# `word.word', so no kind test is needed to keep an operator out of the count: an arm this far
+# down the chain has already refused one. `declLine1' is 0 for anything with no declaration in
+# this document and pred(0) names no line, so a library or unbound symbol is never refused here.
+const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+    var integer: candidates is 0;
+  begin
+    for i range 1 to length(oc) do
+      if oc[i].line0 = pred(b.declLine1) then
+        candidates +:= 1;
+      end if;
+    end for;
+    out := candidates > 1;
+  end func;
+
+# A WRITE refuses where a READ over-includes (spec 12.1): references can list a wider set with a
+# log line, an edit cannot, so anything this resolution cannot prove is refused here. That is the
+# whole refusal list: no client that can apply the edit, a library buffer (R-F10 unpaid, so its
+# symbol lines come from disk and an edit could land on the wrong one -- spec 12.3), a token that
+# is not a name, a keyword, a symbol declared outside this buffer, a binding that resolved
+# nowhere, and a scope that may be shorter than the truth (R35: nested routines and unpaired
+# one-line routines). Branch is on resolved / scopeUncertain / owner (R40); owner "field" is not
+# a special case, it is simply unresolved. occurrencesOf runs ONCE and the same array goes to
+# resolveBinding and to the range (R39).
+const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
+                                        in wordRef: word, in string: docUri,
+                                        in boolean: canApplyEdits) is func
+  result
+    var renameCheck: out is renameCheck.value;
+  local
+    var string: docPath is "";
+  begin
+    docPath := pathOf(docUri);
+    # Cheapest first, and nothing above a document read: the capability and the .s7i rule are
+    # settled before one token is scanned.
+    if word.word = "" then
+      out.reason := "there is no token under the cursor to rename";
+    elsif not canApplyEdits then
+      out.reason := "the client did not declare workspace.applyEdit, so it cannot apply a" <&
+                    " WorkspaceEdit";
+    elsif isLibraryBufferPath(docPath) then
+      out.reason := docPath <& " is a library buffer whose symbols come from disk while R-F10" <&
+                    " stands, so an edit could land on the wrong line";
+    else
+      out.oc := occurrencesOf(doc.text, word.word);
+      out.slot := cursorName(out.oc, word);
+      if out.slot = 0 then
+        if length(out.oc) > MAX_OCCURRENCES then
+          # The pass keeps MAX_OCCURRENCES + 1 records and stops, so both conjuncts below are
+          # literally what this branch knows. Still a refusal -- only the sentence was wrong
+          # ("`count` is not a name" about a token that plainly is one).
+          # "names", not "ones": the list DOES carry this token when it is an operator run, and
+          # cursorName returned 0 on its KIND. Measured on the 2 002-statement fixture with the
+          # cursor at line 5 character 8: `:=' is record 6 of the 2 001 the truncated list keeps
+          # (lsp_server_test pins capOps[6] = 5:6), so any wording about what is not listed has to
+          # name the class that is missing, which is names.
+          out.reason := word.word <& " has more occurrences than this server lists (more than " <&
+                        str(MAX_OCCURRENCES) <& "), and the token under the cursor is not among"
+                        <& " the names listed, so its range is not known";
+        else
+          out.reason := word.word <& " is not a name";
+        end if;
+      else
+        out.b := resolveBinding(doc.text, syms, out.oc, word.word, pred(word.line1),
+                                pred(lineCount(doc)), docPath);
+        if out.b.owner = "library" then
+          out.reason := word.word <& " is declared outside this buffer, and M5 renames only" <&
+                        " one file";
+        elsif out.b.keyword then
+          out.reason := word.word <& " is a Seed7 keyword, so it is syntax rather than a symbol";
+        elsif not out.b.resolved then
+          out.reason := word.word <& " does not bind to one declaration of this file, so a" <&
+                        " rename could rewrite a symbol the cursor is not on";
+        elsif out.b.scopeUncertain then
+          out.reason := "the scope of " <& word.word <& " is not fully visible to this server," <&
+                        " so a rename could rewrite a shadowing declaration";
+        elsif declLineAmbiguous(out.oc, out.b) then
+          # R51. Ahead of `capped', because it describes the SYMBOL and leaves the cap sentence
+          # last, speaking only for a document too long to list -- the same ordering rule R47
+          # states. Shared here so prepareRename and rename cannot diverge on it (R45), and
+          # reached from rename through the predicate rather than as logic in rename.sd7.
+          out.reason := word.word <& " shares its declaration line with another occurrence of" <&
+                        " it, the shape a parameter takes when it is named after its routine, and"
+                        <& " a declaration found by line cannot choose between the two, so a"
+                        <& " rename could rewrite the routine or the parameter when the cursor"
+                        <& " named the other one";
+        elsif out.b.capped then
+          # R47, and the case the slot = 0 branch above cannot speak for: there the cursor is
+          # missing from the list, here the CURSOR IS LISTED and its range is known, but the list
+          # stops at MAX_OCCURRENCES so everything past it is invisible to whoever edits next. A
+          # read truncates with a log line, as references does; a write would leave uses behind
+          # under the old name, which is the silently partial rename spec 2 refuses. It sits LAST
+          # in this chain so a symbol that is also a library name, a keyword or unbound still gets
+          # the reason that describes the SYMBOL, and this sentence only ever speaks for a document
+          # too long to list -- which is also why it does not repeat the other truncation claim.
+          # Shared here, in the one predicate, so prepareRename and rename cannot diverge (R45).
+          out.reason := word.word <& " has more occurrences than this server lists (more than " <&
+                        str(MAX_OCCURRENCES) <& "), so a rename could not rewrite all of them";
+        end if;
+      end if;
+    end if;
+    out.refused := out.reason <> "";
+  end func;
+
+# textDocument/prepareRename: does this cursor name a symbol this server can rename, and where is
+# it? The answer is {range, placeholder} or null -- null, never an error, because null is what
+# makes an editor grey the menu item out instead of showing a failure (spec 6).
+const func prepareAnswer: prepareRenameAnswer (in lsDoc: doc, in array symRec: syms,
+                                              in wordRef: word, in string: docUri,
+                                              in boolean: canApplyEdits) is func
+  result
+    var prepareAnswer: out is prepareAnswer.value;
+  local
+    var renameCheck: no is renameCheck.value;
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    no := renameDecision(doc, syms, word, docUri, canApplyEdits);
+    if no.refused then
+      out.refused := TRUE;
+      out.why := "prepareRename: " <& no.reason;
+    else
+      openObject(w);
+        field(w, "range");
+        raw(w, lspRangeUnits(doc, no.oc[no.slot].line0, no.oc[no.slot].col16,
+                             no.oc[no.slot].width16));
+        field(w, "placeholder");
+        addStr(w, word.word);
+      closeObject(w);
+      out.json := finishJson(w);
+    end if;
+  end func;

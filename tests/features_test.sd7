@@ -5,6 +5,10 @@ $ include "seed7_05.s7i";
   include "features/hover.sd7";
   include "features/completion.sd7";
   include "features/signature_help.sd7";
+  include "occurrences.sd7";
+  include "features/references.sd7";
+  include "features/prepare_rename.sd7";
+  include "features/rename.sd7";
 
 const func string: calleeAt (inout lsDoc: d, in string: text, in integer: character0,
                              inout integer: active) is func
@@ -48,6 +52,156 @@ const func wordRef: exact (in string: nm) is func
     out.line1 := 1;
     out.column1 := 1;
     out.width := length(nm);
+  end func;
+
+# referencesAnswer keys on `word.word' and `word.line1' ONLY, so this carrier takes no column:
+# position granularity is not under test here and a reader must not believe it is. A real
+# request's wordRef comes from wordAt, which fills column1/character1/width -- the checks that
+# need a real column call wordAt on the fixture instead of fabricating one.
+const func wordRef: atLine (in string: nm, in integer: ln1) is func
+  result
+    var wordRef: out is wordRef.value;
+  begin
+    out.word := nm;
+    out.line1 := ln1;
+    out.width := length(nm);
+  end func;
+
+# The text of `howMany' occurrences of one name, for the cap checks: one statement per line,
+# so line0 IS the occurrence index and the cap is countable from the text.
+const func string: capLines (in integer: howMany) is func
+  result
+    var string: out is "";
+  local
+    var integer: k is 0;
+  begin
+    for k range 1 to howMany do
+      out &:= "count := 1;\n";
+    end for;
+  end func;
+
+# "end":{"line": is what lspRangeUnits emits and lspRange does not, so endCount = uriCount is
+# the statement that every location carries a range with both bounds.
+const func integer: endCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, "\"end\":{\"line\":");
+    while at <> 0 do
+      out +:= 1;
+      if at + 14 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 14 ..];
+      end if;
+      at := pos(rest, "\"end\":{\"line\":");
+    end while;
+  end func;
+
+# The references fixture. It analyses with 0 diagnostics (pinned below), and every line number in
+# the checks below is a line of `refsText' -- no count is stated here because a stated count is one
+# edit away from being wrong, while the pins are not. Edit the fixture and the checks move with it: a global `counter', a routine that shadows it
+# with its own local, a TWO-LINE header whose first parameter is declared above the body region
+# (spec 11.9 -- the case includeDeclaration has something to add), a struct field (no
+# declaration source at all, spec 11.10), and one line whose string literal holds an astral
+# character before the code, which is what makes the columns of lspRangeUnits observable.
+const func string: refsText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "  include \"console.s7i\";\n" <&
+           "\n" <&
+           "const type: Widget is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "var integer: counter is 0;\n" <&
+           "\n" <&
+           "const proc: show (in integer: left,\n" <&
+           "                  in integer: right) is func\n" <&
+           "  local\n" <&
+           "    var integer: counter is 0;\n" <&
+           "  begin\n" <&
+           "    counter := left + right;\n" <&
+           "    writeln(counter);\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var Widget: box is Widget.value;\n" <&
+           "  begin\n" <&
+           "    box.pix := 1;\n" <&
+           "    show(2, 3);\n" <&
+           "    writeln(\"\128512;\"); counter := box.pix;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const func integer: type (in integer: n) is func\n" <&
+           "  result\n" <&
+           "    var integer: doubled is 0;\n" <&
+           "  begin\n" <&
+           "    doubled := n * 2;\n" <&
+           "  end func;\n";
+  end func;
+
+# The R51 fixture: a routine that shares its name with one of its parameters, in the one-line
+# header shape and in a two-line header shape, plus a control parameter that shares nothing. Seed7
+# accepts `const proc: show (in integer: show)' -- measured: no analysis error, and running it
+# prints 3 -- and reflection reports the routine and that parameter at the SAME line1, which is
+# what makes a write that locates a declaration by line unsafe. Pinned at errorCount 0 below, so
+# every column of the expected json is a line of this text.
+const func string: ambigText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "  include \"console.s7i\";\n" <&
+           "\n" <&
+           "const proc: show (in integer: show) is func\n" <&
+           "  begin\n" <&
+           "    writeln(show);\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: tally (in integer: tally,\n" <&
+           "                    in integer: delta) is func\n" <&
+           "  begin\n" <&
+           "    writeln(tally + delta);\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    show(3);\n" <&
+           "    tally(1, 2);\n" <&
+           "  end func;\n";
+  end func;
+
+# The refusal sentence's tail, spelled once because the word under the cursor is the only part
+# that differs: prepareRename prefixes one method name, rename the other, and each of the three
+# measured reaches names its own symbol.
+const string: DECL_AMBIG_TAIL is
+    " shares its declaration line with another occurrence of it, the shape a parameter takes" <&
+    " when it is named after its routine, and a declaration found by line cannot choose between" <&
+    " the two, so a rename could rewrite the routine or the parameter when the cursor named the" <&
+    " other one";
+
+# A buffer declaration named `count', with no scope entries. Enough for resolveBinding's global
+# row, and the only way to reach the occurrence cap with a BINDING -- 2 000 lines of
+# `count := 1;' is not a program, and the cap is a property of the pass. `declLine1' is the line
+# the declaration sits on, so the capped answer can be asked with its declaration placed past
+# the cut.
+const func array symRec: countGlobalSyms (in integer: declLine1) is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+  begin
+    rec.name := "count"; rec.cat := "INTOBJECT"; rec.ty := "integer";
+    rec.file := BUFFER_FILE; rec.line1 := declLine1; rec.sign := "var integer: count";
+    out &:= rec;
   end func;
 
 const func array symRec: capSyms is func
@@ -106,6 +260,51 @@ const func integer: uriCount (in string: jsonText) is func
     end while;
   end func;
 
+# A rename edit is `{"range":{ ... ,"newText":', so editCount is the number of TextEdit entries
+# and endCount = editCount is the statement that each of them carries both bounds.
+const func integer: editCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, "{\"range\":{");
+    while at <> 0 do
+      out +:= 1;
+      if at + 10 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 10 ..];
+      end if;
+      at := pos(rest, "{\"range\":{");
+    end while;
+  end func;
+
+# One document entry of a WorkspaceEdit is its uri key followed by its edit array, so `":[` is
+# the marker. `uriCount' cannot be reused: it keys on `{\"uri\":', which is references' Location
+# shape and never appears in a WorkspaceEdit.
+const func integer: docCount (in string: jsonText) is func
+  result
+    var integer: out is 0;
+  local
+    var string: rest is "";
+    var integer: at is 0;
+  begin
+    rest := jsonText;
+    at := pos(rest, "\":[");
+    while at <> 0 do
+      out +:= 1;
+      if at + 3 > length(rest) then
+        rest := "";
+      else
+        rest := rest[at + 3 ..];
+      end if;
+      at := pos(rest, "\":[");
+    end while;
+  end func;
+
 const proc: main is func
   local
     var symRec: one is symRec.value;
@@ -133,6 +332,37 @@ const proc: main is func
     var lsDoc: hov is lsDoc.value;
     var integer: k is 0;
     var array symRec: syms is 0 times symRec.value;
+    var lsDoc: rdoc is lsDoc.value;
+    var string: rtext is "";
+    var string: refPath is "/tmp/tt_refs.sd7";
+    var string: refUri is "file:///tmp/tt_refs.sd7";
+    var docAnalysis: rd is docAnalysis.value;
+    var array symRec: rsyms is 0 times symRec.value;
+    var array string: noDirs is 0 times "";
+    var refsAnswer: ra is refsAnswer.value;
+    var refsAnswer: fb is refsAnswer.value;
+    var refsAnswer: capAns is refsAnswer.value;
+    var wordRef: realWord is wordRef.value;
+    var binding: rb is binding.value;
+    var array occurrence: ocOne is 1 times occurrence.value;
+    var array occurrence: ocWide is 0 times occurrence.value;
+    var lsDoc: capDoc is lsDoc.value;
+    var string: capText is "";
+    var string: capUri is "file:///tmp/tt_cap.sd7";
+    var prepareAnswer: pc is prepareAnswer.value;
+    var wordRef: capWord is wordRef.value;
+    var renameAnswer: rn is renameAnswer.value;
+    var lsDoc: ndoc is lsDoc.value;
+    var lsDoc: capDoc2 is lsDoc.value;
+    var array symRec: nsyms is 0 times symRec.value;
+    var symRec: nrec is symRec.value;
+    var string: renameUri is "file:///tmp/tt_rename.sd7";
+    var lsDoc: adoc is lsDoc.value;
+    var array symRec: asyms is 0 times symRec.value;
+    var docAnalysis: ad is docAnalysis.value;
+    var wordRef: aword is wordRef.value;
+    var string: ambigPath is "/tmp/tt_ambig.sd7";
+    var string: ambigUri is "file:///tmp/tt_ambig.sd7";
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -351,5 +581,342 @@ const proc: main is func
               pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") <> 0);
     check("a callee with no declarations is null",
           signatureHelpResult(hsyms, "nosuch", 0), "null");
+    # ---- textDocument/references -------------------------------------------------
+    rtext := refsText();
+    setVersion(rdoc, rtext, 1);
+    rd := analyzeAll(rtext, noDirs, refPath);
+    rsyms := rd.syms;
+    check("the references fixture analyses clean", str(length(rd.parsed.diags)), "0");
+    # A local: only its own routine's region. Broken value if the global row answered instead
+    # is 2 (the two lines outside show), and if nothing bound at all it is 5 (every `counter').
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15), refUri, FALSE);
+    check("a local's references are its own region only", str(uriCount(ra.json)), "3");
+    check("every location carries an exact character range", str(endCount(ra.json)), "3");
+    check("a bound symbol is not reported unresolved", str(ra.unresolved), "FALSE");
+    check("a bound symbol has nothing to log", ra.why, "");
+    # includeDeclaration on the local adds nothing: its declaration line is already one of the
+    # occurrences above, published with an exact column. Broken value is 4 -- two locations for
+    # one line, one of them the worse whole-line range.
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 15), refUri, TRUE);
+    check("a declaration already in the list is not published twice", str(uriCount(ra.json)), "3");
+    # The global, at the cursor on the astral line. The whole answer is pinned because this is
+    # the first feature whose ranges are not line-based: `counter' sits at UTF-16 column 19
+    # there, and routing the location through lspRange (which converts a CHARACTER column)
+    # would report 20-27.
+    ra := referencesAnswer(rdoc, rsyms, atLine("counter", 25), refUri, FALSE);
+    check("the global loses the shadowing routine's occurrences, with exact columns",
+          ra.json,
+          "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":7,\"character\":13},\"end\":{\"line\":7,\"character\":20}}},"
+          & "{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":24,\"character\":19},\"end\":{\"line\":24,\"character\":26}}}]");
+    # The two-line header: reflection reports `left' at line 10 while show's body region opens
+    # at line0 10, so the declaration is NOT among the published occurrences and
+    # includeDeclaration is the only thing that puts it in the answer. FALSE must be 1.
+    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15), refUri, FALSE);
+    check("without includeDeclaration the declaration above the region stays out",
+          str(uriCount(ra.json)), "1");
+    ra := referencesAnswer(rdoc, rsyms, atLine("left", 15), refUri, TRUE);
+    check("includeDeclaration adds it as a whole line, because reflection has no column",
+          ra.json,
+          "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":9,\"character\":0},\"end\":{\"line\":10,\"character\":0}}},"
+          & "{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":14,\"character\":15},\"end\":{\"line\":14,\"character\":19}}}]");
+    # A struct field: no declaration source exists (spec 11.10), so the binding is unproved and
+    # the answer is every same-named token plus the log line (spec 2's over-inclusive read).
+    ra := referencesAnswer(rdoc, rsyms, atLine("pix", 23), refUri, FALSE);
+    check("a field answers every same-named token", str(uriCount(ra.json)), "3");
+    check("a field says the binding was unresolved", str(ra.unresolved), "TRUE");
+    check("the log line names the reason", ra.why,
+          "references: pix does not bind to a declaration of this file," <&
+          " so every occurrence of it is listed");
+    # The same name on its OWN declaration line is not dot-selected, so resolveBinding answers
+    # owner "" there and owner "field" here. R40: the feature branches on `resolved', so the two
+    # answers must be identical -- a check that reddens any special case built on owner.
+    fb := referencesAnswer(rdoc, rsyms, atLine("pix", 5), refUri, FALSE);
+    check("an unbound name and a field get the same answer", str(ra.json = fb.json), "TRUE");
+    # A library symbol is resolved, so it does not log; and its declarations live in files the
+    # client never opened, so declLine1 0 must not become a whole-line location at line -1.
+    ra := referencesAnswer(rdoc, rsyms, atLine("writeln", 25), refUri, TRUE);
+    check("a library symbol answers this file's occurrences, and no library declaration",
+          str(uriCount(ra.json)), "2");
+    check("a library symbol is resolved, so it has nothing to log",
+          str(ra.unresolved), "FALSE");
+    # The gate is the measured 63-word set the interpreter refuses as a declared name, NOT
+    # completion's 48-word vocabulary, and it runs after rows 1-2 (R28 as refined by R36).
+    # `type' is in that vocabulary and is a legal name -- this file declares one, and its two
+    # occurrences are also the `const type:' of Widget -- so references must answer them. A
+    # feature that gated on keywordList before resolving would answer null here: the feature-level
+    # witness for the ordering occurrences.sd7 pins in its own suite.
+    ra := referencesAnswer(rdoc, rsyms, atLine("type", 28), refUri, FALSE);
+    check("a declared name that is also a vocabulary word still gets its references",
+          str(uriCount(ra.json)), "2");
+    # The null answers. A keyword binds to nothing by the gate and an empty word is no token at
+    # all; both answer null rather than [], which would read "unused".
+    ra := referencesAnswer(rdoc, rsyms, atLine("begin", 22), refUri, FALSE);
+    check("a keyword answers null, not an empty list", ra.json, "null");
+    check("a keyword is not unresolved either", str(ra.unresolved), "FALSE");
+    # The empty word, from real input rather than a hand-built record: a line's LEADING
+    # indentation is the state most Seed7 source answers (every indented line), and wordAt has
+    # no token to its left there. doc_store_test pins the same rule for `two'; this is the
+    # references-side witness that the guard above is reached by an ordinary cursor.
+    realWord := wordAt(rdoc, 14, 1);
+    check("leading indentation reaches the feature as the empty word", realWord.word, "");
+    ra := referencesAnswer(rdoc, rsyms, realWord, refUri, FALSE);
+    check("a position with no token answers null", ra.json, "null");
+    # A number and a bracket ARE words to wordAt -- the client sends the cursor there -- but the
+    # index holds neither, so searching for the literal text would answer [] instead of null.
+    realWord := wordAt(rdoc, 23, 10);
+    check("a cursor inside a number reaches the feature as that number", realWord.word, "2");
+    ra := referencesAnswer(rdoc, rsyms, realWord, refUri, FALSE);
+    check("a number token answers null, not an empty list", ra.json, "null");
+    ra := referencesAnswer(rdoc, rsyms, wordAt(rdoc, 23, 9), refUri, FALSE);
+    check("a bracket token answers null, not an empty list", ra.json, "null");
+    # An OPERATOR run is TK_OP, which IS indexable, so it is neither gated nor empty: the answer
+    # is a real list of every occurrence in the file. Measured: the analyzer's table carries `+',
+    # so resolveBinding's library row RESOLVES it and `unresolved' is FALSE. That is the seam
+    # Task 8 inherits -- rename must refuse this cursor on the binding's owner, not on
+    # `unresolved', because an operator can be both answered and resolved here.
+    ra := referencesAnswer(rdoc, rsyms, wordAt(rdoc, 14, 20), refUri, FALSE);
+    check("an operator cursor answers its occurrences, not null", ra.json,
+          "[{\"uri\":\"file:///tmp/tt_refs.sd7\",\"range\":"
+          & "{\"start\":{\"line\":14,\"character\":20},\"end\":{\"line\":14,\"character\":21}}}]");
+    check("and a TK_OP can be resolved, so rename cannot key its refusal on unresolved",
+          str(ra.unresolved), "FALSE");
+    # ---- the occurrence cap, and whose length `capped' reads (R39) ---------------
+    for k range 1 to MAX_OCCURRENCES do
+      capText &:= "count := 1;\n";
+    end for;
+    setVersion(capDoc, capText, 1);
+    capAns := referencesAnswer(capDoc, countGlobalSyms(1), atLine("count", 1), capUri, FALSE);
+    check("exactly MAX_OCCURRENCES locations is not a truncated answer",
+          str(capAns.unresolved), "FALSE");
+    check("and all of them are published", str(uriCount(capAns.json)), "2000");
+    capText &:= "count := 1;\n";
+    setVersion(capDoc, capText, 1);
+    check("the capped text really holds one occurrence more than the cap",
+          str(length(occurrencesOf(capText, "count"))), str(MAX_OCCURRENCES + 1));
+    capAns := referencesAnswer(capDoc, countGlobalSyms(1), atLine("count", 1), capUri, FALSE);
+    check("one more occurrence truncates the list, and says so", str(capAns.unresolved), "TRUE");
+    check("the 2001st record is the sentinel, not a location to publish",
+          str(uriCount(capAns.json)), "2000");
+    check("the truncated answer names the truncation", capAns.why,
+          "references: count has more occurrences than this server lists," <&
+          " so the result is truncated");
+    # Both disclosures at once, from real input. The `else' arm that composes the two sentences
+    # needs `not b.resolved' AND `b.capped' together, and every capped check above passes a
+    # RESOLVED global, so without this line that arm is reachable only from a mutation. An
+    # undeclared name with more occurrences than the cap is what separates them: no symbols at
+    # all, so nothing binds `count', while the same 2 001-line document is still truncated.
+    capAns := referencesAnswer(capDoc, 0 times symRec.value, atLine("count", 1), capUri, FALSE);
+    check("an undeclared name past the cap names both reasons", capAns.why,
+          "references: count does not bind to a declaration of this file, so every occurrence" <&
+          " of it is listed, and the list is truncated at 2000");
+    # The declaration is the 2001st occurrence, the record the publish loop stops before. The
+    # dedupe test must be bounded by `emitted' as the loop is, or that line is in neither list:
+    # neither published as an occurrence nor added as a whole line. With both bounds it is added
+    # -- and the answer carries MAX_OCCURRENCES + 1 locations, because the cap counts occurrence
+    # RECORDS, not locations.
+    capAns := referencesAnswer(capDoc, countGlobalSyms(2001), atLine("count", 1), capUri, TRUE);
+    check("a capped answer still publishes the declaration past the cut",
+          str(uriCount(capAns.json)), "2001");
+    # R39: `capped' is a fact about the ARRAY the caller hands resolveBinding -- which is the
+    # list it publishes. The text above has MAX_OCCURRENCES + 1 occurrences, so a resolveBinding
+    # that measured the text instead of its parameter would report a truncated document as
+    # complete. That is the exact partial result spec 2 refuses, and these two checks are what
+    # a caller swapping in a filtered or recomputed list would have to survive.
+    rb := resolveBinding(capText, rsyms, ocOne, "count", 0, MAX_OCCURRENCES, refPath);
+    check("capped follows the array handed in, not the text", str(rb.capped), "FALSE");
+    for k range 1 to MAX_OCCURRENCES + 1 do
+      ocWide &:= occurrence.value;
+    end for;
+    rb := resolveBinding("count := 1;\n", rsyms, ocWide, "count", 0, 0, refPath);
+    check("and a long array caps even when the text is short", str(rb.capped), "TRUE");
+    # ---- R47: the cap must refuse a WRITE whose cursor IS in the truncated list ----------
+    # capDoc now holds MAX_OCCURRENCES + 1 statements and the cursor is on the FIRST of them, so
+    # `slot' is found, a range exists, and every other arm of renameDecision is silent. Note what
+    # this fixture does and does not hold: the pass keeps MAX_OCCURRENCES + 1 records, so all 2 001
+    # occurrences of THIS document are listed and the refusal is conservative by exactly one
+    # record. The genuinely-partial shape -- a record past the last one kept, invisible to whoever
+    # edits next -- is the 2 002-occurrence document, which is what tests/lsp_server_test.sd7's cap
+    # section and the wire run's CAP_TEXT build. Before the `capped' arm these two checks were the
+    # accept they should never have been: prepareRename offered this cursor and rename would have
+    # edited a truncated list. Deleting the arm reddens BOTH.
+    capWord := wordAt(capDoc, 0, 5);
+    check("the cursor on the first of a capped document is on the name", capWord.word, "count");
+    pc := prepareRenameAnswer(capDoc, countGlobalSyms(1), capWord, capUri, TRUE);
+    check("a capped document is refused even when the cursor is listed", str(pc.refused), "TRUE");
+    check("and the reason says an edit would be incomplete, not that the token is unlisted",
+          pc.why, "prepareRename: count has more occurrences than this server lists" <&
+          " (more than 2000), so a rename could not rewrite all of them");
+    # ---- textDocument/rename ---------------------------------------------------
+    # The local `counter' inside show (refsText lines 13, 15, 16): every edit is one occurrence
+    # inScope returns, carrying the same measured range references publishes for it.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "total", TRUE);
+    check("a clean rename edits every occurrence in scope", str(editCount(rn.json)), "3");
+    check("a rename touches exactly one document", str(docCount(rn.json)), "1");
+    check("and every edit carries both bounds", str(endCount(rn.json)), "3");
+    check("the edits are those three ranges, each with the new name", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_refs.sd7\":[{\"range\":{\"start\":{\"line\":12,\"character\":17},\"end\":{\"line\":12,\"character\":24}},\"newText\":\"total\"},{\"range\":{\"start\":{\"line\":14,\"character\":4},\"end\":{\"line\":14,\"character\":11}},\"newText\":\"total\"},{\"range\":{\"start\":{\"line\":15,\"character\":12},\"end\":{\"line\":15,\"character\":19}},\"newText\":\"total\"}]}}");
+    check("a successful rename is not a rejection", rn.error, "");
+    check("and a successful rename has nothing to log", rn.why, "");
+    # The global, from the cursor on the astral line -- the edit that would have written two
+    # columns LEFT had the range come from lspRange, which converts a character column and is
+    # given a UTF-16 one. lspRangeUnits back to lspRange reddens this on 19 against 20.
+    check("the cursor after the astral character is on the global",
+          wordAt(rdoc, 24, 21).word, "counter");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 24, 21), refUri, "total", TRUE);
+    check("the declaration is edited too, at the measured UTF-16 columns", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_refs.sd7\":[{\"range\":{\"start\":{\"line\":7,\"character\":13},\"end\":{\"line\":7,\"character\":20}},\"newText\":\"total\"},{\"range\":{\"start\":{\"line\":24,\"character\":19},\"end\":{\"line\":24,\"character\":26}},\"newText\":\"total\"}]}}");
+    # spec 11.9's multi-line header: reflection reports `left' on line 10, ABOVE show's body
+    # region, so the scope window does not hold the declaration and an edit list built from
+    # inScope alone renames the use and leaves the parameter behind -- a program that no longer
+    # compiles. references answers the same gap with a whole-LINE location, and a whole-line edit
+    # would delete the line instead of renaming one word in it.
+    check("the cursor is on the use of left, not its declaration",
+          wordAt(rdoc, 14, 17).word, "left");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 17), refUri, "total", TRUE);
+    check("a parameter of a multi-line header is renamed at its declaration as well",
+          str(editCount(rn.json)), "2");
+    check("with the header token's own columns", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_refs.sd7\":[{\"range\":{\"start\":{\"line\":9,\"character\":30},\"end\":{\"line\":9,\"character\":34}},\"newText\":\"total\"},{\"range\":{\"start\":{\"line\":14,\"character\":15},\"end\":{\"line\":14,\"character\":19}},\"newText\":\"total\"}]}}");
+    # Two occurrences of ONE name on one line. A dedupe that keeps one entry per line -- the
+    # shape references' declPublished guard has -- would answer 2 here and leave the second `n',
+    # the one to the right of `:=', under the old name.
+    setVersion(ndoc, "var integer: n is 0;\nn := n + 1;\n", 1);
+    nrec.name := "n"; nrec.cat := "INTOBJECT"; nrec.ty := "integer";
+    nrec.file := BUFFER_FILE; nrec.line1 := 1; nrec.sign := "var integer: n";
+    nsyms := 0 times symRec.value;
+    nsyms &:= nrec;
+    rn := renameResult(ndoc, nsyms, wordAt(ndoc, 1, 1), renameUri, "m", TRUE);
+    check("both occurrences on one line get their own edit", str(editCount(rn.json)), "3");
+    check("and they are the three measured ranges", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_rename.sd7\":[{\"range\":{\"start\":{\"line\":0,\"character\":13},\"end\":{\"line\":0,\"character\":14}},\"newText\":\"m\"},{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":1,\"character\":1}},\"newText\":\"m\"},{\"range\":{\"start\":{\"line\":1,\"character\":5},\"end\":{\"line\":1,\"character\":6}},\"newText\":\"m\"}]}}");
+    # The refusals are the SHARED predicate's, reached through rename: null, with `error' empty,
+    # and the same sentence prepareRename gives under the other method's name. An arm list copied
+    # here instead of called would drift, and each of these names the arm it came from.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "total", FALSE);
+    check("the capability arm reaches rename as null, not as an error",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("and the reason is the predicate's own", rn.why,
+          "rename: the client did not declare workspace.applyEdit, so it cannot apply a" <&
+          " WorkspaceEdit");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 24, 6), refUri, "total", TRUE);
+    check("a library symbol refuses rename too -- M5 renames one file", rn.why,
+          "rename: writeln is declared outside this buffer, and M5 renames only one file");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10),
+                       "file:///tmp/tt_rename.s7i", "total", TRUE);
+    check("and a .s7i buffer refuses while R-F10 stands", rn.why,
+          "rename: /tmp/tt_rename.s7i is a library buffer whose symbols come from disk while" <&
+          " R-F10 stands, so an edit could land on the wrong line");
+    # ---- R51: two name records on the declaration line ------------------------------------
+    # A WRITE finds a declaration by LINE: `declOccurrence' takes the first occurrence record on
+    # it and `inScope' filters line-granularly, so when the routine and one of its parameters
+    # share a name -- legal Seed7, measured, and reflection reports BOTH at the same line1 -- the
+    # line holds two candidates and the edit cannot be proved. Three reaches, each measured on
+    # this fixture at errorCount 0 BEFORE the arm existed: the cursor on the parameter `show'
+    # answered 3 edits including the ROUTINE's own name and left `show(3);' at line 16 under the
+    # old name (no add-back was involved -- the declaration line IS the line the body region opens
+    # on, so inScope kept both records); the cursor on a body use of `tally' answered 2 edits, the
+    # routine's name and the use, leaving the parameter's declaration and the call site; the cursor
+    # on `tally(1, 2);' answered 3 edits INCLUDING the unrelated parameter, which spec 6's
+    # "and nothing else" forbids. All three answer null now, and `delta' is the control: the same
+    # two-line header, one record on its declaration line, renamed completely.
+    setVersion(adoc, ambigText(), 1);
+    ad := analyzeAll(adoc.text, noDirs, ambigPath);
+    asyms := ad.syms;
+    check("the shared-name fixture analyses clean", str(length(ad.parsed.diags)), "0");
+    aword := wordAt(adoc, 3, 31);
+    check("the cursor is on the parameter, not the routine name beside it",
+          aword.word <& ":" <& str(aword.character1), "show:30");
+    pc := prepareRenameAnswer(adoc, asyms, aword, ambigUri, TRUE);
+    check("an ambiguous declaration line refuses prepareRename", str(pc.refused), "TRUE");
+    check("and names the shape it cannot tell apart", pc.why, "prepareRename: show" <&
+          DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, aword, ambigUri, "amount", TRUE);
+    check("rename refuses the identical cursor rather than renaming the routine",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("with the predicate's own sentence under this method's name", rn.why,
+          "rename: show" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 11, 13), ambigUri, "amount", TRUE);
+    check("so does the body use, whose add-back has two candidates, with no result frame",
+          str(rn.json = "null") <& " " <& rn.why,
+          "TRUE rename: tally" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 17, 5), ambigUri, "amount", TRUE);
+    check("and so does the call site, where the cursor is on the routine itself",
+          str(rn.json = "null") <& " " <& rn.why,
+          "TRUE rename: tally" <& DECL_AMBIG_TAIL);
+    rn := renameResult(adoc, asyms, wordAt(adoc, 11, 21), ambigUri, "amount", TRUE);
+    check("the other parameter of the same header is renamed, both its records", rn.json,
+          "{\"changes\":{\"file:///tmp/tt_ambig.sd7\":[{\"range\":{\"start\":{\"line\":9,"
+          <& "\"character\":32},\"end\":{\"line\":9,\"character\":37}},\"newText\":\"amount\"},"
+          <& "{\"range\":{\"start\":{\"line\":11,\"character\":20},\"end\":{\"line\":11,"
+          <& "\"character\":25}},\"newText\":\"amount\"}]}}");
+
+    # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
+    # FIRST of them, so the record the range would take IS in the truncated list -- the gap that
+    # made prepareRename accept a document rename can only half-edit.
+    rn := renameResult(capDoc, countGlobalSyms(1), capWord, capUri, "total", TRUE);
+    check("a capped document is refused rather than half-edited",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("and the reason says the edit would miss what the list does not hold", rn.why,
+          "rename: count has more occurrences than this server lists (more than 2000), so a" <&
+          " rename could not rewrite all of them");
+    # The positive control: the arm keys on the cap, not on how big the document is. One line
+    # fewer and the same cursor edits all 2 000 records, which the refusal above must not do.
+    setVersion(capDoc2, capLines(MAX_OCCURRENCES), 1);
+    rn := renameResult(capDoc2, countGlobalSyms(1), wordAt(capDoc2, 0, 5), capUri, "total", TRUE);
+    check("at exactly the cap the list is complete, so all 2000 are edited",
+          str(editCount(rn.json)), "2000");
+    check("and at exactly the cap nothing is refused",
+          str(rn.error = "" and rn.json <> "null"), "TRUE");
+    # The rejections. `error' = "invalid" is what the dispatcher sends as -32602 InvalidParams,
+    # and json stays "null" because no result goes out beside an error frame.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "", TRUE);
+    check("an empty name is rejected", rn.error, "invalid");
+    check("and the line says so", rn.why, "rename: the new name is empty");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "1bad", TRUE);
+    check("a name that is not an identifier is rejected", rn.error, "invalid");
+    check("naming the name and the rule", rn.why, "rename: 1bad is not a Seed7 identifier");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "two words", TRUE);
+    check("a space is not a name character either", rn.why,
+          "rename: two words is not a Seed7 identifier");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "begin", TRUE);
+    check("a keyword is rejected as a new name", rn.error, "invalid");
+    check("and is named as syntax, not as a word that happens to be unbound", rn.why,
+          "rename: begin is a Seed7 keyword, so it would rewrite syntax");
+    # The gate is the 63 words the INTERPRETER refuses, not completion's vocabulary: `type' is in
+    # that vocabulary and is a legal name, so renaming onto it must be allowed. A LOCAL's collision
+    # set is its own routine's scope entries plus the routine's name (rename.sd7's `collides'), so
+    # this cursor never consults the buffer's routine records -- what it exercises is the gate.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "type", TRUE);
+    check("renaming a local onto a word only completion's vocabulary knows is allowed",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 3");
+    # Validation runs BEFORE the predicate, so a cursor that would be refused anyway still gets
+    # -32602 for a name that could never be written. Swap the two and this answers null.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 24, 6), refUri, "1bad", TRUE);
+    check("a bad newName is rejected before the document is read",
+          str(rn.json = "null") <& " " <& rn.error, "TRUE invalid");
+    # The collision set is the symbol's OWN scope (spec 6), so one target name is a collision for
+    # one cursor and free for another. `Widget' is a buffer TYPE -- two `var integer: Widget' raise
+    # REDECLARATION, measured; `show' is a buffer ROUTINE -- `var integer: show' beside
+    # `const proc: show' analyses CLEAN, measured, which is why a same-named routine must not
+    # block the rename; `writeln' is the library's and is out of both sets.
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 7, 15), refUri, "Widget", TRUE);
+    check("a global cannot take a type this buffer declares", rn.error, "invalid");
+    check("and the line names the scope it collides in", rn.why,
+          "rename: Widget is already declared in the scope of counter, so the rename would" <&
+          " not compile");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 7, 15), refUri, "show", TRUE);
+    check("a same-named routine elsewhere in the file is not a collision",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 2");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "left", TRUE);
+    check("a local collides with its own routine's parameter", rn.error, "invalid");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "show", TRUE);
+    check("a local collides with its own routine's name", rn.error, "invalid");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "writeln", TRUE);
+    check("a stdlib name is not a collision",
+          str(rn.error = "") <& " " <& str(editCount(rn.json)), "TRUE 3");
     report("features");
   end func;

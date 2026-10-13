@@ -2,6 +2,34 @@ $ include "seed7_05.s7i";
   include "lsp_tst.sd7";
   include "transport.sd7";
 
+# "chars read|bytes read|chars left|bytes left" -- ALL ASCII, deliberately. A check whose
+# expected string holds a non-ASCII character prints that character through writeln when it
+# fails, and writeln of non-ASCII raises RANGE_ERROR on a suite's plain stdout: the graded line
+# dies and a single wrong assertion reads as a broken build. Counting is the same evidence and
+# it is printable.
+const func string: frame_of (in string: content, in integer: n) is func
+  result
+    var string: out is "";
+  local
+    var file: f is STD_NULL;
+    var string: got is "";
+    var string: rest is "";
+    var string: one is "";
+  begin
+    f := open("/tmp/t12_fixture.bin", "w");
+    write(f, content);
+    close(f);
+    f := open("/tmp/t12_fixture.bin", "r");
+    got := readFrameBody(f, n);
+    while not eof(f) do
+      readln(f, one);
+      rest := rest & one;
+    end while;
+    close(f);
+    out := str(length(got)) & "|" & str(utf8Length(got)) & "|" &
+           str(length(rest)) & "|" & str(utf8Length(rest));
+  end func;
+
 const proc: main is func
   begin
     check("ascii",     str(utf8Length("hello")),  "5");
@@ -14,5 +42,31 @@ const proc: main is func
     # The per-char width rule moved to utf8bytes.sd7, and its four checks moved with it to
     # tests/utf8bytes_test.sd7. What stays here is the string-level count that writeMessage
     # depends on for a Content-Length, reached through transport's own include.
+
+    # ---- readFrameBody: the inbound byte-exact read F1 needed (M5 Task 12) ----------------
+    # Its only coverage before this was the whole-server wire run, which can say that the next
+    # frame survived but not WHERE a read stopped -- and "the next frame survived" is exactly
+    # what an over-read that happens to land on a boundary also produces.
+    # 5 bytes of pure ASCII is 5 characters, 6 left: the plain Content-Length case.
+    check("ascii stops at the byte boundary", frame_of("hello world", 5), "5|5|6|6");
+    # F1 itself: 3 BYTES of e-acute + a + X is 2 characters, and X is still there. The old
+    # character-counted read would have taken 3 characters (4 bytes) and eaten X.
+    check("a multibyte body stops at the byte boundary, not the character boundary",
+          frame_of("éaX", 3), "2|3|1|1");
+    # A character is the smallest thing this can read, so a 1-byte ask consumes 2 bytes and
+    # leaves the rest -- the limit the module comment claims, pinned rather than asserted.
+    check("a boundary inside a character consumes the whole character",
+          frame_of("éa", 1), "1|2|1|1");
+    # A short final frame is the normal state of a client that closes the pipe: what arrived
+    # comes back, and the loop ends instead of spinning on an empty read.
+    check("a short final frame returns what exists", frame_of("abc", 100), "3|3|0|0");
+    check("a zero-length frame reads nothing", frame_of("abc", 0), "0|0|3|3");
+    # Progress at every remainder, or one frame stalls the session forever. remainder div 4 is
+    # 0 for 1..3, so max(1, ...) is what makes all three terminate -- and 3 is the case that
+    # needs two passes, which is the difference between terminating and merely stopping early.
+    check("remainder 1 terminates", frame_of("éé", 1), "1|2|1|2");
+    check("remainder 2 terminates", frame_of("éé", 2), "1|2|1|2");
+    check("remainder 3 takes two passes and still stops", frame_of("éé", 3), "2|4|0|0");
+    check("remainder 4 never over-reads", frame_of("ééabc", 4), "2|4|3|3");
     report("transport");
   end func;

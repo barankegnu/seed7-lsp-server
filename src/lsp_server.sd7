@@ -15,8 +15,15 @@ $ include "seed7_05.s7i";
   include "features/folding_range.sd7";
   include "features/selection_range.sd7";
   include "features/semantic_tokens.sd7";
+  include "features/references.sd7";
+  include "features/prepare_rename.sd7";
+  include "features/rename.sd7";
 
 const integer: MAX_DIAGNOSTICS is 100;
+
+# window/logMessage MessageType.Info. Deliberately not diagnostics.sd7's SEV_INFORMATION: the
+# two enums share the number 3 and nothing else.
+const integer: MSG_INFO is 3;
 
 const type: docMap is hash [string] lsDoc;
 
@@ -24,6 +31,15 @@ var docMap: openDocs is docMap.EMPTY_HASH;
 var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
+
+# The ONE client capability this server reads, and the only reason `initialize' params are
+# consulted at all: a WorkspaceEdit is a promise only a client that declared workspace.applyEdit
+# can keep. Every other member of that payload stays unread -- that debt (the rootUri trust gate,
+# hierarchicalDocumentSymbolSupport, SymbolKind valueSet) is LISTED in the M5 design's section 10
+# rather than paid here, and this flag is the one place section 7 lets section 6 depend on. It
+# reaches prepare_rename.sd7 as a PARAMETER: a file in src/features/ is included before
+# this global exists and must read no global.
+var boolean: clientCanApplyEdits is FALSE;
 
 # One analysis per OPEN document, held beside openDocs rather than inside `lsDoc`: `symRec` is
 # declared in analysis.sd7 and doc_store.sd7 must not come to include that.
@@ -52,6 +68,21 @@ const proc: handlerFailed (in string: kind, in string: body) is func
     sendError(0, -32603, "internal error: " <& kind);
   end func;
 
+# A line the feature said it needed the user to see, sent to the client as a window/logMessage
+# BEFORE whatever answer follows, and mirrored to stderr. Both halves are frames or stderr: this
+# is the only place a log line reaches the protocol channel, and nothing writes it to stdout.
+const proc: logMessage (in string: text) is func
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    note(text);
+    openObject(w);
+      field(w, "type");    addInt(w, MSG_INFO);
+      field(w, "message"); addStr(w, text);
+    closeObject(w);
+    sendNotification("window/logMessage", finishJson(w));
+  end func;
+
 const func string: capabilitiesJson is func
   result
     var string: out is "";
@@ -78,6 +109,11 @@ const func string: capabilitiesJson is func
       field(w, "hoverProvider"); addBool(w, TRUE);
       field(w, "definitionProvider"); addBool(w, TRUE);
       field(w, "documentSymbolProvider"); addBool(w, TRUE);
+      field(w, "referencesProvider"); addBool(w, TRUE);
+      field(w, "renameProvider");
+      openObject(w);
+        field(w, "prepareProvider"); addBool(w, TRUE);
+      closeObject(w);
       field(w, "foldingRangeProvider"); addBool(w, TRUE);
       field(w, "selectionRangeProvider"); addBool(w, TRUE);
       field(w, "semanticTokensProvider");
@@ -116,7 +152,7 @@ const func string: textToAnalyze (in string: uri) is func
     var string: out is "";
   begin
     if uri in openDocs then
-      if endsWith(uri, ".s7i") then
+      if isLibraryBufferPath(pathOf(uri)) then
         out := driverFor(pathOf(uri));
       else
         out := openDocs[uri].text;
@@ -136,7 +172,7 @@ const proc: ensureAnalyzed (in string: uri) is func
     var docAnalysis: fresh is docAnalysis.value;
   begin
     if uri in openDocs and not (uri in analysisCache) then
-      fresh := analyzeAll(textToAnalyze(uri), libraryDirs);
+      fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
       # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
       # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
       # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
@@ -244,9 +280,16 @@ const proc: handle (in rpcMsg: msg) is func
     var integer: fromLine is 0;
     var integer: toLine is 0;
     var jsonValue: span is jsonValue.value;
+    var refsAnswer: refs is refsAnswer.value;
+    var prepareAnswer: prep is prepareAnswer.value;
+    var renameAnswer: ren is renameAnswer.value;
+    var string: newName is "";
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
+      # atKey answers NULL for a missing `workspace' and boolAt falls back for a missing key or a
+      # non-boolean value, so the boolean true is the only input that raises the flag.
+      clientCanApplyEdits := boolAt(atKey(msg.params, "workspace"), "applyEdit", FALSE);
       sendResult(msg.id, initializeResultJson);
     elsif msg.method = "initialized" then
     elsif msg.method = "$/setTrace" then
@@ -283,6 +326,58 @@ const proc: handle (in rpcMsg: msg) is func
       if uri <> "" and uri in openDocs then
         sendResult(msg.id, definitionResult(symbolsOfDocument(uri),
                      wordOfRequest(msg), uri));
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/references" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        refs := referencesAnswer(openDocs[uri], symbolsOfDocument(uri), wordOfRequest(msg),
+                                 uri,
+                                 boolAt(atKey(msg.params, "context"), "includeDeclaration",
+                                        FALSE));
+        # The disclosure goes out before the answer it describes, so a client that shows the
+        # notification cannot be handed a wider list than the symbol without being told.
+        if refs.unresolved then
+          logMessage(refs.why);
+        end if;
+        sendResult(msg.id, refs.json);
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/prepareRename" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        prep := prepareRenameAnswer(openDocs[uri], symbolsOfDocument(uri),
+                                    wordOfRequest(msg), uri, clientCanApplyEdits);
+        # The reason goes out before the null it explains, as references' disclosure does.
+        if prep.refused then
+          logMessage(prep.why);
+        end if;
+        sendResult(msg.id, prep.json);
+      else
+        sendResult(msg.id, "null");
+      end if;
+    elsif msg.method = "textDocument/rename" then
+      uri := uriOfRequest(msg);
+      if uri <> "" and uri in openDocs then
+        newName := strAt(msg.params, "newName", "");
+        ren := renameResult(openDocs[uri], symbolsOfDocument(uri), wordOfRequest(msg), uri,
+                            newName, clientCanApplyEdits);
+        # Two events, and the client reads them differently. A REFUSAL -- this cursor names a
+        # symbol this server will not rewrite -- is null, the same answer prepareRename gives for
+        # the same reason, from the same predicate. A REJECTED newName or a collision is a request
+        # the user can correct, so it is -32602 InvalidParams. Both mirror `why' to the log and
+        # stderr; only the second costs an error frame.
+        if ren.error = "invalid" then
+          logMessage(ren.why);
+          sendError(msg.id, -32602, ren.why);
+        else
+          if ren.why <> "" then
+            logMessage(ren.why);
+          end if;
+          sendResult(msg.id, ren.json);
+        end if;
       else
         sendResult(msg.id, "null");
       end if;

@@ -42,7 +42,59 @@ const func integer: headerNumber (in string: text) is func
 
 # The width rules live in utf8bytes.sd7: this file counts the bytes it writes into a frame,
 # and the analyzer's byte-valued columns are read back as characters by doc_store. Both need
-# the same thresholds, so neither of them owns them.
+# the same thresholds, so neither of them owns them -- and the inbound count below is the third
+# place that needs them, because a frame's end is a BYTE position.
+
+# One frame body, read until `contentLength' BYTES have gone by.
+#
+# `gets' on a UTF-8 file counts CHARACTERS (utf8.s7i:132 -> utf8_gets), so handing it the byte
+# number from Content-Length runs past any body holding a non-ASCII character and eats the next
+# header: measured on "\xc3\xa9aextra-tail", gets(STD_UTF8_IN, 3) returns "\xc3\xa9ae" -- 3 characters,
+# 4 bytes -- and leaves "xtra-tail". F1, found by M5 Task 10; tests/transcript.py pins the
+# boundary, and the same suite's astral run is the end-to-end proof that the next frame survives.
+#
+# No character is wider than four bytes (utf8bytes.utf8CharLength), so a read of `remaining div 4'
+# characters can never cross the boundary, and `remaining' falls by at least a quarter per pass.
+# Measured on the largest frame this server receives -- the 2 002-line capped-document didOpen,
+# 34 319 bytes of ASCII: 37 passes, 5.0 ms per read against 80 ms for the same budget spent one
+# character at a time (which is why the loop is chunked) and 0.03 ms for the single character-counted
+# read it replaces. The work is one utf8Length pass over the body -- the pass writeMessage already
+# pays on every frame it sends -- plus 37 C calls; the capped wire session went 0.161 s to 0.177 s.
+#
+# seek/tell would be cheaper and are unusable here: STD_UTF8_IN is a pipe, and on a pipe
+# seekable(STD_UTF8_IN) is FALSE while seek raises FILE_ERROR -- both measured, in this server's
+# actual configuration. They are NOT how the unit checks find where a read stopped: those count
+# the bytes that came back and the bytes still in the file, because tell's base on a decoded
+# file is a claim this suite does not depend on and could not re-measure without writing
+# non-Latin-1 bytes to a plain file, which Seed7 refuses.
+#
+# Known limit of any character-based reader: a Content-Length that lands INSIDE a character
+# consumes that character whole -- asking 1 byte of e-acute + 'a' returns the 2-byte character
+# and leaves 'a' behind, measured in tests/transport_test.sd7 -- because a character is the
+# smallest thing this can read. A client that frames a UTF-8 payload puts its length between
+# characters; the check named above pins what happens if one does not.
+const func string: readFrameBody (inout file: source,
+                                 in integer: contentLength) is func
+  result
+    var string: body is "";
+  local
+    var string: chunk is "";
+    var integer: remaining is 0;
+  begin
+    remaining := contentLength;
+    while remaining > 0 do
+      chunk := gets(source, max(1, remaining div 4));
+      if chunk = "" then
+        # EOF inside the frame. What arrived goes back to the caller: a short final frame is not
+        # a framing error (it is the normal state of a client that closes the pipe), an empty
+        # read still ends the session through `okay', and the loop must not spin on it.
+        remaining := 0;
+      else
+        body := body <& chunk;
+        remaining := remaining - utf8Length(chunk);
+      end if;
+    end while;
+  end func;
 
 const proc: writeMessage (in string: body) is func
   begin
@@ -70,7 +122,7 @@ const func boolean: readMessage (inout string: body) is func
         # rather than swallowing the messages behind it in silence.
         writeln(STD_UTF8_ERR, "seed7-lsp: frame without Content-Length ignored");
       else
-        body := gets(STD_UTF8_IN, contentLength);
+        body := readFrameBody(STD_UTF8_IN, contentLength);
         okay := length(body) <> 0;
       end if;
     end if;

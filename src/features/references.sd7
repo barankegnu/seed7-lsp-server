@@ -1,0 +1,126 @@
+$ include "seed7_05.s7i";
+  include "analysis.sd7";
+  include "doc_store.sd7";
+  include "occurrences.sd7";
+  include "uris.sd7";
+  include "jsonw.sd7";
+
+# textDocument/references: every location of the symbol under the cursor, INSIDE this document,
+# with the exact UTF-16 columns the scanner measured -- the first feature of this server whose
+# ranges are not line-based (spec 5). The answer is `refsAnswer.json', a Location[] or "null";
+# `unresolved' plus `why' are the over-inclusive read's disclosure, which the dispatcher sends
+# as a window/logMessage (spec 2: an empty list reads as "unused", and that is a lie you would
+# act on). Scope comes from occurrences.sd7 -- resolveBinding and inScope, never a re-derivation
+# here (spec 4) -- and the branch is on `resolved' / `keyword', never on `owner'.
+#
+# No position is converted here (invariant 2: doc_store owns that) and no LSP shape leaves this
+# file (invariant 4: features own the shapes, and nothing in occurrences.sd7 builds one).
+
+const type: refsAnswer is new struct
+    var string: json is "null";
+    var boolean: unresolved is FALSE;
+    var string: why is "";
+  end struct;
+
+const proc: emitLocation (inout jsonWriter: w, in string: docUri,
+                          in string: rangeJson) is func
+  begin
+    openObject(w);
+      field(w, "uri");   addStr(w, docUri);
+      field(w, "range"); raw(w, rangeJson);
+    closeObject(w);
+  end func;
+
+# TRUE when the declaration line is already among the occurrences that ARE about to be
+# published -- `emitted' of them, not `length(scoped)'. On a capped answer the record past
+# MAX_OCCURRENCES is the sentinel and is not published, so a declaration on THAT line is not
+# among the published locations and has to be added. The declaration of a local or a global
+# always carries the name, so the ordinary case is the one that is skipped: it keeps the answer
+# to one location per occurrence instead of two for the same line.
+const func boolean: declPublished (in array occurrence: scoped, in integer: emitted,
+                                   in integer: declLine1) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to emitted do
+      if scoped[i].line0 = pred(declLine1) then
+        out := TRUE;
+      end if;
+    end for;
+  end func;
+
+const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
+                                         in wordRef: word, in string: docUri,
+                                         in boolean: includeDeclaration) is func
+  result
+    var refsAnswer: out is refsAnswer.value;
+  local
+    var string: docPath is "";
+    var array occurrence: oc is 0 times occurrence.value;
+    var array occurrence: scoped is 0 times occurrence.value;
+    var binding: b is binding.value;
+    var jsonWriter: w is jsonWriter.value;
+    var integer: emitted is 0;
+    var integer: i is 0;
+  begin
+    if word.word <> "" then
+      docPath := pathOf(docUri);
+      # ONE occurrence list. It is handed to resolveBinding and filtered by inScope, so
+      # `b.capped' is a fact about the list this answer is built from (spec 4, R39).
+      oc := occurrencesOf(doc.text, word.word);
+      b := resolveBinding(doc.text, syms, oc, word.word, pred(word.line1),
+                          pred(lineCount(doc)), docPath);
+      # "null", not [], for a gated word and for a token the index cannot hold at all -- a
+      # number or a bracket, both of which wordAt does report as a word. Either would otherwise
+      # search for the literal text, find nothing, and report the name as unused (spec 5).
+      # The empty word is the guard above -- a comment, a literal, a suppressed operator
+      # character, an illegal byte, or whitespace with NO TOKEN TO ITS LEFT, which in practice
+      # is a line's leading indentation. Anywhere else between tokens the answer is not empty:
+      # wordAt is left-of-character, so a cursor one past a name -- and one past the line's
+      # LAST token -- answers that token.
+      if not b.keyword and length(oc) <> 0 then
+        scoped := inScope(oc, b);
+        emitted := length(scoped);
+        if emitted > MAX_OCCURRENCES then
+          # The record past the cap is the sentinel that proves truncation, not a location.
+          emitted := MAX_OCCURRENCES;
+        end if;
+        openArray(w);
+        # A declaration outside this document is never emitted: its line numbers a file the
+        # client did not open, and that jump is the shipped definitionProvider's job.
+        # `declLine1' is 0 exactly when no declaration OF THIS DOCUMENT has the name.
+        # Both bounds are `emitted': the dedupe test below may not count a record the loop
+        # after it does not publish.
+        # The cap counts occurrence RECORDS, not locations, so a capped answer asked with
+        # includeDeclaration carries MAX_OCCURRENCES + 1 locations.
+        if includeDeclaration and b.declLine1 <> 0 and
+             not declPublished(scoped, emitted, b.declLine1) then
+          emitLocation(w, docUri, lspWholeLine(b.declLine1));
+        end if;
+        for i range 1 to emitted do
+          emitLocation(w, docUri,
+                       lspRangeUnits(doc, scoped[i].line0, scoped[i].col16,
+                                     scoped[i].width16));
+        end for;
+        closeArray(w);
+        out.json := finishJson(w);
+        if not b.resolved then
+          out.unresolved := TRUE;
+          out.why := "references: " <& word.word <&
+                     " does not bind to a declaration of this file, so every occurrence" <&
+                     " of it is listed";
+        end if;
+        if b.capped then
+          out.unresolved := TRUE;
+          if out.why = "" then
+            out.why := "references: " <& word.word <&
+                       " has more occurrences than this server lists, so the result is truncated";
+          else
+            out.why := out.why <& ", and the list is truncated at " <& str(MAX_OCCURRENCES);
+          end if;
+        end if;
+      end if;
+    end if;
+  end func;

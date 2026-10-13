@@ -73,6 +73,26 @@ const func integer: lineWidth (in string: text, in integer: start) is func
     end while;
   end func;
 
+# The same walk in UTF-16 units. lspRangeUnits needs the line's unit width to clamp to, and
+# doing it here is the difference between O(line) and O(document): `utf16Before' counts from
+# the START of the text, so the width that used to be `utf16Before(start + lineWidth) -
+# utf16Before(start)' cost one pass over every character ahead of the line. Measured on the
+# capped references answer -- one range per occurrence, 2 000 of them in a 22 000-character
+# document -- the old form spent 7.9 s building the ranges alone. No other feature asks for
+# more than two ranges per response, which is why it was never felt before this one.
+const func integer: lineUnits (in string: text, in integer: start) is func
+  result
+    var integer: units is 0;
+  local
+    var integer: i is 0;
+  begin
+    i := start;
+    while i <= length(text) and text[i] <> '\n' and text[i] <> '\r' do
+      units +:= utf16CharLength(text[i]);
+      i +:= 1;
+    end while;
+  end func;
+
 # ponytail: mask rebuilt on every didChange (measured ~130 ms on the stdlib's largest file);
 # upgrade path is a version stamp and a lazy fill if a change burst ever shows it.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
@@ -121,6 +141,39 @@ const func string: lspRange (in lsDoc: doc, in integer: line1, in integer: colum
     end if;
     out := "{\"line\":" <& lineIdx - 1 <& ",\"character\":" <&
            utf16Before(doc.text, start + ch) - utf16Before(doc.text, start) <& "}";
+  end func;
+
+# The range for a token, from the (line0, col16, width16) the scanner measured. col16 is
+# ALREADY a UTF-16 column, so nothing here converts it -- lspRange would treat it as a
+# character column and convert, which is the double conversion that made selectionRange
+# report the wrong range on any line with multi-byte text before the token. Clamped to the
+# line's UTF-16 width, the way lspRange clamps an absurd character column.
+const func string: lspRangeUnits (in lsDoc: doc, in integer: line0, in integer: col16,
+                                  in integer: width16) is func
+  result
+    var string: out is "";
+  local
+    var integer: lineIdx is 0;
+    var integer: start is 1;
+    var integer: units is 0;
+    var integer: first is 0;
+    var integer: last is 0;
+  begin
+    lineIdx := lineIndexOf(doc, succ(line0));
+    start := doc.lineStart[lineIdx];
+    units := lineUnits(doc.text, start);
+    first := col16;
+    if first < 0 then
+      first := 0;
+    elsif first > units then
+      first := units;
+    end if;
+    last := first + width16;
+    if last > units then
+      last := units;
+    end if;
+    out := "{\"start\":{\"line\":" <& lineIdx - 1 <& ",\"character\":" <& first <&
+           "},\"end\":{\"line\":" <& lineIdx - 1 <& ",\"character\":" <& last <& "}}";
   end func;
 
 # The 1-based character column that holds the 1-based UTF-8 byte offset `byteCol`.

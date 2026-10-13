@@ -29,6 +29,49 @@ const func jsonValue: atKey (in jsonValue: obj, in string: name) is func
     end block;
   end func;
 
+# A JSON string that holds an astral character usually holds it as a SURROGATE PAIR: Seed7's
+# readJson turns each \uXXXX escape into its own char, so "\ud83d\ude00" arrives as two characters
+# (55357, 56832) where the client meant one (128512 = 0x1F600, grinning face). Measured in M5 Task 10: the two astral
+# characters of a didOpen body arrived as four lone surrogates and the analyzer published four
+# Errors for them, which is the user-visible half of the damage -- the document text the server
+# analyses was not the text the client sent.
+#
+# Total by construction: a stray high, a stray low, or a high followed by something that is not a
+# low all pass through unchanged. Nothing here may raise, because every caller of this module sits
+# on the request path and an exception would reach stdout -- the protocol channel.
+#
+# str(chr(n)) is how a code point becomes text here: "" & chr(n) and string(chr(n)) do not
+# match, but str(char) does -- AGENTS.md says otherwise and is corrected in Task 11's doc pass.
+const func string: joinSurrogates (in string: stri) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+    var integer: hi is 0;
+    var integer: lo is 0;
+    var boolean: paired is FALSE;
+  begin
+    i := 1;
+    while i <= length(stri) do
+      hi := ord(stri[i]);
+      paired := FALSE;
+      if hi >= 55296 and hi <= 56319 then
+        if i < length(stri) then
+          lo := ord(stri[succ(i)]);
+          if lo >= 56320 and lo <= 57343 then
+            out := out & str(chr(((hi - 55296) * 1024) + (lo - 56320) + 65536));
+            paired := TRUE;
+            i := succ(i);
+          end if;
+        end if;
+      end if;
+      if not paired then
+        out := out & str(chr(hi));
+      end if;
+      i := succ(i);
+    end while;
+  end func;
+
 const func string: strAt (in jsonValue: obj, in string: name,
                           in string: fallback) is func
   result
@@ -38,7 +81,7 @@ const func string: strAt (in jsonValue: obj, in string: name,
   begin
     found := atKey(obj, name);
     if category(found) = JSON_STRING then
-      value := string(found);
+      value := joinSurrogates(string(found));
     else
       value := fallback;
     end if;
@@ -59,6 +102,23 @@ const func integer: intAt (in jsonValue: obj, in string: name,
       exception
         catch RANGE_ERROR: value := fallback;
       end block;
+    end if;
+  end func;
+
+# The boolean reader. Total like intAt: `boolean(jsonValue)' raises ILLEGAL_ACTION for anything
+# that is not JSON_BOOLEAN, and a client may send a number or a string in a boolean slot --
+# `context.includeDeclaration' and `workspace.applyEdit' are both read through this.
+const func boolean: boolAt (in jsonValue: obj, in string: name,
+                            in boolean: fallback) is func
+  result
+    var boolean: value is FALSE;
+  local
+    var jsonValue: found is jsonValue.value;
+  begin
+    value := fallback;
+    found := atKey(obj, name);
+    if category(found) = JSON_BOOLEAN then
+      value := boolean(found);
     end if;
   end func;
 

@@ -106,5 +106,30 @@ const proc: main is func
           str(answerCount(text, manyPositions(33))) & "/" & str(answerCount(text, manyPositions(32))),
           "32/32");
 
+    # (f) the shipped UTF-16 defect (spec 11.8): the token range came from
+    # lspRange(doc, succ(tk.line0), succ(tk.col16)), which re-reads a UTF-16 column as a
+    # CHARACTER column. "count" starts at UTF-16 unit 13 (character 11) on this line, so a
+    # request at unit 13 must report 13..18; the double conversion put the range two units
+    # further along the line for every astral character ahead of the token.
+    text := "x := \"\128512;\128512;\"; count := 1;\n";
+    expected := "[{\"range\":{\"start\":{\"line\":0,\"character\":13},\"end\":{\"line\":0,\"character\":18}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1,\"character\":0}}}}]";
+    check("the token range on an astral line is in UTF-16 units",
+          selOf(text, "[{\"line\":0,\"character\":13}]"),
+          expected);
+
+    # (g) the same defect lived in the no-token branch, which handed the REQUEST's own
+    # "character" (already UTF-16 units) to lspRange. Aggregate over two no-token columns:
+    # each must answer a zero-width range at the character it was asked about. If the rule
+    # is broken the answer is shifted by the units the astral characters cost -- 10 becomes
+    # 12 and 8 becomes 10 -- so a single lucky column cannot carry this.
+    expected := "[{\"range\":{\"start\":{\"line\":0,\"character\":8},\"end\":{\"line\":0,\"character\":8}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1,\"character\":0}}}}," <&
+                "{\"range\":{\"start\":{\"line\":0,\"character\":10},\"end\":{\"line\":0,\"character\":10}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":1,\"character\":0}}}}]";
+    check("a no-token position on an astral line answers its own column",
+          selOf(text, "[{\"line\":0,\"character\":8},{\"line\":0,\"character\":10}]"),
+          expected);
+
     report("selection_range");
   end func;

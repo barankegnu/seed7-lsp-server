@@ -59,6 +59,137 @@ const func string: chainOf (in string: text, in integer: line0) is func
     end for;
   end func;
 
+# The routine fixture, one array element per source line: element succ(N) is line0 N, so a
+# check can name the line it points at without counting "\n" escapes. Real Seed7 -- analyzeAll
+# answers completed with 0 diagnostics on it, and reports oneTwo line1 3, outer 7, bigHeader 16
+# (its name line, two above its `is func') and tail 26 -- so these regions are what a document
+# gives, not what a guess gives:
+#   0-1  includes (imports region)     2  oneTwo `is func` (name line 3, one-line header)
+#   6    outer `is func` (name 7)      8  inner `is func` (name 9, nested in outer's local)
+#   16   bigHeader name line, its `is func` at 17    25  a top-level const, below every routine
+const func string: demo is func
+  result
+    var string: out is "";
+  local
+    var array string: lines is [](
+      "$ include \"seed7_05.s7i\";",
+      "  include \"stdio.s7i\";",
+      "const proc: oneTwo (val integer: n) is func",
+      "  begin",
+      "    writeln(n + n);",
+      "  end func;",
+      "const proc: outer is func",
+      "  local",
+      "    const proc: inner is func",
+      "      begin",
+      "        writeln(\"inner\");",
+      "      end func;",
+      "  begin",
+      "    inner;",
+      "  end func;",
+      "const proc: bigHeader (val integer: a,",
+      "                       val integer: b)",
+      "    is func",
+      "  begin",
+      "    if a > b then",
+      "      writeln(\"a\");",
+      "    else",
+      "      writeln(\"b\");",
+      "    end if;",
+      "  end func;",
+      "const integer: tail is 0;");
+    var integer: i is 0;
+  begin
+    out := "";
+    for i range 1 to length(lines) do
+      out := out & lines[i] & "\n";
+    end for;
+  end func;
+
+# The closer of the innermost region at line0. A control, section, clause, struct, repeat,
+# comment or imports region answers "", which is the whole point of the field: `kind' cannot
+# say "routine body". folding_range.sd7 serialises `kind' into FoldingRange.kind, and
+# blockRegions blanks it only for a clause region and for a section -- a routine body's `kind'
+# is "" because it is pushed empty, not because anything strips it.
+const func string: closerAt (in string: text, in integer: line0) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+  begin
+    rs := enclosingRegions(text, line0, pred(linesIn(text)));
+    out := "";
+    if length(rs) > 0 then
+      out := rs[1].closer;
+    end if;
+  end func;
+
+# Aggregate witness over the closer field: every region that carries one, "start-end:closer" in
+# document order. This one line changes if a closer leaks onto a non-routine region, if the
+# stack pop leaves `closerName' out of step with the other arrays, or if `closeFrom' drops the
+# copy -- none of which a single named region would have to show.
+const func string: closersOf (in string: text) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+    var string: tag is "";
+  begin
+    rs := blockRegions(text, pred(linesIn(text)));
+    for i range 1 to length(rs) do
+      if rs[i].closer <> "" then
+        tag := str(rs[i].startLine) & "-" & str(rs[i].endLine) & ":" & rs[i].closer;
+        if out <> "" then
+          out := out & " ";
+        end if;
+        out := out & tag;
+      end if;
+    end for;
+  end func;
+
+# "start..end" of the routine body that pairs with the 1-based declaration line, or "none" --
+# the answer Task 6 reads as unresolved.
+const func string: regionOfDeclaration (in string: text, in integer: declLine1) is func
+  result
+    var string: out is "none";
+  local
+    var blockRef: r is blockRef.value;
+  begin
+    r := declarationRegion(text, pred(linesIn(text)), declLine1);
+    out := "none";
+    if r.closer <> "" then
+      out := str(r.startLine) & ".." & str(r.endLine);
+    end if;
+  end func;
+
+# The routine bodies enclosing line0, "start-end" innermost first.
+const func string: declarationsOf (in string: text, in integer: line0) is func
+  result
+    var string: out is "";
+  local
+    var array blockRef: rs is 0 times blockRef.value;
+    var integer: i is 0;
+  begin
+    rs := enclosingDeclarations(text, line0, pred(linesIn(text)));
+    out := "";
+    for i range 1 to length(rs) do
+      if out <> "" then
+        out := out & " ";
+      end if;
+      out := out & str(rs[i].startLine) & "-" & str(rs[i].endLine);
+    end for;
+  end func;
+
+# "start/end/kind/closer" of one region, so the no-match answer is pinned as a record, not as
+# a phrase.
+const func string: regionPin (in blockRef: r) is func
+  result
+    var string: out is "";
+  begin
+    out := str(r.startLine) & "/" & str(r.endLine) & "/" & r.kind & "/" & r.closer;
+  end func;
+
 # Invariant check: every region satisfies startLine >= 0, endLine <= lastLine, endLine > startLine.
 # Returns the first violation found, or "" if valid.
 const func string: regionsValid (in string: text) is func
@@ -113,6 +244,9 @@ const func array fixture: allFixtures is func
     f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
     f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; out &:= f;
     f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; out &:= f;
+    f.text := demo();
+    f.expected := "0-1:imports 2-5 3-5 6-14 7-12 8-11 9-11 12-14 17-24 18-24 19-23 20-21 22-23";
+    out &:= f;
   end func;
 
 const proc: main is func
@@ -139,5 +273,58 @@ const proc: main is func
                   3), "2-4 1-5 0-5");
     check("a line outside every construct has no chain",
           chainOf("writeln(1);\n", 0), "");
+
+    # ---- which region is a routine, and where does it end ----
+    # Aggregate over the fixture: exactly the four routine bodies carry a closer. Sections,
+    # clauses, the `if', the imports run and every comment are absent from this line.
+    check("only routine bodies carry a closer", closersOf(demo()),
+          "2-5:func 6-14:func 8-11:func 17-24:func");
+    check("the routine region carries its closer", closerAt(demo(), 2), "func");
+    check("a nested routine region carries its closer", closerAt(demo(), 8), "func");
+    check("a multi-line header's region carries its closer", closerAt(demo(), 17), "func");
+    check("a control body carries no closer", closerAt(demo(), 19), "");
+    check("a begin section carries no closer", closerAt(demo(), 3), "");
+    check("a clause carries no closer", closerAt(demo(), 20), "");
+    check("an imports region carries no closer", closerAt(demo(), 0), "");
+    check("a comment region carries no closer",
+          closerAt("(* one\n   two *)\nwriteln(1);\n", 1), "");
+    check("a repeat body carries no closer",
+          closerAt("repeat\n  writeln(1);\nuntil TRUE;\n", 1), "");
+    check("a struct body carries no closer",
+          closerAt("const type: t is new struct\n  var integer: a is 0;\nend struct;\n", 1), "");
+
+    # declarationRegion: a 1-based NAME line (what reflection reports) to its body region.
+    check("a one-line header pairs with its own region", regionOfDeclaration(demo(), 3), "2..5");
+    check("a nested one-line header pairs with its own region",
+          regionOfDeclaration(demo(), 9), "8..11");
+    check("a declaration line above its own region still pairs",
+          regionOfDeclaration(demo(), 16), "17..24");
+    check("a declaration below every routine body pairs with nothing",
+          regionOfDeclaration(demo(), 26), "none");
+    # The no-match answer, pinned as a record. startLine 0 alone cannot mean "nothing": a real
+    # region may start at line 0 (fixture 1 is exactly that), so `closer' is the discriminator.
+    check("an unpaired declaration answers the empty region",
+          regionPin(declarationRegion(demo(), pred(linesIn(demo())), 26)), "0/0//");
+    check("a routine on the first line still pairs",
+          regionPin(declarationRegion("const proc: a is func\nbegin\n  noop;\nend func;\n",
+                                      3, 1)),
+          "0/3//func");
+    # An unset declaration line is the default of symRec.line1, not line 0 of the document.
+    # Without the guard pred(0) = -1 matches every region, so this answers the file's FIRST
+    # routine body -- a wrong pair, not a missing one.
+    check("an unknown declaration line pairs with nothing, not with the first routine",
+          regionPin(declarationRegion(demo(), pred(linesIn(demo())), 0)), "0/0//");
+
+    # enclosingDeclarations: routine bodies only, innermost first.
+    check("enclosingDeclarations is innermost first", declarationsOf(demo(), 10), "8-11 6-14");
+    check("only the enclosing routine is reported", declarationsOf(demo(), 13), "6-14");
+    # line0 0 is the imports region 0-1, whose closer is "": the chain is NON-empty and the
+    # filter rejects it. Inverting `closer <> ""' answers "0-1", which is why this line is 0
+    # and not 25 -- at 25 the chain is empty and no filter mutation can be seen.
+    check("a non-routine region in the chain is not a declaration", declarationsOf(demo(), 0), "");
+    # Task 6 calls this while the user types, and the last version of a document being typed is
+    # usually truncated: the open routine comes from the final closeFrom, closer intact.
+    check("a truncated buffer still reports its open routine",
+          declarationsOf("const proc: a is func\nbegin\n  if TRUE then\n", 2), "0-3");
     report("blocks");
   end func;

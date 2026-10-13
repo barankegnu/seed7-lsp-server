@@ -45,10 +45,36 @@ const proc: collectDiags (in program: prog, inout analysisResult: res) is func
 # document's own declarations apart from the ones it merely pulls in. Measured, not assumed.
 const string: BUFFER_FILE is "STRING";
 
+# One spelling of "declared in the document being edited": BUFFER_FILE for text handed to
+# parseStri, and the document's OWN PATH for an open .s7i, which lsp_server analyses through
+# driverFor(pathOf(uri)) with that same path as docPath -- so its declarations arrive with `file'
+# equal to the path, never BUFFER_FILE (measured by analysis_test's probeDouble checks). The
+# collectSyms guard below and occurrences' binding rows both ask through this one function.
+const func boolean: isBufferFile (in string: fname, in string: docPath) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := fname = BUFFER_FILE or fname = docPath;
+  end func;
+
+# One name visible inside a routine's own scope: a parameter, a local constant, a local
+# variable or the result variable. `cat` is the reflection category stored VERBATIM, which
+# is the measured shape (s7 5.4.10): a `const local' reports the category of its VALUE
+# (INTOBJECT, STRIOBJECT, SETOBJECT) and only a `var local' answers LOCALVOBJECT. Nothing
+# maps these, because a REFPARAMOBJECT and a VALUEPARAMOBJECT are different things for
+# whichever feature reads a scope next.
+const type: scopeRec is new struct
+    var string: name is "";
+    var integer: line1 is 0;
+    var string: cat is "";
+  end struct;
+
 # One global declaration the analyzer knows about, as plain data. `file` is the absolute
 # path reflection reports, or BUFFER_FILE for the analysed text itself; never "?". `line1`
 # is the 1-based declaration line. There is no column anywhere in this API, which is why
-# every range built from it is line-based.
+# every range built from it is line-based. `locals` is the scope of a ROUTINE, filled only
+# for the declarations of the document being analysed and reset to empty for every other
+# record -- an empty `locals` on a library record is that guard, not an absence of scope.
 const type: symRec is new struct
     var string: name is "";
     var string: cat is "";
@@ -57,12 +83,16 @@ const type: symRec is new struct
     var integer: line1 is 0;
     var string: sign is "";
     var array string: params is 0 times "";
+    var array scopeRec: locals is 0 times scopeRec.value;
   end struct;
 
-# getType, formalParams and resultVar raise RANGE_ERROR on real references -- a
-# SYMBOLOBJECT has no type, and a proc has no result variable. Everything that reads a
-# reference goes through one of these totals, because an exception must never reach the
-# protocol channel on stdout.
+# The reflection accessors are partial, and every count here is measured over the 3 328
+# globalObjects of the symbols fixture: getType raises RANGE_ERROR on 15 (all FWDREFOBJECT, a
+# forward declaration has no type yet), localConsts, localVars and resultVar on 2 819 (every
+# category that is not a routine). formalParams raised on none, yet `paramsOf' keeps its catch
+# -- these are the totals that keep an exception off the protocol channel on stdout, and being
+# total is not the same as having a witnessed raise. A proc is NOT a resultVar raiser: it
+# answers the null reference, and it is `line' and `category' of THAT which raise.
 const func string: safeType (in reference: obj) is func
   result
     var string: out is "";
@@ -114,6 +144,61 @@ const func array string: paramsOf (in reference: obj) is func
     exception
       catch RANGE_ERROR:
         out := 0 times "";
+    end block;
+  end func;
+
+# resultVar's answer for a routine that has no result variable -- a proc. Reading `line'
+# or `category' of that reference raises, so the marker is checked before the fields.
+const string: NULL_REFERENCE is " *NULL_OBJECT* ";
+
+const func scopeRec: scopeOf (in reference: obj) is func
+  result
+    var scopeRec: out is scopeRec.value;
+  begin
+    out.name := str(obj);
+    out.line1 := line(obj);
+    out.cat := str(category(obj));
+  end func;
+
+# Every name the routine itself declares, in the order parameters, local constants, local
+# variables, result variable. Total for the same reason as paramsOf -- and for one more:
+# localConsts, localVars and resultVar answer RANGE_ERROR not only for a category that has
+# no scope (a TYPEOBJECT, an ACTOBJECT) but for a routine whose own declaration failed,
+# which is the ordinary state of a truncated buffer mid-typing.
+const func array scopeRec: localsOf (in reference: obj) is func
+  result
+    var array scopeRec: out is 0 times scopeRec.value;
+  local
+    var ref_list: rl is ref_list.EMPTY;
+    var reference: item is NIL;
+    var reference: rv is NIL;
+  begin
+    block
+      rl := formalParams(obj);
+      for item range rl do
+        if isParam(item) then
+          out &:= scopeOf(item);
+        end if;
+      end for;
+      rl := localConsts(obj);
+      for item range rl do
+        out &:= scopeOf(item);
+      end for;
+      rl := localVars(obj);
+      for item range rl do
+        out &:= scopeOf(item);
+      end for;
+      rv := resultVar(obj);
+      if str(rv) <> NULL_REFERENCE then
+        out &:= scopeOf(rv);
+      end if;
+    exception
+      catch RANGE_ERROR:
+        out := 0 times scopeRec.value;
+      catch INDEX_ERROR:
+        out := 0 times scopeRec.value;
+      catch ILLEGAL_ACTION:
+        out := 0 times scopeRec.value;
     end block;
   end func;
 
@@ -184,7 +269,8 @@ const type: symSeen is hash [string] integer;
 
 # The symbol half of an already-parsed `program`, appended to `syms`. Same reason as
 # collectDiags: one parseStri, both answers.
-const proc: collectSyms (in program: prog, inout array symRec: syms) is func
+const proc: collectSyms (in program: prog, inout array symRec: syms,
+                         in string: docPath) is func
   local
     var ref_list: objs is ref_list.EMPTY;
     var reference: obj is NIL;
@@ -201,6 +287,20 @@ const proc: collectSyms (in program: prog, inout array symRec: syms) is func
         rec.ty := safeType(obj);
         rec.line1 := line(obj);
         rec.params := paramsOf(obj);
+        # Buffer declarations only. A library local can shadow nothing visible in this
+        # document, and four accessor walks per record is not free: filling every one of the
+        # 3 328 globalObjects the symbols fixture parses to measured 52 ms per analyzeAll
+        # against 43 ms guarded, calc7 140 against 130, shiftjis 71 against 64 -- medians of
+        # three runs of nine analyses each, the same harness and text on both sides.
+        if isBufferFile(rec.file, docPath) then
+          rec.locals := localsOf(obj);
+        else
+          # `rec' is loop-carried and this is the only field the guard does not re-stamp,
+          # so without the reset a library record copies whatever the previous filled
+          # routine left in it -- measured with a late-loaded include after a buffer
+          # declaration, which is legal Seed7 and real library files do it.
+          rec.locals := 0 times scopeRec.value;
+        end if;
         rec.sign := signatureOf(obj);
         keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
         if keyStr not in seen then
@@ -231,7 +331,8 @@ const type: docAnalysis is new struct
   end struct;
 
 const func docAnalysis: analyzeAll (in string: text,
-                                    in array string: libraryDirs) is func
+                                    in array string: libraryDirs,
+                                    in string: docPath) is func
   result
     var docAnalysis: out is docAnalysis.value;
   local
@@ -240,7 +341,7 @@ const func docAnalysis: analyzeAll (in string: text,
     prog := parseStri(text, parseOptions.value, libraryDirs);
     collectDiags(prog, out.parsed);
     block
-      collectSyms(prog, out.syms);
+      collectSyms(prog, out.syms, docPath);
     exception
       # Every accessor above is total, so reaching here means the walk itself is
       # unreliable. Report nothing rather than a half-truth.
