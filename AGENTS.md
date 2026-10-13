@@ -74,6 +74,10 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `h.EMPTY_HASH`, removal `excl(h, key)`, assignment `h @:= [k] v`.
 - A file that defines `main` cannot be included by a test (redeclaration). That is why
   `main.sd7` and `lsp_server.sd7` are separate files.
+- `-p` is NOT an optimization flag: `s7 -p file` writes a trace protocol log. Optimization lives in
+  the compiler — `s7c -On` (1..3) for the C compiler, `-ocN` to optimize generated C code, `-flto`
+  for link-time. The interpreter has no optimization switch; `-a` suppresses only the execution
+  phase, not constant folding.
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
@@ -147,7 +151,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    capability is only advertised once its method is answered: `diagnosticProvider`
    shipped ahead of `textDocument/diagnostic`, which told pull-capable clients to
    ignore the push diagnostics we really did send.
-6. Outbound text goes through `jsonw.sd7`. `str()` on a `jsonValue` is the `literal()`
+6. `renameDecision` in `src/features/prepare_rename.sd7` is the ONLY rename refusal predicate, and
+   `inScope` in `src/occurrences.sd7` is the ONLY place scope is applied. A second copy of either is
+   how you get "accepted by `prepareRename`, edited by `rename`" — which the milestone exists to
+   prevent. Both read the same `occurrencesOf` pass (invariant: one pass per request).
+7. Outbound text goes through `jsonw.sd7`. `str()` on a `jsonValue` is the `literal()`
    path that emits `\8364;` for `€` — invalid JSON.
    `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty. The greps are
    recursive (`src/`, not `src/*.sd7`) because M3 put feature code in `src/features/`.
@@ -192,6 +200,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   four-space indent**, the byte arithmetic is not the same without it — is
   `EXPECTED_SYMBOL` at line 4 column 23, one byte past a `writeln` spanning bytes 16-22.
   Change the interpreter's convention and those checks go red.
+- `rename` refuses when the declaration line holds more than one record of the name. Seed7 lets a
+  parameter share its routine's name, and the index has no column for a declaration, so choosing by
+  line would sometimes rewrite the wrong symbol. Measured cost: it also refuses a legal rename of
+  `const integer: x is 1; const integer: y is x;`. Refusal on a write is the rule — do not "fix" the
+  over-refusal with a column test unless regions become column-aware.
 - Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
   semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
   and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the
