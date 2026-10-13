@@ -394,7 +394,8 @@ const proc: main is func
     check("a routine that owns its paired region still binds its own local",
           bindPin(b), "count|local|TRUE|FALSE|FALSE|13");
     check("and its scope is that region", scopePin(b), "12-16");
-    check("and it keeps its own three occurrences", linesPin(inScope(moc, b)), "12 14 15");
+    check("and the owning routine keeps its own three occurrences",
+          linesPin(inScope(moc, b)), "12 14 15");
     check("a binding that owns its region does not call its scope uncertain",
           str(b.scopeUncertain), "FALSE");
 
