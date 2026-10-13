@@ -46,7 +46,7 @@ The failure modes the spec implies that no single task's happy-path test would c
 * `src/keywords.sd7` — **new.** the keyword/operator predicate every gate shares, replacing `completion.sd7`'s private 36-entry list.
 * `src/features/references.sd7`, `src/features/rename.sd7` — **new.** `refsAnswer` / `renameAnswer` records: JSON plus the unresolved flag.
 * `src/lsp_server.sd7` — reads `workspace.applyEdit` for the first time, dispatches the three methods, sends the `window/logMessage` a feature flagged.
-* `src/features/selection_range.sd7` — one call changed to `lspRangeUnits` (the shipped UTF-16 defect, spec §11.8).
+`src/features/selection_range.sd7` — TWO calls changed to `lspRangeUnits`: the token branch and the no-token branch (the shipped UTF-16 defect, spec §11.8, R25). The document-range calls just below them keep `lspRange`, because their integer is a character count (R26).
 * `tests/occurrences_test.sd7` — **new suite**, added to `Makefile`'s `TESTS`; `tests/analysis_test.sd7`, `tests/blocks_test.sd7`, `tests/doc_store_test.sd7`, `tests/features_test.sd7`, `tests/transcript.py` — extended.
 
 ---
