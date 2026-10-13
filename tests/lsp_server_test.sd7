@@ -231,6 +231,14 @@ const proc: main is func
     check("at the use site under the cursor, not the declaration", p.json,
           "{\"range\":{\"start\":{\"line\":23,\"character\":25},\"end\":{\"line\":23," <&
           "\"character\":30}},\"placeholder\":\"tally\"}");
+    # Two occurrences of ONE name on one line: the range is the token the cursor sits IN, not the
+    # first on the line. Task 9 rewrites what this says, so pointing at the other `amount' here is
+    # a wrong edit range -- and a cursor column that the lookup ignores cannot be seen in the text.
+    check("the cursor at 16 is on the SECOND amount", cursor(prepUri, 6, 16).word, "amount");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 16), prepUri);
+    check("and answers that occurrence's own range", p.json,
+          "{\"range\":{\"start\":{\"line\":6,\"character\":14},\"end\":{\"line\":6," <&
+          "\"character\":20}},\"placeholder\":\"amount\"}");
     p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 6), prepUri);
     check("a library symbol refuses -- M5 renames one file", str(p.refused), "TRUE");
     check("and says where the symbol is declared", p.why,
