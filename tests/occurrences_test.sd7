@@ -184,6 +184,11 @@ const proc: main is func
     var string: libText is "";
     var docAnalysis: ld is docAnalysis.value;
     var array symRec: lsyms is 0 times symRec.value;
+    var string: lib2Path is "";
+    var file: lib2Doc is STD_NULL;
+    var string: lib2Text is "";
+    var docAnalysis: l2d is docAnalysis.value;
+    var array symRec: l2syms is 0 times symRec.value;
     var string: nested is "";
     var docAnalysis: nd is docAnalysis.value;
     var array symRec: nsyms is 0 times symRec.value;
@@ -415,6 +420,25 @@ const proc: main is func
     check("a declaration reached through the .s7i driver binds its own parameter",
           bindPin(b), "counter|local|TRUE|FALSE|FALSE|3");
     check("and its scope is the library file's own region", scopePin(b), "2-6");
+
+    # A second .s7i, all of whose routines sit on one line: the region list is EMPTY, so the
+    # pair of the name-carrying routine at line1 1 is the unset blockRef -- whose startLine 0 is
+    # indistinguishable from a REAL region opening on line 0. ownsRegion's closer test is what
+    # keeps that phantom from becoming a scope, and this is the input that reaches it.
+    lib2Path := "/tmp/seed7_lsp_occurrences2.s7i";
+    lib2Doc := open(lib2Path, "w");
+    write(lib2Doc, "const proc: libTiny (inout integer: counter) is func begin counter := 1; end func;\n" <&
+          "var integer: counter is 0;\n" <&
+          "const proc: libUse is func begin counter := 2; end func;\n");
+    close(lib2Doc);
+    lib2Text := readAll(lib2Path);
+    l2d := analysisOf(driverFor(lib2Path), lib2Path);
+    l2syms := l2d.syms;
+    check("the no-region .s7i fixture analyses clean", str(length(l2d.parsed.diags)), "0");
+    b := bind(lib2Text, l2syms, "counter", 0, pred(linesIn(lib2Text)), lib2Path);
+    check("a carrier with no region at all is not handed the phantom region at line 0",
+          bindPin(b), "counter|global|TRUE|FALSE|FALSE|2");
+    check("and its scope stays the whole file rather than one line", scopePin(b), "0-4");
 
     # ---- row 1's measured limit: a nested routine is not a globalObjects entry -----
     # `inner' appears only as an entry of outer's own scope (BLOCKOBJECT, line1 5) and has no
