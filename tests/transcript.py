@@ -430,7 +430,9 @@ expect(answered_null(by_id, 60),
        "a non-boolean applyEdit leaves the flag down (%r)" % by_id.get(60, {}))
 # --- M5 Task 9: rename, the one method here that WRITES to the user's file ----------
 # The symbol is reportWidget's `counter' parameter: one use inside the body and its declaration
-# on the header line, which is above the routine's body region. Two edits, one document.
+# on the header line -- which IS the line its body region opens on, because `is func' sits on it,
+# so both edits come from inScope and one document carries them. The header-above-the-region case,
+# where inScope's window does not hold the declaration, is pinned in tests/features_test.sd7.
 RN_URI = "file:///tmp/tt_syms.sd7"
 RN_HEAD = PR_LINES.index("const proc: reportWidget (in string: label, "
                          "inout integer: counter) is func")
