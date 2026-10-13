@@ -385,7 +385,8 @@ expect("workspaceSymbolProvider" not in init_caps,
 expect(answered_null(by_id, 60),
        "no workspace.applyEdit -> prepareRename answers null (%r)" % by_id.get(60, {}))
 expect(all(answered_null(by_id, i) for i in (61, 62, 63)),
-       "and so does every other cursor: the capability gate is asked first")
+       "and the library, keyword and unopened-uri cursors also answer null (%s)"
+       % [i for i in (61, 62, 63) if not answered_null(by_id, i)])
 log_at = next((i for i, r in enumerate(replies) if r.get("method") == "window/logMessage"
                and "applyEdit" in r.get("params", {}).get("message", "")), None)
 ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 60), None)

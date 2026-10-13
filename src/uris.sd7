@@ -17,6 +17,13 @@ const func string: pathOf (in string: uri) is func
     end if;
   end func;
 
+# TRUE for a Seed7 library buffer. Spelled ONCE because two rules ask it and must not disagree:
+# lsp_server.sd7's textToAnalyze (analyse the typed text or the file on disk) and features/
+# prepare_rename.sd7's refusal (R-F10 makes a .s7i edit unsafe). Takes a PATH -- a caller holding
+# a uri passes it through pathOf() first, so both callers test the same string.
+const func boolean: isLibraryBufferPath (in string: path) is
+  return endsWith(path, ".s7i");
+
 const string: URI_SAFE is
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~/";
 

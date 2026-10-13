@@ -52,21 +52,23 @@ const func string: firstMissing is func
   end func;
 
 # ---- prepareRename fixtures ---------------------------------------------------
-# One document that carries every case prepareRename decides on. The cursors in the checks are
-# 0-based LINE,CHARACTER pairs and each is commented with the token it lands on.
+# One document that carries every case prepareRename decides on. The map below numbers the lines
+# 1-BASED, as the analyzer and every diagnostic message numbers them; the cursors in the checks are
+# 0-based LINE,CHARACTER pairs, so a check's line is one LESS than the map row it names. Each
+# cursor is commented with the token it lands on.
 #   3   var integer: tally is 0;                            global, scope COMPLETE
 #   5   const proc: bump (inout integer: amount) is func    owns its region
 #   7     amount := amount + tally;                         the local, and a use of the global
 #  10   const proc: tiny ... is func begin ... end func;    one line: owns NO region
 #  12   var integer: counter is 0;                          global, scope UNCERTAIN (R35)
 #  14-16 const type: Box is new struct / var integer: pix   a field: no declaration source
-#  19   const proc: main is func                            the buffer's own global
-#  20     begin                                             a keyword
-#  21     tally := 1;                                       a name, then `:=', then a number
-#  22     bump(tally);                                      the global, as an inout argument
-#  23     tiny(counter);                                    the UNCERTAIN global
-#  24     writeln(Box.value.pix);                            a library name, and the field
-#  25     counter := counter + tally;                       both globals' use sites
+#  18   const proc: main is func                            the buffer's own global
+#  19     begin                                             a keyword
+#  20     tally := 1;                                       a name, then `:=', then a number
+#  21     bump(tally);                                      the global, as an inout argument
+#  22     tiny(counter);                                    the UNCERTAIN global
+#  23     writeln(Box.value.pix);                           a library name, and the field
+#  24     counter := counter + tally;                       both globals' use sites
 const func string: prepText is func
   result
     var string: out is "";
@@ -157,6 +159,9 @@ const proc: main is func
     var array symRec: libSyms is 0 times symRec.value;
     var prepareAnswer: p is prepareAnswer.value;
     var file: libDoc is STD_NULL;
+    var string: capText is "";
+    var string: capUri is "file:///tmp/seed7_lsp_cap.sd7";
+    var integer: k is 0;
   begin
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
@@ -174,7 +179,10 @@ const proc: main is func
               length(symbolsOfDocument("file:///tmp/seed7_lsp_syms.sd7")) <> 0);
     check("an unknown uri yields none",
           str(length(symbolsOfDocument("file:///tmp/never/opened.sd7"))), "0");
-    check("every advertised capability has a handler", firstMissing(), "");
+    # firstMissing() scans the TEXT of capabilitiesJson against HANDLED, so this says that every
+    # name the suite expects is present -- NOT that a handler answers the method. The behaviour
+    # behind the list is pinned method by method by the wire suite.
+    check("no advertised name is missing from the expected list", firstMissing(), "");
     check("no capability is advertised for an unhandled method", firstUnhandled(), "");
     # The shapes, spelled out: the two arrays above test only that a NAME is present, and
     # renameProvider has to be the object `{"prepareProvider":true}', not a bare true.
@@ -214,20 +222,23 @@ const proc: main is func
     # The SAME cursor the accept below uses, refused only because the client cannot apply an
     # edit. Refusal and accept are a pair: if the gate is dropped the first goes red, if the
     # default is flipped or the read is lost the second is.
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri,
+                             clientCanApplyEdits);
     check("a client without workspace.applyEdit refuses", str(p.refused), "TRUE");
     check("and the log line names the capability it did not declare", p.why,
           "prepareRename: the client did not declare workspace.applyEdit, so it cannot" <&
           " apply a WorkspaceEdit");
     check("a refusal is null, not an error", p.json, "null");
     clientCanApplyEdits := TRUE;
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri,
+                             clientCanApplyEdits);
     check("a resolved local of this buffer is accepted", str(p.refused), "FALSE");
     check("and an accepted cursor has nothing to log", p.why, "");
     check("and answers the cursor's own range with the name as placeholder", p.json,
           "{\"range\":{\"start\":{\"line\":6,\"character\":4},\"end\":{\"line\":6," <&
           "\"character\":10}},\"placeholder\":\"amount\"}");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 27), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 27), prepUri,
+                             clientCanApplyEdits);
     check("a global whose scope is complete is accepted too", str(p.refused), "FALSE");
     check("at the use site under the cursor, not the declaration", p.json,
           "{\"range\":{\"start\":{\"line\":23,\"character\":25},\"end\":{\"line\":23," <&
@@ -236,43 +247,60 @@ const proc: main is func
     # first on the line. Task 9 rewrites what this says, so pointing at the other `amount' here is
     # a wrong edit range -- and a cursor column that the lookup ignores cannot be seen in the text.
     check("the cursor at 16 is on the SECOND amount", cursor(prepUri, 6, 16).word, "amount");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 16), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 16), prepUri,
+                             clientCanApplyEdits);
     check("and answers that occurrence's own range", p.json,
           "{\"range\":{\"start\":{\"line\":6,\"character\":14},\"end\":{\"line\":6," <&
           "\"character\":20}},\"placeholder\":\"amount\"}");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 6), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 6), prepUri,
+                             clientCanApplyEdits);
     check("a library symbol refuses -- M5 renames one file", str(p.refused), "TRUE");
     check("and says where the symbol is declared", p.why,
           "prepareRename: writeln is declared outside this buffer, and M5 renames only one file");
     # The keyword arm and the unbound arm are separate on purpose: `keyword' implies
     # `not resolved', so folding the two into one message is the conflation this pair catches.
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 18, 4), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 18, 4), prepUri,
+                             clientCanApplyEdits);
     check("a keyword refuses", str(p.refused), "TRUE");
     check("as syntax, not as a name that happens to be unbound", p.why,
           "prepareRename: begin is a Seed7 keyword, so it is syntax rather than a symbol");
     # The two arms below need the cursor to be on an OPERATOR and on a NUMBER, and a reader
     # cannot see that in the text, so the three cursors are pinned against wordAt itself.
     check("the operator cursor is on :=", cursor(prepUri, 19, 12).word, ":=");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 12), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 12), prepUri,
+                             clientCanApplyEdits);
     check("an operator token is not a name to rename", str(p.refused), "TRUE");
     check("and says what it found", p.why, "prepareRename: := is not a name");
     check("the number cursor is on 1", cursor(prepUri, 19, 14).word, "1");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 14), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 14), prepUri,
+                             clientCanApplyEdits);
     check("a number is not a name either -- the index never holds one", str(p.refused), "TRUE");
     check("and the reason says what the cursor is on", p.why, "prepareRename: 1 is not a name");
+    # A BRACKET is the third way a cursor fails to be a name: TK_BRACKET is not indexable, so `('
+    # never enters the occurrence list at all (unlike `:=' above, which IS listed and is refused
+    # for its kind). The arm is still cursorName's 0, and the sentence names the token it found.
+    check("the bracket cursor is on (", cursor(prepUri, 20, 9).word, "(");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 20, 9), prepUri,
+                             clientCanApplyEdits);
+    check("a bracket is not a name to rename", str(p.refused), "TRUE");
+    check("and the reason is the not-a-name arm, for a token never listed", p.why,
+          "prepareRename: ( is not a name");
     check("the indentation cursor has no token at all", cursor(prepUri, 20, 1).word, "");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 20, 1), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 20, 1), prepUri,
+                             clientCanApplyEdits);
     check("a cursor with no token to its left refuses", str(p.refused), "TRUE");
     check("and says there is nothing there", p.why,
           "prepareRename: there is no token under the cursor to rename");
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 19), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 19), prepUri,
+                             clientCanApplyEdits);
     check("a global whose scope may be shorter than the truth refuses", str(p.refused), "TRUE");
     check("and names the uncertainty, not the binding", p.why,
           "prepareRename: the scope of counter is not fully visible to this server, so a rename" <&
           " could rewrite a shadowing declaration");
     # Row 4's field and the truncated buffer are the SAME arm: owner "" is owner "" whatever the
     # reason, and owner = "field" gets no special case (R40).
-    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 24), prepUri);
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 24), prepUri,
+                             clientCanApplyEdits);
     check("a struct field refuses: it binds to no declaration this server has", str(p.refused),
           "TRUE");
     check("with the reason any unbound name gets", p.why,
@@ -285,7 +313,8 @@ const proc: main is func
     # between keystrokes, and the refusal is for the symbol table that could not be built.
     checkTrue("the truncated fixture is unanalysable",
               length(analyzeDocument(truncUri).diags) <> 0);
-    p := prepareRenameAnswer(openDocs[truncUri], truncSyms, cursor(truncUri, 3, 6), truncUri);
+    p := prepareRenameAnswer(openDocs[truncUri], truncSyms, cursor(truncUri, 3, 6), truncUri,
+                             clientCanApplyEdits);
     check("a truncated buffer refuses, so the text cannot be damaged", str(p.refused), "TRUE");
     check("as the unbound name it is", p.why,
           "prepareRename: tally does not bind to one declaration of this file, so a rename" <&
@@ -300,11 +329,32 @@ const proc: main is func
           str(length(analyzeDocument(libUri).diags)), "0");
     # Line 5's `counter' is libProbe's own parameter and binds (row 1, resolved, scope complete),
     # so NOTHING but the .s7i rule refuses it: delete that rule and this check turns to an accept.
-    p := prepareRenameAnswer(openDocs[libUri], libSyms, cursor(libUri, 4, 6), libUri);
+    p := prepareRenameAnswer(openDocs[libUri], libSyms, cursor(libUri, 4, 6), libUri,
+                             clientCanApplyEdits);
     check("rename refuses inside a .s7i buffer while R-F10 stands", str(p.refused), "TRUE");
     check("and names the debt", p.why,
           "prepareRename: " <& libPath <& " is a library buffer whose symbols come from disk" <&
           " while R-F10 stands, so an edit could land on the wrong line");
+    # ---- past the occurrence cap ------------------------------------------------
+    # 2 002 statements, so occurrencesOf stops at its 2 001st record and the cursor on the LAST
+    # line has no record to find. The refusal is right and so is `refused'; only the old sentence
+    # ("`count' is not a name") was wrong about a token that plainly is one. No analysis: the
+    # symbol table is handed in empty because this arm is reached before resolveBinding.
+    for k range 1 to MAX_OCCURRENCES + 2 do
+      capText &:= "count := 1;\n";
+    end for;
+    openDocs @:= [capUri] lsDoc.value;
+    setVersion(openDocs[capUri], capText, 1);
+    check("the cursor past the cap is on a real name",
+          cursor(capUri, MAX_OCCURRENCES + 1, 5).word, "count");
+    p := prepareRenameAnswer(openDocs[capUri], 0 times symRec.value,
+                             cursor(capUri, MAX_OCCURRENCES + 1, 5), capUri, clientCanApplyEdits);
+    check("a name past the cap still refuses, and answers null",
+          str(p.refused) <& " " <& p.json, "TRUE null");
+    check("and says the list is capped, not that the token is not a name", p.why,
+          "prepareRename: count has more occurrences than this server lists (more than 2000)," <&
+          " and the token under the cursor is not among the ones listed, so its range is not" <&
+          " known");
     # The read itself, driven through the dispatcher. Each frame writes an InitializeResult to
     # stdout; report()'s leading newline is what keeps it off the graded line.
     clientCanApplyEdits := FALSE;
