@@ -442,8 +442,17 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     would edit a symbol the user did not name, so §6's refusal keys on the shared line in the
     PREDICATE, not on whether the add-back is the path in use — Task 9 measured the narrower rule
     and it left the over-inclusion live. Measured on `/tmp/ambig3.sd7`, `/tmp/ambig4.sd7` and
-    Task 9's `/tmp/probe_shape.sd7`; the refusal costs a legal-but-unprovable rename, and a proper
-    fix needs column-aware regions rather than another arm.
+    Task 9's `/tmp/probe_shape.sd7`.
+
+    **The arm's real trigger is the line, not the parameter shape, and that is a cost, not just a
+    guard.** Two same-word records on a declaration line also arise with no parameter involved:
+    `const integer: x is 1; const integer: y is x;` — reproduced on a clean buffer
+    (`/tmp/r9probe.sd7`, `diags=0`), where `prepareRename` and `rename` BOTH refuse a perfectly
+    legal rename of `x`. Over-refusal, safe direction, and the correct alternative is column-aware
+    declaration identity, not another arm. Two consequences still owed: the refusal `why` sentence
+    claims "the shape a parameter takes when it is named after its routine", which is false for
+    this input, and §12's boundary statement "routines with a name-colliding parameter only" is
+    false too. Both are one-line corrections, batched for the whole-branch review's fix wave.
 13. **`globalObjects` has no ordering contract in its signature, but does in prose**
     (`progs.s7i:533`: definitions are returned "in the same order as the definitions of the source
     program"). Task 2's `else`-reset witness, Task 3's pairing and Task 9's declaration add-back all
