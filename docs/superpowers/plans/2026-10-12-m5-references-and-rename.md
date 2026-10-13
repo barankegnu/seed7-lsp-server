@@ -434,6 +434,23 @@ The four rows of spec §4, with shadowing subtraction, and the only place that s
 1. Resolution runs FIRST (R28, corrected by Task 6's measurement). The keyword predicate is consulted only after resolution fails, because the gate is the list of words that CANNOT be a declared name — so if a word is in it, nothing in the file can have declared it, and resolution failing first costs nothing. The reason the order still matters is `for`, `in` and `is`: they are in the gate AND are reported by `globalObjects` as `ACTOBJECT` records (52 of them for `for`), so gating first turns a library-symbol binding into `""` and a `references` answer into `null`. The original justification for R28 — that gating first would answer `null` for a user-declared symbol named `type` — is WRONG and was measured wrong by me: `type` is not in the gate (the probe analyses `const func integer: type (in integer: n)` cleanly), so `isKeyword("type")` is FALSE and gate-first would not have hidden it. The check that pins the ordering is the `for` one, not the `type` one.
 2. `enclosingDeclarations(text, line0, lastLine)` innermost-first. For the innermost routine region, if `name` appears in that routine's `symRec.locals` → `owner = "local"`, scope = that region.
 3. Else a `symRec` whose `file` is `BUFFER_FILE` or the document path and whose `name = name` → `owner = "global"`, scope = whole document **minus** every region of every routine whose `locals` carry the same name. Keep the subtraction as a list of excluded regions on the `binding`, not as a pre-filtered occurrence array: Task 7 needs both the regions and the declaration's own line.
+
+   **Corrected by Task 6's review (R34, R35).** *Ownership* of a paired region is not free:
+   `closeFrom` emits a region only when `openLine < endLine`, so a one-line routine yields no region and
+   its name line pairs with the NEXT routine below (`src/blocks.sd7:405-412` says so in its own
+   `shortcut:` comment). A record that does not own its pair must not claim its scope and must not
+   contribute to `excluded` — a region belongs to the buffer record with the greatest `line1` at or
+   before `region.startLine`. Left unverified, a cursor on a global inside `main` bound `local` with a
+   one-line `tiny`'s parameter line as its declaration: the rename edits tiny and main's uses, never the
+   global, and the program stops compiling.
+3a. **Before** the library row and after rows 1–2, the gate (R36): a name in `CANNOT_BE_NAME` →
+    `owner = ""`, `keyword = TRUE`, `resolved = FALSE`. Rationale: nothing a user declared can be
+    named `for` — that is what the probe measured — while `globalObjects` reports 52 `for` records,
+    so gating after the library row made `references` on `for`, `in`, `is` or `to` list every
+    occurrence in the file, which is precisely the noise row 6 exists to suppress. R28 is NOT
+    weakened: `type`, `proc`, `result` and `enum` are not in the gate, so a program declaring
+    `const func integer: type (...)` still resolves as a global.
+
 4. Else any `symRec` with that name → `owner = "library"`, `resolved = TRUE`, scope = whole document.
 5. Else the name appears as a `locals` entry of some routine that does not enclose `line0`, or the token follows a `.` (a field use) → `owner = "field"`, `resolved = FALSE`, scope = whole document.
 6. Else the name is in `CANNOT_BE_NAME` → `owner = ""`, `keyword = TRUE`, `resolved = FALSE` — language furniture, so `references` answers `null` rather than listing every `begin` in the file, and `rename` refuses.

@@ -180,8 +180,11 @@ Request `ReferenceParams { textDocument, position, context { includeDeclaration 
   or on `(` otherwise reaches §4's row 4 and searches for the literal name `16#beef`, finds
   nothing, and returns an empty list — the "reads as unused" answer §2 calls a lie. Row 4 applies
   only to a name-shaped token that §4 could not bind (§11.11).
-- A word that cannot be a declared identifier also yields `null` — but the keyword test runs
-  AFTER resolution fails, never before (§11.11, R28). Seed7 has no reserved words
+- A word that cannot be a declared identifier yields `null` — the keyword test runs after LOCAL and
+  GLOBAL resolution and before the LIBRARY row (§11.11, R28 refined by R36). Ordering after rows 1–2
+  is what protects a declared symbol named `type`; ordering before row 3 is what stops `references`
+  on `for`, `in`, `is` or `to` from listing every occurrence in the file, since `globalObjects`
+  reports 52 `for` records and no user declaration can carry that name. Seed7 has no reserved words
   (`Seed7Home/manual/intro.htm:230`), so `type`, `proc`, `result` and `enum` are legal names, and a
   program that declares `const func integer: type (in integer: n)` has a real symbol that
   `documentSymbol` and `hover` already list; gating on the word first would answer `null` for it.
