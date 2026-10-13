@@ -5,11 +5,11 @@ $ include "seed7_05.s7i";
 const array string: HANDLED is
   []("textDocumentSync", "positionEncoding", "completionProvider",
      "hoverProvider", "signatureHelpProvider", "definitionProvider",
-     "documentSymbolProvider", "referencesProvider", "foldingRangeProvider",
-     "selectionRangeProvider", "semanticTokensProvider");
+     "documentSymbolProvider", "referencesProvider", "renameProvider",
+     "foldingRangeProvider", "selectionRangeProvider", "semanticTokensProvider");
 
 const array string: UNHANDLED is
-  []("diagnosticProvider", "renameProvider",
+  []("diagnosticProvider",
      "implementationProvider", "typeDefinitionProvider", "declarationProvider",
      "workspaceSymbolProvider", "documentFormattingProvider",
      "documentHighlightProvider", "codeActionProvider", "colorProvider",
@@ -51,9 +51,112 @@ const func string: firstMissing is func
     end for;
   end func;
 
+# ---- prepareRename fixtures ---------------------------------------------------
+# One document that carries every case prepareRename decides on. The cursors in the checks are
+# 0-based LINE,CHARACTER pairs and each is commented with the token it lands on.
+#   3   var integer: tally is 0;                            global, scope COMPLETE
+#   5   const proc: bump (inout integer: amount) is func    owns its region
+#   7     amount := amount + tally;                         the local, and a use of the global
+#  10   const proc: tiny ... is func begin ... end func;    one line: owns NO region
+#  12   var integer: counter is 0;                          global, scope UNCERTAIN (R35)
+#  14-16 const type: Box is new struct / var integer: pix   a field: no declaration source
+#  19   const proc: main is func                            the buffer's own global
+#  20     begin                                             a keyword
+#  21     tally := 1;                                       a name, then `:=', then a number
+#  22     bump(tally);                                      the global, as an inout argument
+#  23     tiny(counter);                                    the UNCERTAIN global
+#  24     writeln(Box.value.pix);                            a library name, and the field
+#  25     counter := counter + tally;                       both globals' use sites
+const func string: prepText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "var integer: tally is 0;\n" <&
+           "\n" <&
+           "const proc: bump (inout integer: amount) is func\n" <&
+           "  begin\n" <&
+           "    amount := amount + tally;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: tiny (inout integer: counter) is func begin counter := 1; end func;\n" <&
+           "\n" <&
+           "var integer: counter is 0;\n" <&
+           "\n" <&
+           "const type: Box is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    tally := 1;\n" <&
+           "    bump(tally);\n" <&
+           "    tiny(counter);\n" <&
+           "    writeln(Box.value.pix);\n" <&
+           "    counter := counter + tally;\n" <&
+           "  end func;\n";
+  end func;
+
+# A library buffer WITH ONE REAL DECLARATION. The .s7i refusal needs a file on disk because
+# lsp_server analyses an open .s7i through driverFor(path), which reads it (R-F10); a hand-built
+# symRec could not show that the rule fires on the document TYPE and on nothing else.
+const func string: libText is func
+  result
+    var string: out is "";
+  begin
+    out := "var integer: counter is 0;\n" <&
+           "\n" <&
+           "const proc: libProbe (inout integer: counter) is func\n" <&
+           "  begin\n" <&
+           "    counter := counter + 1;\n" <&
+           "  end func;\n";
+  end func;
+
+# A buffer caught mid-typing: `tally' is used and declared nowhere, and the program has no
+# `end func;'. The unanalysable state IS what is pinned, because it is the normal state.
+const func string: truncText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    tally := 1;\n";
+  end func;
+
+# The cursor of a real request: wordAt on the OPENED document, never a hand-made wordRef. The
+# answer carries the token's own UTF-16 range, so a fabricated column would test a position the
+# fixture does not have.
+const func wordRef: cursor (in string: uri, in integer: line0,
+                             in integer: char0) is func
+  result
+    var wordRef: out is wordRef.value;
+  begin
+    out := wordAt(openDocs[uri], line0, char0);
+  end func;
+
+const func string: initFrame (in integer: id, in string: workspaceJson) is func
+  result
+    var string: out is "";
+  begin
+    out := "{\"jsonrpc\":\"2.0\",\"id\":" <& str(id) <&
+           ",\"method\":\"initialize\",\"params\":{\"capabilities\":{}" <& workspaceJson <&
+           "}}";
+  end func;
+
 const proc: main is func
   local
     var rpcMsg: msg is rpcMsg.value;
+    var string: prepUri is "file:///tmp/seed7_lsp_prep.sd7";
+    var string: truncUri is "file:///tmp/seed7_lsp_trunc.sd7";
+    var string: libPath is "/tmp/seed7_lsp_pr.s7i";
+    var string: libUri is "file:///tmp/seed7_lsp_pr.s7i";
+    var array symRec: prepSyms is 0 times symRec.value;
+    var array symRec: truncSyms is 0 times symRec.value;
+    var array symRec: libSyms is 0 times symRec.value;
+    var prepareAnswer: p is prepareAnswer.value;
+    var file: libDoc is STD_NULL;
   begin
     checkTrue("caps announce full sync",
               pos(capabilitiesJson, "\"textDocumentSync\":{\"openClose\":true,\"change\":1}") <> 0);
@@ -73,6 +176,18 @@ const proc: main is func
           str(length(symbolsOfDocument("file:///tmp/never/opened.sd7"))), "0");
     check("every advertised capability has a handler", firstMissing(), "");
     check("no capability is advertised for an unhandled method", firstUnhandled(), "");
+    # The shapes, spelled out: the two arrays above test only that a NAME is present, and
+    # renameProvider has to be the object `{"prepareProvider":true}', not a bare true.
+    check("referencesProvider is advertised", str(advertised("referencesProvider")), "TRUE");
+    check("renameProvider is an object with prepareProvider",
+          str(pos(capabilitiesJson, "\"renameProvider\":{\"prepareProvider\":true}") <> 0),
+          "TRUE");
+    check("positionEncoding is still utf-16",
+          str(pos(capabilitiesJson, "\"positionEncoding\":\"utf-16\"") <> 0), "TRUE");
+    # The M5/M6 line, held in code: workspace/symbol is not on this milestone, so advertising it
+    # would promise a method the dispatcher answers with -32601.
+    check("workspace/symbol stays unadvertised",
+          str(advertised("workspaceSymbolProvider")), "FALSE");
     # The analysis entry beside openDocs. didClose's drop is the O(open documents) memory
     # bound: one entry per OPEN document, and a closed one leaves nothing behind.
     checkTrue("an open document holds its analysis entry",
@@ -86,5 +201,116 @@ const proc: main is func
     checkTrue("didClose drops the document", not ("file:///tmp/seed7_lsp_syms.sd7" in openDocs));
     checkTrue("didClose drops the analysis entry",
               not ("file:///tmp/seed7_lsp_syms.sd7" in analysisCache));
+
+    # ---- prepareRename, and the one client capability the server reads ------------------
+    # The safe default, read BEFORE any initialize has been handled in this suite: flipping the
+    # declaration to TRUE reddens this check, and the refusal two lines below.
+    checkTrue("workspace.applyEdit starts down", not clientCanApplyEdits);
+    openDocs @:= [prepUri] lsDoc.value;
+    setVersion(openDocs[prepUri], prepText(), 1);
+    prepSyms := symbolsOfDocument(prepUri);
+    check("the prepareRename fixture analyses clean",
+          str(length(analyzeDocument(prepUri).diags)), "0");
+    # The SAME cursor the accept below uses, refused only because the client cannot apply an
+    # edit. Refusal and accept are a pair: if the gate is dropped the first goes red, if the
+    # default is flipped or the read is lost the second is.
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri);
+    check("a client without workspace.applyEdit refuses", str(p.refused), "TRUE");
+    check("and the log line names the capability it did not declare", p.why,
+          "prepareRename: the client did not declare workspace.applyEdit, so it cannot" <&
+          " apply a WorkspaceEdit");
+    check("a refusal is null, not an error", p.json, "null");
+    clientCanApplyEdits := TRUE;
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 6, 6), prepUri);
+    check("a resolved local of this buffer is accepted", str(p.refused), "FALSE");
+    check("and answers the cursor's own range with the name as placeholder", p.json,
+          "{\"range\":{\"start\":{\"line\":6,\"character\":4},\"end\":{\"line\":6," <&
+          "\"character\":10}},\"placeholder\":\"amount\"}");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 27), prepUri);
+    check("a global whose scope is complete is accepted too", str(p.refused), "FALSE");
+    check("at the use site under the cursor, not the declaration", p.json,
+          "{\"range\":{\"start\":{\"line\":23,\"character\":25},\"end\":{\"line\":23," <&
+          "\"character\":30}},\"placeholder\":\"tally\"}");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 6), prepUri);
+    check("a library symbol refuses -- M5 renames one file", str(p.refused), "TRUE");
+    check("and says where the symbol is declared", p.why,
+          "prepareRename: writeln is declared outside this buffer, and M5 renames only one file");
+    # The keyword arm and the unbound arm are separate on purpose: `keyword' implies
+    # `not resolved', so folding the two into one message is the conflation this pair catches.
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 18, 4), prepUri);
+    check("a keyword refuses", str(p.refused), "TRUE");
+    check("as syntax, not as a name that happens to be unbound", p.why,
+          "prepareRename: begin is a Seed7 keyword, so it is syntax rather than a symbol");
+    # The two arms below need the cursor to be on an OPERATOR and on a NUMBER, and a reader
+    # cannot see that in the text, so the three cursors are pinned against wordAt itself.
+    check("the operator cursor is on :=", cursor(prepUri, 19, 12).word, ":=");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 12), prepUri);
+    check("an operator token is not a name to rename", str(p.refused), "TRUE");
+    check("and says what it found", p.why, "prepareRename: := is not a name");
+    check("the number cursor is on 1", cursor(prepUri, 19, 14).word, "1");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 19, 14), prepUri);
+    check("a number is not a name either -- the index never holds one", str(p.refused), "TRUE");
+    check("and the reason says what the cursor is on", p.why, "prepareRename: 1 is not a name");
+    check("the indentation cursor has no token at all", cursor(prepUri, 20, 1).word, "");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 20, 1), prepUri);
+    check("a cursor with no token to its left refuses", str(p.refused), "TRUE");
+    check("and says there is nothing there", p.why,
+          "prepareRename: there is no token under the cursor to rename");
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 23, 19), prepUri);
+    check("a global whose scope may be shorter than the truth refuses", str(p.refused), "TRUE");
+    check("and names the uncertainty, not the binding", p.why,
+          "prepareRename: the scope of counter is not fully visible to this server, so a rename" <&
+          " could rewrite a shadowing declaration");
+    # Row 4's field and the truncated buffer are the SAME arm: owner "" is owner "" whatever the
+    # reason, and owner = "field" gets no special case (R40).
+    p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 22, 24), prepUri);
+    check("a struct field refuses: it binds to no declaration this server has", str(p.refused),
+          "TRUE");
+    check("with the reason any unbound name gets", p.why,
+          "prepareRename: pix does not bind to one declaration of this file, so a rename could" <&
+          " rewrite a symbol the cursor is not on");
+    openDocs @:= [truncUri] lsDoc.value;
+    setVersion(openDocs[truncUri], truncText(), 1);
+    truncSyms := symbolsOfDocument(truncUri);
+    # This fixture does NOT analyse clean, and says so: the 5 errors are the state a client is in
+    # between keystrokes, and the refusal is for the symbol table that could not be built.
+    checkTrue("the truncated fixture is unanalysable",
+              length(analyzeDocument(truncUri).diags) <> 0);
+    p := prepareRenameAnswer(openDocs[truncUri], truncSyms, cursor(truncUri, 3, 6), truncUri);
+    check("a truncated buffer refuses, so the text cannot be damaged", str(p.refused), "TRUE");
+    check("as the unbound name it is", p.why,
+          "prepareRename: tally does not bind to one declaration of this file, so a rename" <&
+          " could rewrite a symbol the cursor is not on");
+    libDoc := open(libPath, "w");
+    write(libDoc, libText());
+    close(libDoc);
+    openDocs @:= [libUri] lsDoc.value;
+    setVersion(openDocs[libUri], libText(), 1);
+    libSyms := symbolsOfDocument(libUri);
+    check("the .s7i fixture analyses clean through the driver",
+          str(length(analyzeDocument(libUri).diags)), "0");
+    # Line 5's `counter' is libProbe's own parameter and binds (row 1, resolved, scope complete),
+    # so NOTHING but the .s7i rule refuses it: delete that rule and this check turns to an accept.
+    p := prepareRenameAnswer(openDocs[libUri], libSyms, cursor(libUri, 4, 6), libUri);
+    check("rename refuses inside a .s7i buffer while R-F10 stands", str(p.refused), "TRUE");
+    check("and names the debt", p.why,
+          "prepareRename: " <& libPath <& " is a library buffer whose symbols come from disk" <&
+          " while R-F10 stands, so an edit could land on the wrong line");
+    # The read itself, driven through the dispatcher. Each frame writes an InitializeResult to
+    # stdout; report()'s leading newline is what keeps it off the graded line.
+    clientCanApplyEdits := FALSE;
+    msg := parseMessage(initFrame(10, ""));
+    handle(msg);
+    checkTrue("an initialize with no workspace at all leaves applyEdit down",
+              not clientCanApplyEdits);
+    msg := parseMessage(initFrame(11, ",\"workspace\":{}"));
+    handle(msg);
+    checkTrue("a workspace with no applyEdit key leaves it down", not clientCanApplyEdits);
+    msg := parseMessage(initFrame(12, ",\"workspace\":{\"applyEdit\":\"yes\"}"));
+    handle(msg);
+    checkTrue("a non-boolean applyEdit leaves it down", not clientCanApplyEdits);
+    msg := parseMessage(initFrame(13, ",\"workspace\":{\"applyEdit\":true}"));
+    handle(msg);
+    checkTrue("workspace.applyEdit true is read", clientCanApplyEdits);
     report("lsp_server");
   end func;

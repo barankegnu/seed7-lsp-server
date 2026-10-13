@@ -330,6 +330,90 @@ answered = [r for r in replies if "result" in r or "error" in r]
 expect(len(answered) == REQUESTS,
        "an unknown notification gets no reply (%d requests, %d answers)"
        % (REQUESTS, len(answered)))
+
+# --- M5 Task 8: prepareRename, and the first capability the server READS ----------
+# The symbol is reportWidget's `counter' parameter: buffer-declared, resolved, its routine owns
+# its region, so NOTHING on the refusal list applies except the capability the client declares.
+PR_LINES = SYMS.split("\n")
+PR_USE = PR_LINES.index("    counter +:= 1;")
+PR_CHAR = PR_LINES[PR_USE].index("counter") + 1          # inside the seven letters
+PR_EXPECT = {"range": {"start": {"line": PR_USE, "character": PR_LINES[PR_USE].index("counter")},
+                       "end": {"line": PR_USE,
+                               "character": PR_LINES[PR_USE].index("counter") + 7}},
+             "placeholder": "counter"}
+PR_LIB = PR_LINES.index("    writeln(label);")
+PR_LIB_CHAR = PR_LINES[PR_LIB].index("writeln") + 1
+PR_KW = PR_LINES.index("  begin")     # the first `begin' in the file, main's is further down
+PR_KW_CHAR = 4
+
+
+def pr_msgs(init):
+    """One framed session: initialize, open the fixture, ask prepareRename four times."""
+    return [frame(m) for m in [init, msgs[1], opened("file:///tmp/tt_syms.sd7", SYMS),
+            req(60, "textDocument/prepareRename", pos("file:///tmp/tt_syms.sd7",
+                                                      PR_USE, PR_CHAR)),
+            req(61, "textDocument/prepareRename", pos("file:///tmp/tt_syms.sd7",
+                                                      PR_LIB, PR_LIB_CHAR)),
+            req(62, "textDocument/prepareRename", pos("file:///tmp/tt_syms.sd7",
+                                                      PR_KW, PR_KW_CHAR)),
+            req(63, "textDocument/prepareRename", pos("file:///tmp/tt_not_open.sd7", 0, 0)),
+            shutdown(64), exit_()]]
+
+
+# A client that never declared workspace.applyEdit: the promise of a WorkspaceEdit is one this
+# server must not make, so the answer is null AND the reason goes to the client as a
+# window/logMessage before it. msgs[0] is that client -- its params have no `workspace' at all.
+replies, code, err, junk = run(pr_msgs(msgs[0]))
+by_id = {r.get("id"): r for r in replies if "id" in r}
+init_caps = replies[0].get("result", {}).get("capabilities", {})
+expect(init_caps.get("renameProvider") == {"prepareProvider": True},
+       "initialize advertises renameProvider as {\"prepareProvider\": true} (%r)"
+       % init_caps.get("renameProvider"))
+expect("workspaceSymbolProvider" not in init_caps,
+       "workspace/symbol stays unadvertised (%s)"
+       % [k for k in init_caps if k.startswith("workspace")])
+expect(by_id.get(60, {}).get("result") is None,
+       "no workspace.applyEdit -> prepareRename answers null (%r)" % by_id.get(60, {}))
+expect(all(by_id.get(i, {}).get("result") is None for i in (61, 62, 63)),
+       "and so does every other cursor: the capability gate is asked first")
+log_at = next((i for i, r in enumerate(replies) if r.get("method") == "window/logMessage"
+               and "applyEdit" in r.get("params", {}).get("message", "")), None)
+ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 60), None)
+expect(log_at is not None and ans_at is not None and log_at < ans_at,
+       "the refusal is explained to the client before the null (%s, %s)" % (log_at, ans_at))
+expect("prepareRename" in err and "applyEdit" in err,
+       "and the same line is mirrored to stderr")
+expect(junk == 0, "the refusal run put only frames on stdout (junk=%d)" % junk)
+
+# The same session with the capability declared: the accepted symbol, and the two refusals that
+# are about the SYMBOL rather than the client.
+replies, code, err, junk = run(pr_msgs(req(1, "initialize",
+                                           {"capabilities": {}, "processId": None,
+                                            "rootUri": None,
+                                            "workspace": {"applyEdit": True}})))
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(by_id.get(60, {}).get("result") == PR_EXPECT,
+       "workspace.applyEdit -> prepareRename answers the token's range and name (%r)"
+       % by_id.get(60, {}).get("result"))
+expect(by_id.get(61, {}).get("result") is None,
+       "a library symbol still refuses, one file is the milestone (%r)" % by_id.get(61, {}))
+expect("writeln is declared outside this buffer" in err,
+       "and says so on the log")
+expect(by_id.get(62, {}).get("result") is None,
+       "a keyword refuses as syntax, not as an unbound name")
+expect("begin is a Seed7 keyword" in err, "and says which it is")
+expect(by_id.get(63, {}).get("result") is None,
+       "prepareRename for an unopened uri is null, not an error")
+expect(junk == 0, "the accepted run put only frames on stdout (junk=%d)" % junk)
+
+# A client that declares applyEdit as something that is not a boolean has not declared it.
+replies, code, err, junk = run(pr_msgs(req(1, "initialize",
+                                           {"capabilities": {}, "processId": None,
+                                            "rootUri": None,
+                                            "workspace": {"applyEdit": "yes"}})))
+by_id = {r.get("id"): r for r in replies if "id" in r}
+expect(by_id.get(60, {}).get("result") is None,
+       "a non-boolean applyEdit leaves the flag down (%r)" % by_id.get(60, {}))
 # --- M3: completion after a typed prefix ---
 # Type "tot" on a line the fixture does not have. The position is derived from the text
 # so editing the fixture cannot silently move it -- and one attempt at this check had
