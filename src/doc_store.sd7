@@ -73,6 +73,26 @@ const func integer: lineWidth (in string: text, in integer: start) is func
     end while;
   end func;
 
+# The same walk in UTF-16 units. lspRangeUnits needs the line's unit width to clamp to, and
+# doing it here is the difference between O(line) and O(document): `utf16Before' counts from
+# the START of the text, so the width that used to be `utf16Before(start + lineWidth) -
+# utf16Before(start)' cost one pass over every character ahead of the line. Measured on the
+# capped references answer -- one range per occurrence, 2 000 of them in a 22 000-character
+# document -- the old form spent 7.9 s building the ranges alone. No other feature asks for
+# more than two ranges per response, which is why it was never felt before this one.
+const func integer: lineUnits (in string: text, in integer: start) is func
+  result
+    var integer: units is 0;
+  local
+    var integer: i is 0;
+  begin
+    i := start;
+    while i <= length(text) and text[i] <> '\n' and text[i] <> '\r' do
+      units +:= utf16CharLength(text[i]);
+      i +:= 1;
+    end while;
+  end func;
+
 # ponytail: mask rebuilt on every didChange (measured ~130 ms on the stdlib's largest file);
 # upgrade path is a version stamp and a lazy fill if a change burst ever shows it.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
@@ -141,8 +161,7 @@ const func string: lspRangeUnits (in lsDoc: doc, in integer: line0, in integer: 
   begin
     lineIdx := lineIndexOf(doc, succ(line0));
     start := doc.lineStart[lineIdx];
-    units := utf16Before(doc.text, start + lineWidth(doc.text, start)) -
-             utf16Before(doc.text, start);
+    units := lineUnits(doc.text, start);
     first := col16;
     if first < 0 then
       first := 0;
