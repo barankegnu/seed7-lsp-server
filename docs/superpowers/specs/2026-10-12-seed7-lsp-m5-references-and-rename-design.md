@@ -210,7 +210,11 @@ instead of showing a failure.
 
 **`rename`** re-runs resolution — `prepareRename` is not trusted to have happened, and the spec
 does not require it — and answers `WorkspaceEdit { changes: { <uri>: [TextEdit] } }` with one
-document entry and one `TextEdit` per occurrence. Two shapes are deliberately not used:
+document entry and one `TextEdit` per occurrence. The array is in document order BY CONSTRUCTION, not by luck: the
+declaration add-back can fire only when the declaration line lies OUTSIDE the scope window (a
+local's header sits above its own region; a global's declaration is never inside a routine body),
+and `inScope` returns scan order — so the add-back is always first. `holdsRecord` compares line
+AND column, which is what makes the two paths mutually exclusive instead of overlapping. Two shapes are deliberately not used:
 `documentChanges` (an optional-array form for a single file is a worse reader) and
 `changeAnnotation` (3.18 optional, no editor needs it for a local rename).
 
@@ -426,6 +430,18 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     candidate list and this gate are different products that must not be merged. The meta-lesson is
     the R29 one: a number transcribed out of a probe is already stale, so the document points at
     the generator instead of at itself.
+12. **A parameter may share its routine's name, and reflection then reports two records on one
+    line.** Measured: `const proc: show (in integer: show) is func` analyses with `errorCount = 0`
+    and prints `3`, and `globalObjects` reports the routine `show` as `BLOCKOBJECT line1=3` while
+    `formalParams` reports the parameter `show` with `line1=3` too (`/tmp/ambig3.sd7`,
+    `/tmp/ambigprobe.sd7`). Anything that locates "the declaration" by line picks the wrong token on
+    input the language accepts, which is why §6's rename refuses an ambiguous declaration line
+    through the SHARED predicate (R51) rather than guessing at the first record.
+13. **`globalObjects` has no ordering contract in its signature, but does in prose**
+    (`progs.s7i:533`: definitions are returned "in the same order as the definitions of the source
+    program"). Task 2's `else`-reset witness, Task 3's pairing and Task 9's declaration add-back all
+    depend on it. Two of the three pin it with a value that would change under a reordering; the
+    dependency is stated here because no in-suite check can enforce an interpreter promise.
 
 ## 12. Open questions put to the partner
 
