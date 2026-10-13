@@ -11,10 +11,11 @@
 #
 # HOW. For every candidate word, write
 #     const proc: main is func  local var integer: <WORD> is 1;  begin writeln(1); end func;
-# and analyse it with `s7 -q -a`. A word the analyzer rejects is syntax (the report is always
-# `Expression expected found "is"` or `"[" expected found "is"`, never a redeclaration), so it
-# can never name a user symbol and the gate must refuse it. A word that analyses cleanly is a
-# legal identifier and the gate must NOT refuse it: renaming to or from it is a real edit.
+# and analyse it with `s7 -q -a`. A word the analyzer rejects is syntax (the first report is
+# always an `expected found` message -- 61 `Expression expected found …`, `hash` wants `[`, `set`
+# wants `of`, all under 5.4.10 -- never a redeclaration), so it can never name a user symbol and
+# the gate must refuse it. A word that analyses cleanly is a legal identifier and the gate must
+# NOT refuse it: renaming to or from it is a real edit.
 #
 # Candidates are every identifier in a `$ syntax` template body of the library (where the
 # language's own words live) plus EXTRA below (words the manual and editor lists carry that no
