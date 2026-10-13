@@ -36,5 +36,46 @@ const proc: main is func
           str(boolAt(bp, "n", TRUE)), "TRUE");
     check("a string in a boolean slot answers the fallback, not a raise",
           str(boolAt(bp, "s", TRUE)), "TRUE");
+    # ---- joinSurrogates: what readJson hands back for an astral escape (M5 Task 13) ------
+    # readJson expands \ud83d\ude00 into TWO characters, each a lone surrogate; the client meant
+    # ONE. Built from the literal escape codes, because Seed7 refuses to concatenate a char into
+    # a string -- str(chr(n)) is the only route, and that is what this function uses.
+    check("a high+low pair becomes one character",
+          str(length(joinSurrogates("\55357;\56832;"))), "1");
+    check("and it is the code point the pair encodes",
+          str(ord(joinSurrogates("\55357;\56832;")[1])), "128512");
+    check("two pairs become two characters",
+          str(length(joinSurrogates("\55357;\56832;\55357;\56832;"))), "2");
+    check("the second keeps its own value",
+          str(ord(joinSurrogates("\55357;\56832;\55357;\56833;")[2])), "128513");
+    # A stray half is what a truncated or corrupt body produces; passing it through unchanged is
+    # the totality requirement -- raising here would put an exception on the protocol channel.
+    check("a lone high passes through, not a raise",
+          str(length(joinSurrogates("\55357;x"))), "2");
+    check("a lone low passes through, not a raise",
+          str(length(joinSurrogates("x\56320;"))), "2");
+    check("BMP text is untouched", joinSurrogates("hello"), "hello");
+    check("empty stays empty", joinSurrogates(""), "");
+    check("a high followed by a NON-low is left alone",
+          str(length(joinSurrogates("\55357;\55357;"))), "2");
+    # The upper end matters as much as the lower: 57344 is a legitimate private-use character,
+    # not a low surrogate. Without this the range test could be `lo >= 56320` and nothing would
+    # notice -- which is exactly what a mutant with that widening proved.
+    check("a high followed by a real character above the low range is left alone",
+          str(length(joinSurrogates("\55357;\57344;"))), "2");
+    check("and that character keeps its own value",
+          str(ord(joinSurrogates("\55357;\57344;")[2])), "57344");
+    # Same for the OTHER bound: a low surrogate may never start a pair, so a fixture that begins
+    # with one is the only thing that can see the high range's upper bound. A mutant widening
+    # `hi <= 56319` to nothing at all folds two lone lows into a code point the client never sent.
+    check("two lone lows are left as two characters",
+          str(length(joinSurrogates("\56320;\56320;"))), "2");
+    check("a low followed by a high is left alone too",
+          str(length(joinSurrogates("\56320;\55357;"))), "2");
+    # the reader that matters: strAt is how every string in every request arrives
+    check("strAt joins the pair a client escaped",
+          str(length(strAt(readJson("{\"t\":\"\\ud83d\\ude00\"}"), "t", "?"))), "1");
+    check("and strAt still answers the fallback for a non-string",
+          strAt(readJson("{\"t\":7}"), "t", "fb"), "fb");
     report("rpc");
   end func;

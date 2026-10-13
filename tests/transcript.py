@@ -804,24 +804,24 @@ expect((by_id.get(113, {}).get("result") or {}).get("changes", {}).get(U16_BMP_U
 expect(junk == 0, "the astral run put only frames on stdout (junk=%d)" % junk)
 one_answer_per_request(U16_MSGS, replies, "the astral run")
 
-# --- M5 Task 10 gap 6, recorded: the astral character does not arrive as one character ----
-# A DEFECT PIN, not a property. `json.dumps` writes one astral character as the JSON escape
-# pair \ud83d\ude00, Seed7's readJson turns each escape into its own char, and so doc.text
-# holds TWO code points (U+d83d, U+de00) where the client sent ONE. The user sees the result:
-# the analyzer's scanner rejects each lone surrogate and the buffer publishes an Error for them.
-# Measured here: four errors for the two astral characters of U16_TEXT, and none at all for
-# U16_BMP_TEXT, whose characters are all in the BMP and so survive the escape round trip.
-# The day the decode joins the pair, this check goes RED with an empty list -- and the stronger
-# form becomes available: expect no diagnostics on U16_URI, and expect 19 (the client's own
-# character column) to become the number that separates lspRange from lspRangeUnits. Measured
-# with the mutant `utf16CharLength always 1`: it reddens 18 unit checks (5 scan, 6 doc_store,
-# 4 features, 1 occurrences, 2 utf8bytes) and ZERO wire checks -- including the three above.
+# --- M5 Task 10 found it, Task 13 fixed it: an escaped astral character arrives as ONE ----
+# HISTORY (kept, not rewritten): json.dumps writes one astral character as the escape pair
+# \ud83d\ude00 and readJson turned EACH escape into its own char, so doc.text held two code points
+# (U+d83d, U+de00) where the client sent one. Task 10 measured four analyzer Errors for the two
+# astral characters of U16_TEXT and pinned that as a defect record. rpc.joinSurrogates now folds
+# the pair in every string strAt reads, so the analyzer sees the text the client sent and
+# publishes nothing. The BMP control stays: without it, "no diagnostics" would also be satisfied
+# by a server that never analyses at all.
+# Still true after the fix, and the reason the wire cannot grade the UTF-16 rule: a surrogate PAIR
+# is 2 chars and 2 units while the joined character is 1 char and 2 units, so a build that counted
+# CHARACTERS as columns could not be told apart from one counting units by anything that arrives
+# through an escaped body. Measured that way in Task 10: the mutant `utf16CharLength always 1`
+# reddened 18 unit checks and ZERO wire ones.
 U16_DIAGS = [d for r in replies if r.get("method") == "textDocument/publishDiagnostics"
              for d in r["params"]["diagnostics"] if r["params"]["uri"] == U16_URI]
 U16_BMP_DIAGS = [d for r in replies if r.get("method") == "textDocument/publishDiagnostics"
                  for d in r["params"]["diagnostics"] if r["params"]["uri"] == U16_BMP_URI]
-expect(len([d for d in U16_DIAGS if "surrogate" in d["message"]]) == 4 and
-       len(U16_BMP_DIAGS) == 0,
+expect(len(U16_DIAGS) == 0 and len(U16_BMP_DIAGS) == 0,
        "GAP: an astral character in didOpen text reaches the analyzer as a surrogate pair -- "
        "%d surrogate errors on the astral document, %d diagnostics on the BMP control (%s)"
        % (len([d for d in U16_DIAGS if "surrogate" in d["message"]]),
