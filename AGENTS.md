@@ -38,6 +38,15 @@ sentinel that the harness requires before any payload is counted as a result —
 whose entry point had never run reported fourteen inputs as "no raise" while printing
 nothing but the interpreter banner.
 
+Tests written after the code exist are a different thing from tests written first, and saying
+"coverage" does not make them the same. When a check is added to code that already works — inherited,
+or fixed by someone who left no report — it passes on sight, which proves nothing about whether it can
+fail. Label it in the commit, and prove it by mutation: revert or widen the specific production
+decision and name the check that goes red. If no mutation reddens anything, the check is decorative and
+should be said so out loud (`dd99890`'s nine `readFrameBody` checks are this case: four mutants reddened
+named checks, and one mutant — widening the high-surrogate bound — escaped until two lone-lows were
+added, which is the discovery the check existed to record).
+
 Performance numbers are never `time`-ed off the interpreter. Build a profiled, optimized binary —
 `s7c -p -O2 -l src <file>`, run it, read `profile_out` (`-p` activates simple function profiling in
 the compiler's option list, <https://seed7.net/faq.htm#compile>; `-p` alone is the interpreter's

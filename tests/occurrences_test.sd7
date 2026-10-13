@@ -494,8 +494,16 @@ const proc: main is func
     check("first is the declaration", at(oc, 1), "0:0:5");
     check("second is the use inside the call", at(oc, 2), "1:8:5");
 
+    # `kind' is published for a reason (inScope and the rename path must not edit a number), but
+    # until now nothing read it: the field could have been dropped and every check stayed green.
+    check("a name occurrence reports TK_NAME", str(oc[1].kind), str(TK_NAME));
+    oc := occurrencesOf("a := b <+ c;\n", "<+");
+    check("an operator occurrence reports TK_OP", str(oc[1].kind), str(TK_OP));
+
     # A comment/string token's text carries its own delimiters ("# count", "\"count\""), so
-    # these two prove token-boundary behaviour. The kind filter itself is the bracket check.
+    # these two prove token-boundary behaviour (the delimiters are inside the token, so the text
+    # comparison rejects them whatever the filter does). What proves the KIND filter is the
+    # bracket and number checks below: their token text is exactly "(" and "1".
     oc := occurrencesOf("writeln(count); # count\n", "count");
     check("a name in a line comment does not count", str(length(oc)), "1");
     oc := occurrencesOf("writeln(\"count\");\n", "count");

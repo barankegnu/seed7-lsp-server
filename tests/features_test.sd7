@@ -102,8 +102,9 @@ const func integer: endCount (in string: jsonText) is func
     end while;
   end func;
 
-# The references fixture. 32 lines, and it analyses with 0 diagnostics (pinned below, because
-# every number in the checks is a line of it): a global `counter', a routine that shadows it
+# The references fixture. It analyses with 0 diagnostics (pinned below), and every line number in
+# the checks below is a line of `refsText' -- no count is stated here because a stated count is one
+# edit away from being wrong, while the pins are not. Edit the fixture and the checks move with it: a global `counter', a routine that shadows it
 # with its own local, a TWO-LINE header whose first parameter is declared above the body region
 # (spec 11.9 -- the case includeDeclaration has something to add), a struct field (no
 # declaration source at all, spec 11.10), and one line whose string literal holds an astral
