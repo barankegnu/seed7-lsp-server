@@ -110,7 +110,10 @@ const func cursorRefs: cursorAt (in string: text, in array symRec: syms, in stri
 
 **Files:**
 - Modify: `src/occurrences.sd7:282-285` (`regions := blockRegions(text, lastLine)`)
-- Test: `tests/occurrences_test.sd7`
+- Test: `tests/occurrences_test.sd7` — **no check is added here, deliberately** (Task 2's review
+  ruling): a white-box assertion on `bufferCouldBind` would be reddened only by `return TRUE`, so it
+  restates the predicate instead of constraining behaviour. The evidence for this task is that every
+  suite's check COUNT is unchanged and the discriminating mutant is applied to the pre-scan's own arms.
 
 **Interfaces:**
 - Consumes: `symRec.file` / `symRec.name` / `symRec.locals` (already read by rows 1 and 2), `isBufferFile` from `analysis.sd7`.
@@ -248,12 +251,43 @@ Three statements are stale: §3's "one request costs one pass over one document"
   * `src/occurrences.sd7` — the `cursorAt` cost note says the region scan on a number/bracket cursor is something "the callers did not pay before". False for `references`, which already called `resolveBinding` unconditionally on every non-empty word; only `prepareRename`'s `slot = 0` path is new cost. Name the one caller that gained work and say the other already paid it.
   * `src/features/prepare_rename.sd7` — the note defending the un-merged records says "`rename.sd7` already reads `no.oc` / `no.b` / `no.slot`". `rename.sd7` reads `no.refused`, `no.reason`, `no.b`, `no.oc` — never `no.slot` (verify with `grep -o 'no\.[a-z]*' src/features/rename.sd7 | sort -u`). The `slot` consumer is `prepareRenameAnswer`, which takes its range from `no.oc[no.slot]`. Fix the sentence to name the real reader; a future maintainer will use exactly this line to decide whether `renameCheck.slot` is load-bearing.
   Both are wording-only. If either sentence is actually TRUE of the code by the time you get here, say so in the commit instead of "fixing" it.
+  Two more of the same class, found by Task 2's fix re-review and left unblocked there because they are comment-only: `src/occurrences.sd7:264` cites `occurrences_test.sd7:296`, which is the `check(` title line — the expected literal is on `:297`; and `:265` says "the arm this function keeps is the arm that sets the flag", which reads backwards under the mutant being described (the mutant *drops* the arm, and no arm sets the flag — row 1 does, when the guard lets it run). Preferred wording: "the arm this mutant drops is the arm row 1 needs". Fix both if they still read that way.
 - [ ] **Step 3c: make call-site drift structurally impossible, or record why not.** Task 1b's reviewer noted the two `cursorAt` call sites are pinned only indirectly: nothing asserts they derive `line0`/`col16` the same way. One check comparing the range `references` publishes for a cursor against the range `prepareRename` publishes for the SAME cursor would make drift fail loudly instead of collapsing into "is not a name". Decide it, do not hedge: either add the check or write one line here saying the existing exact-range pins were judged sufficient.
 - [ ] **Step 4: `README.md:11` — drop the check count, keep the command.** It reads `863 checks (683 unit + 180 wire)`; the true total on this branch is 893 (713 unit + 180 wire) as of `3fef4f6`, so the line is already wrong, and it was wrong on arrival (the PR body said 865). A number that moves with every committed check cannot be maintained in prose — the same reasoning that made the branch delete the references fixture's line-count assertion. Replace it with `make test # 18 suites + transcript, every suite reporting 0 failed`. If you would rather keep a count, put beside it the command that prints it (`make test 2>&1 | grep -E 'checks, [0-9]+ failed'` and sum), and know it goes stale the next time a check lands.
 - [ ] **Step 5: Run `make test` and `sh tools/corpus_scan.sh`,** then commit. The corpus line must still read `files=342 names_probed=4104 occurrences=516044 misses=0`.
 
 ---
 
+### Task 8: The include that lost its only user
+
+**Files:**
+- Modify (only if proven): `src/features/prepare_rename.sd7` (line 5, `include "scan.sd7"`)
+- Test: none
+
+**Interfaces:**
+- Consumes: nothing. Produces: nothing.
+
+Task 1 moved `cursorName`'s `TK_NAME` test into `occurrences.sd7`, and that test was this file's only
+use of the scan API — `grep -n 'TK_\|scanCursor\|nextToken\|skipWhitespace\|maskOf\|hiddenKind\|nameStart\|nameMore' src/features/prepare_rename.sd7` finds nothing but the include. Two reviews
+deferred deleting it, correctly, because AGENTS.md refuses an unproven deletion: *"to prove an
+`include` is unused you must exercise the module's own include list from a standalone probe, with a
+positive control proving the probe can fail — a test file that already includes the same modules makes
+any deletion pass for the wrong reason."*
+
+- [ ] **Step 1: Build the probe.** A `/tmp` file that includes ONLY `prepare_rename.sd7`'s own include
+  list, minus `scan.sd7`, plus a use of something `scan.sd7` provides. It must COMPILE (proving nothing
+  else in the file needed scan).
+- [ ] **Step 2: Prove the probe can fail — the positive control.** Same probe, minus a different
+  include that the file genuinely needs (`jsonw.sd7` is the candidate: `field`/`addStr` are used in
+  `prepareRenameAnswer`). It must FAIL to analyse. A control that passes means Step 1 proved nothing.
+- [ ] **Step 3: If both hold,** delete the include, run `make test` (19 suites, 0 failed), and commit
+  with the probe and control outcomes quoted. **If the control does not fail, or the probe does not
+  compile,** leave the include and record which — a stale include that is honestly labelled is worth
+  less than a wrong deletion, but a wrong deletion costs a release.
+- [ ] **Step 4: Delete the probe and its artifacts;** `git status --porcelain -uall` must be empty.
+
+---
+
 ## Order and why
 
-1 → 1b → 2 → 3 touch the same function (`resolveBinding`) and must land in that order, or the argument list moves under a reviewer's feet. 4 depends on 1 (the `TK_NAME` gate it pins lives in `occurrenceAt`). 5 depends on 1 and 3 for the two-struct slot. 6 and 7 are last because both quote numbers produced by the shipped shape.
+1 → 1b → 2 → 3 touch the same function (`resolveBinding`) and must land in that order, or the argument list moves under a reviewer's feet. Task 8 is independent of all of them and can run any time after Task 1. 4 depends on 1 (the `TK_NAME` gate it pins lives in `occurrenceAt`). 5 depends on 1 and 3 for the two-struct slot. 6 and 7 are last because both quote numbers produced by the shipped shape.
