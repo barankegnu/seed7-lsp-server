@@ -90,9 +90,13 @@ const func string: joinSurrogates (in string: stri) is func
 # 17 us, while the shipped scan calls the shared predicate and measured 1 392 us; collapsing
 # utf8bytes.isSurrogate from `isHigh or isLow' to one ranged test is what brought it to 478 us.
 # Every string in every request arrives through strAt, document text included, so the copy is paid
-# on each didChange. The two rpc_test checks that keep the guard honest are the pair fold at
-# :76-77 -- a real escaped pair must still come back as ONE character through strAt, which a guard
-# that always took the fast path would break -- and "BMP text is untouched" at :57.
+# on each didChange. ONE rpc_test check keeps the guard honest: "strAt joins the pair a client
+# escaped" -- a real escaped pair must still come back as ONE character through strAt, which a guard
+# that always took the fast path would break. The BMP reads that do traverse the FALSE path are
+# "method", "nested uri" and "notification" -- the first and last through `parseMessage's own strAt
+# of the method name -- and every one of them passes with the guard present, deleted, inverted or
+# hard-wired, because on text with no surrogate the fold is the identity. "BMP text is untouched"
+# is NOT one of those pins: it calls joinSurrogates directly and never enters strAt.
 const func boolean: hasSurrogate (in string: stri) is func
   result
     var boolean: out is FALSE;
