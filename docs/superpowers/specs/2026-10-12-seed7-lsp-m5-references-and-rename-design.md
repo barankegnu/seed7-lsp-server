@@ -223,9 +223,12 @@ decides, because row 2 matches `syms[i].name` for any spelling: `<+`, declared a
 `declLine1 = 5`, `scopeUncertain = FALSE` — the arms that speak for a bound name are silent for
 it — and `slot` is still 0, with all three of its records `TK_OP`, so the answer is the
 same sentence, `prepareRename: <+ is not a name`, and `rename` answers it with its own name in
-front. Take the kind gate away and this cursor is refused one arm later, by the `.` that the
-`$ syntax` rule writes immediately before the operator token — measured — so it is the sentence,
-not the refusal, that proves the gate fired. (Seed7 needs a `$ syntax expr:` rule before a new
+front. Take the kind gate away and this cursor is refused by NOTHING: measured after §12.2's
+disclosure learned to count names only, `prepareRename` answers a range for `<+` and `rename`
+answers three edits, one of them inside the `$ syntax` rule itself. It used to be caught one arm
+later, by the `.` that the `$ syntax` rule writes immediately before the operator token, and the
+kind test in `scopeHasFieldAccess` closed that backstop — which is why the refusal, not merely its
+sentence, is now the proof that the gate fired. (Seed7 needs a `$ syntax expr:` rule before a new
 operator symbol parses; measured, without one the analyzer answers "is" expected found "<+".) An operator handed in as `newName` is the
 other half of the asymmetry and a `-32602` rejection rather than a refusal, because `scan.nameStart`
 rejects `<` before any document is consulted; the two identifier rejections emit the identical
@@ -598,16 +601,29 @@ raised is settled above or in §2 as a builder's call.
    field's uses and leaves the field, and the renamed text raises `Match for {box . amount }`.
    The **read stays over-inclusive** — §9's count is unchanged — but it no longer claims certainty:
    the same cursor answered six locations with `unresolved FALSE` and no log line before, and now
-   sets `unresolved` with its own sentence. Two costs, both recorded rather than argued away: a
-   **global** refuses on a field access anywhere in the file, because a global's window *is* the
-   document (measured: `total` declared at line 8, read as `b.total` at line 31); and the fork's
-   third branch — a token-level index over `const type … end struct` regions, which would rename
-   the field and its uses together — is still unbuilt, so a user wanting that gets a refusal, not
-   a wrong answer. §9's `pix` in TWO structs is now a fixture, added on `m5-review-fixes` and
-   pinned in `tests/features_test.sd7` (§9 names the checks): `dotPrev` recognises the
-   access but nothing here separates the two fields, so both spellings stay one symbol — measured,
-   the cursor on `x.pix` answers six locations and two of them are the field declarations of the
-   two different structs.
+   sets `unresolved` with its own sentence. **That sentence speaks about names, and the kind test
+   in `scopeHasFieldAccess` is what makes it true.** Seed7 will not parse a new operator symbol
+   without its `$ syntax expr: .(). <+ .()` rule, and that rule writes a `.` immediately before the
+   operator token — so the occurrence the rule itself contains carries `dotPrev`, while the
+   declaration's header and the use in `main` do not, and an operator is never a record field.
+   Measured before the conjunction was added, on the `<+` of `tests/features_test.sd7`'s
+   operator-declaring fixture: three records, only the first (the `$ syntax` line) dot-preceded,
+   and the answer was three locations with `unresolved` TRUE and the field sentence — a disclosure
+   naming a thing that cannot exist. The suite now pins the corrected answer as "the field
+   disclosure speaks of names, so a declared operator discloses nothing". The write path never
+   showed the defect, and shows no change from fixing it: an operator cursor leaves `slot` at 0, so
+   `renameDecision` refuses on its not-a-name arm before this predicate is consulted — "a
+   buffer-declared operator is refused, null, on the not-a-name arm" and "and rename refuses the
+   identical cursor with the identical sentence" stay green. Two costs, both recorded rather than
+   argued away: a **global** refuses on a field access anywhere in the file, because a global's
+   window *is* the document (measured: `total` declared at line 8, read as `b.total` at line 31);
+   and the fork's third branch — a token-level index over `const type … end struct` regions, which
+   would rename the field and its uses together — is still unbuilt, so a user wanting that gets a
+   refusal, not a wrong answer. §9's `pix` in TWO structs is now a fixture, added on
+   `m5-review-fixes` and pinned in `tests/features_test.sd7` (§9 names the checks): `dotPrev`
+   recognises the access but nothing here separates the two fields, so both spellings stay one
+   symbol — measured, the cursor on `x.pix` answers six locations and two of them are the field
+   declarations of the two different structs.
 3. **Does M5 answer `rename` on a `.s7i` buffer?** Ship it and document the staleness, refuse
    there until R-F10 is paid, or match only `BUFFER_FILE` as "this buffer" (which quietly makes
    every library file a row-4 case).

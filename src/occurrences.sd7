@@ -27,13 +27,17 @@ const type: occurrence is new struct
     var integer: col16 is 0;      # UTF-16 column, carried by nextToken
     var integer: width16 is 0;    # in UTF-16 units, so a range needs no re-scan
     var integer: kind is 0;       # TK_NAME or TK_OP -- nothing else is indexable
-    # TRUE when the token immediately before this one, ON THE SAME LINE, is `.' -- a record
-    # field access. Carried on the record because the pass that finds the occurrence is the only
+    # TRUE when the token immediately before this one, ON THE SAME LINE, is `.'. That is a lexical
+    # fact, not the field answer: a NAME after a `.' is a record field access, but a `$ syntax'
+    # rule writes `.(). <+ .()' around a buffer-declared OPERATOR, so an operator record can carry
+    # this flag without being able to be a field -- which is why `scopeHasFieldAccess' asks the
+    # kind as well. Carried on the record because the pass that finds the occurrence is the only
     # place the previous token is known, and a caller must not re-walk the text to ask the
     # question (see `scopeHasFieldAccess', and `resolveBinding's row 4, which reads it through
-    # `occurrenceAt'). Same line, by decision: a `box.' that ends a line and a `counter' that
-    # starts the next is NOT a field access here, and no widening of this rule is available without
-    # a column-aware field index, which this module does not have.
+    # `occurrenceAt', whose NAME gate gives row 4 the same protection for free). Same line, by
+    # decision: a `box.' that ends a line and a `counter' that starts the next is NOT a field
+    # access here, and no widening of this rule is available without a column-aware field index,
+    # which this module does not have.
     var boolean: dotPrev is FALSE;
   end struct;
 
@@ -506,7 +510,7 @@ const func array occurrence: inScope (in array occurrence: oc, in binding: b) is
     end for;
   end func;
 
-# TRUE when the scope window holds a name written after a `.' -- a record field whose spelling
+# TRUE when the scope window holds a NAME written after a `.' -- a record field whose spelling
 # happens to equal this symbol. Spec 12.2 left fields as an open fork and named the cost ("w.pix
 # is pervasive in real Seed7"); what ships is 12.1's rule applied to that fork. The READ may
 # over-include provided it says so, so references asks this for its disclosure; the WRITE may not,
@@ -514,6 +518,13 @@ const func array occurrence: inScope (in array occurrence: oc, in binding: b) is
 # scope, and scope is applied in this module and nowhere else (invariant 6). A feature that asked
 # "is there a dot anywhere in the file" instead would refuse a clean rename for a field access in
 # another routine -- which is the wrong answer, and why features_test.sd7 pins the control.
+# The question is about a NAME, so the kind test is part of it. Seed7 will not parse a
+# buffer-declared operator without its `$ syntax' rule, and that rule is written `.(). <+ .()', so
+# the record ON THAT LINE -- record 1 of the three `<+' occurrences, measured -- is dot-preceded,
+# and dot-preceded TK_OP records can never be a field. Without this conjunction references
+# disclosed a field for every declared operator (features_test.sd7: "the field disclosure speaks of
+# names, so a declared operator discloses nothing"). The WRITE never saw the defect: an operator
+# cursor leaves `slot' at 0, so renameDecision refuses on the kind gate before reaching here.
 const func boolean: scopeHasFieldAccess (in array occurrence: oc, in binding: b) is func
   result
     var boolean: out is FALSE;
@@ -521,7 +532,7 @@ const func boolean: scopeHasFieldAccess (in array occurrence: oc, in binding: b)
     var integer: i is 0;
   begin
     for i range 1 to length(oc) do
-      if not out and oc[i].dotPrev then
+      if not out and oc[i].kind = TK_NAME and oc[i].dotPrev then
         out := inScopeLine(b, oc[i].line0);
       end if;
     end for;

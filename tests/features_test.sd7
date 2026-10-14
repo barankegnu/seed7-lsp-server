@@ -1222,9 +1222,15 @@ const proc: main is func
     # records -- the arms that speak for a bound name are all silent for it -- and
     # `slot' is STILL 0, because occurrenceAt gates on the token kind. So the refusal here comes
     # from the kind gate and nowhere else, which is the fact §6 has to state. The mutant that
-    # proves it: drop `kind = TK_NAME' in occurrences.sd7's occurrenceAt and this cursor moves to
-    # `scopeHasFieldAccess' (the `$ syntax' rule writes `.(). <+ .()', so record 1 is dot-preceded),
-    # which reddens the three expectations below by naming a different arm.
+    # proves it: drop `kind = TK_NAME' in occurrences.sd7's occurrenceAt and the refusal does not
+    # move to another arm, it DISAPPEARS -- `slot' becomes 3, prepareRename answers a range for
+    # `<+', and rename answers three edits, one of them inside the `$ syntax' rule. It used to
+    # land one arm later, on `scopeHasFieldAccess' (the `$ syntax' rule writes `.(). <+ .()', so
+    # record 1 is dot-preceded), and that arm is closed to an operator now that the predicate
+    # counts NAMES only. Re-measured after that conjunction: the three expectations below are
+    # reddened -- the slot pin by the new number, the two method pins by an ACCEPT -- which is the
+    # stronger proof of the gate, because nothing else refuses an operator cursor. The library `+'
+    # cursor, under the same mutant, is refused one arm later, by the library arm.
     setVersion(opDoc, opDeclText(), 1);
     opAn := analyzeAll(opDoc.text, noDirs, opPath);
     opSyms := opAn.syms;
@@ -1243,6 +1249,20 @@ const proc: main is func
     check("and rename refuses the identical cursor with the identical sentence",
           str(rn.error = "") <& " " <& rn.json <& " " <& rn.why,
           "TRUE null rename: <+ is not a name");
+    # The READ on the same spelling, and here the refusal arms cannot speak, because references
+    # publishes the list rather than declining it. What a `$ syntax' rule costs: Seed7 will not
+    # parse a new operator symbol without one, and the rule is written `.(). <+ .()', so the token
+    # immediately before the `<+' ON THAT LINE is a `.'. Measured: of the three `<+' records the
+    # pass finds -- line 3 (the rule), line 5 (the header), line 16 (the use) -- only record 1
+    # carries dotPrev, and all three are TK_OP. So scopeHasFieldAccess, which asked only whether a
+    # record was dot-preceded and inside the window, answered TRUE for an operator, and an operator
+    # is never a record field: the §12.2 disclosure claimed a possible field for a spelling that
+    # cannot be one. Measured on this cursor before the kind test existed: three locations,
+    # unresolved TRUE, and the field sentence. The `|' separates the two segments so an empty `why'
+    # is visible as empty.
+    ra := referencesAnswer(opDoc, opSyms, opWord, opUri, FALSE);
+    check("the field disclosure speaks of names, so a declared operator discloses nothing",
+          str(ra.unresolved) <& "|" <& ra.why, "FALSE|");
     # The rejections. `error' = "invalid" is what the dispatcher sends as -32602 InvalidParams,
     # and json stays "null" because no result goes out beside an error frame.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "", TRUE);
