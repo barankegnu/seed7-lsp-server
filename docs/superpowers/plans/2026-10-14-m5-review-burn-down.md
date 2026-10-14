@@ -298,6 +298,40 @@ any deletion pass for the wrong reason."*
 
 ---
 
+### Task 9: The field disclosure fires for things that cannot be fields
+
+**Files:**
+- Modify: `src/occurrences.sd7:517-524` (`scopeHasFieldAccess`)
+- Test: `tests/features_test.sd7` (the operator section Task 4 added), `tests/occurrences_test.sd7`
+
+**Interfaces:**
+- Consumes: `occurrence.kind` (`TK_NAME`/`TK_OP`), `occurrence.dotPrev`, `inScopeLine`.
+- Produces: no signature change. `scopeHasFieldAccess` keeps its `boolean (oc, b)` shape.
+
+Task 4's reviewer found this while checking something else, and confirmed it from the code: for a
+buffer-DECLARED operator, `references` sets `unresolved` and emits the §12.2 sentence "the list also
+holds a name written after a `.`, which may be a record field of the same name" — because Seed7's
+mandatory `$ syntax expr: .(). <+ .()` line writes a `.` immediately before the operator token, so that
+record carries `dotPrev = TRUE`. The disclosure is then not merely over-inclusive, it is about a
+thing that cannot exist: an operator is never a record field. Read-path only (one log line and a flag),
+but §12.2's disclosure is the reason that sentence is believed, and the belief is what makes it worth
+fixing.
+
+- [ ] **Step 1: Write the failing test.** On Task 4's `opDeclText` fixture, assert the reference answer
+  for a cursor on the declared `<+`: `unresolved` is FALSE and `why` is empty. Run
+  `s7 -q -l src tests/features_test.sd7` and require FAIL with `got: TRUE` (and the field sentence in
+  `why`). That is the red; do not write the expectation from what you hope the code does.
+- [ ] **Step 2: Add the kind test.** In `scopeHasFieldAccess`, count only `TK_NAME` records. One
+  conjunction, no new predicate, no new parameter — the same `kind` field `occurrenceAt` already uses.
+- [ ] **Step 3: Run to green, then prove it can fail.** `make test` → 0 failed. Mutant: delete the kind
+  test → Step 1's check must go FAIL again. Also confirm Task 4's refusal checks and the §12.2
+  field-clash checks (`features_test.sd7`'s `but says the list also holds a name written after a dot`)
+  stay GREEN — if a real field disclosure reddens, the conjunction is too wide.
+- [ ] **Step 4: Record it.** §12.2's answer in the design says the read discloses; add that the
+  disclosure is about NAMES, and that an operator after a `.` is `$`-syntax and not a field. Commit.
+
+---
+
 ## Order and why
 
 1 → 1b → 2 → 3 touch the same function (`resolveBinding`) and must land in that order, or the argument list moves under a reviewer's feet. Task 8 is independent of all of them and can run any time after Task 1. 4 depends on 1 (the `TK_NAME` gate it pins lives in `occurrenceAt`). 5 depends on 1 and 3 for the two-struct slot. 6 and 7 are last because both quote numbers produced by the shipped shape.
