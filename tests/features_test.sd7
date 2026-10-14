@@ -179,6 +179,24 @@ const func string: ambigText is func
            "  end func;\n";
   end func;
 
+# The second cause of the same refusal, with NO routine and NO parameter in the file: two
+# records of `x' on the line that declares it, because a second statement shares the line.
+# Spec 11.12 measured this exact text on `/tmp/r9probe.sd7' and found the refusal sentence false
+# for it -- it claimed "the shape a parameter takes when it is named after its routine". Pinned
+# at diags 0; every column below was read from a probe, not derived.
+const func string: sameLineText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "const integer: x is 1; const integer: y is x;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    writeln(x);\n" <&
+           "  end func;\n";
+  end func;
+
 # The field-clash fixture: `counter' is BOTH a routine's local and a struct's field, and the
 # routine reads `box.counter'. This is spec 12.2's case -- `w.pix is pervasive in real Seed7' --
 # and the shape the write path must refuse: the local's scope window holds the field ACCESS but
@@ -236,10 +254,9 @@ const string: FIELD_TAIL is
 # that differs: prepareRename prefixes one method name, rename the other, and each of the three
 # measured reaches names its own symbol.
 const string: DECL_AMBIG_TAIL is
-    " shares its declaration line with another occurrence of it, the shape a parameter takes" <&
-    " when it is named after its routine, and a declaration found by line cannot choose between" <&
-    " the two, so a rename could rewrite the routine or the parameter when the cursor named the" <&
-    " other one";
+    " shares its declaration line with another record of the same name, and a declaration found"
+    <& " by line cannot choose between them, so a rename could rewrite a record the cursor did"
+    <& " not name";
 
 # A buffer declaration named `count', with no scope entries. Enough for resolveBinding's global
 # row, and the only way to reach the occurrence cap with a BINDING -- 2 000 lines of
@@ -421,6 +438,11 @@ const proc: main is func
     var docAnalysis: fd is docAnalysis.value;
     var string: fPath is "/tmp/tt_field.sd7";
     var string: fUri is "file:///tmp/tt_field.sd7";
+    var lsDoc: sdoc is lsDoc.value;
+    var array symRec: ssyms is 0 times symRec.value;
+    var docAnalysis: sd is docAnalysis.value;
+    var string: sPath is "/tmp/tt_same.sd7";
+    var string: sUri is "file:///tmp/tt_same.sd7";
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -911,6 +933,40 @@ const proc: main is func
           <& "\"character\":32},\"end\":{\"line\":9,\"character\":37}},\"newText\":\"amount\"},"
           <& "{\"range\":{\"start\":{\"line\":11,\"character\":20},\"end\":{\"line\":11,"
           <& "\"character\":25}},\"newText\":\"amount\"}]}}");
+
+    # ---- the refusal sentence must describe the line, not a parameter (spec 11.12) ----------
+    # The R51 arm's trigger is `more than one record of the name on the declaration line'. The
+    # sentence it ships claimed the parameter shape, which spec 11.12 measured FALSE for this
+    # input -- a file with no routine sharing a name with a parameter -- and left as one of "two
+    # consequences still owed", batched for a whole-branch review that never ran. Measured here
+    # before this block existed: refused=TRUE (so the REFUSAL checks below are green on sight --
+    # they exist so that narrowing the arm back to parameters reddens them), and why was
+    # "x shares its declaration line with another occurrence of it, the shape a parameter takes
+    # when it is named after its routine, ...". Only the sentence is red until the arm speaks.
+    setVersion(sdoc, sameLineText(), 1);
+    sd := analyzeAll(sdoc.text, noDirs, sPath);
+    ssyms := sd.syms;
+    check("the same-line fixture analyses clean", str(length(sd.parsed.diags)), "0");
+    check("the cursor is on the use in main, not on either record on the declaration line",
+          wordAt(sdoc, 5, 13).word <& ":" <& str(wordAt(sdoc, 5, 13).character1), "x:12");
+    pc := prepareRenameAnswer(sdoc, ssyms, wordAt(sdoc, 5, 13), sUri, TRUE);
+    check("the second statement on the declaration line still refuses prepareRename",
+          str(pc.refused), "TRUE");
+    # The two assertions that make this a test rather than a transcription. A check that compared
+    # `why' against a constant spelled in this same file would have passed for the wrong reason --
+    # it would have moved with production and never asked whether the words are TRUE of this
+    # input. What is askable here is absence: this file contains no routine and no parameter, so
+    # a refusal sentence that names one is describing something it did not see. Both are red
+    # against the shipped sentence, which reads "...the shape a parameter takes when it is named
+    # after its routine...".
+    checkTrue("the refusal names no parameter, because this file has none",
+              pos(pc.why, "parameter") = 0);
+    checkTrue("and no routine, for the same reason", pos(pc.why, "routine") = 0);
+    check("so it states only what the arm counted: two records of the name on one line",
+          pc.why, "prepareRename: x" <& DECL_AMBIG_TAIL);
+    rn := renameResult(sdoc, ssyms, wordAt(sdoc, 5, 13), sUri, "amount", TRUE);
+    check("rename refuses the same cursor with the same words",
+          str(rn.error = "") <& " " <& rn.why, "TRUE rename: x" <& DECL_AMBIG_TAIL);
 
     # ---- a field access inside the symbol's own scope (spec 12.2) --------------------------
     # Measured on this fixture BEFORE the refusal arm existed (the run is in this branch's first

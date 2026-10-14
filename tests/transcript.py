@@ -654,10 +654,11 @@ expect(answered_null(by_id, 90),
 expect(answered_null(by_id, 91),
        "and rename refuses the identical cursor, so nothing is half-rewritten (%r)"
        % by_id.get(91, {}))
-expect("show shares its declaration line with another occurrence of it" in err,
-       "and the refusal says which shape it cannot tell apart (%r)" % err[-260:])
-expect("could rewrite the routine or the parameter when the cursor named the other one" in err,
-       "in the sentence that names both directions of the corruption it prevents")
+expect("show shares its declaration line with another record of the same name" in err,
+       "and the refusal says what it counted (%r)" % err[-260:])
+expect("could rewrite a record the cursor did not name" in err,
+       "in the sentence that names the corruption it prevents -- and no shape the file need not"
+       " contain")
 expect(by_id.get(92, {}).get("result") ==
        {"range": {"start": {"line": AMB_CTRL,
                            "character": AMB_CTRL_TEXT.index("total")},

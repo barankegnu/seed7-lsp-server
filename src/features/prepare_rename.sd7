@@ -72,20 +72,27 @@ const func integer: cursorName (in array occurrence: oc, in wordRef: word) is fu
     end for;
   end func;
 
-# TRUE when the declaration has to be picked out of more than one record on its own line. A Seed7
-# parameter may be named after its own routine -- measured legal (`const proc: show (in integer:
-# show) is func begin writeln(show); end func;' analyses with no error and prints 3), and
-# reflection reports the routine and that parameter at the SAME line1 -- so the line
+# TRUE when the declaration has to be picked out of more than one record on its own line. The
+# trigger is the LINE, and two different shapes put two records of one name on it. Shape one: a
+# Seed7 parameter may be named after its own routine -- measured legal (`const proc: show (in
+# integer: show) is func begin writeln(show); end func;' analyses with no error and prints 3) --
+# and reflection reports the routine and that parameter at the SAME line1, so the line
 # `declOccurrence' searches (rename.sd7) holds the routine's record as well as the parameter's,
 # and the line `inScope' filters by holds both too because it is line-granular. Whichever way the
 # edit list is built, renaming one of the two rewrites the other: rename the parameter and the
 # routine's declaration loses its name while every call site keeps it; rename the routine and a
-# parameter that is a different symbol gains the new name. A READ may over-include with a log line
-# (spec 12.2), a WRITE may not (spec 12.1), so both methods refuse from here. Counted out of the
-# caller's own `oc' -- the same list the edits come from (R39), which is every token equal to
-# `word.word', so no kind test is needed to keep an operator out of the count: an arm this far
-# down the chain has already refused one. `declLine1' is 0 for anything with no declaration in
-# this document and pred(0) names no line, so a library or unbound symbol is never refused here.
+# parameter that is a different symbol gains the new name. Shape two, with no routine and no
+# parameter anywhere in the file: `const integer: x is 1; const integer: y is x;' puts the
+# declaration of `x' and a use of `x' on one line -- spec 11.12 measured it refusing a legal
+# rename on a clean buffer, and `sameLineText' in features_test.sd7 is that file. Shape two is an
+# over-refusal, safe direction, and the alternative is column-aware declaration identity, not
+# another arm -- which is also why the count below is over RECORDS OF THE NAME and not over
+# parameters. A READ may over-include with a log line (spec 12.2), a WRITE may not (spec 12.1), so
+# both methods refuse from here. Counted out of the caller's own `oc' -- the same list the edits
+# come from (R39), which is every token equal to `word.word', so no kind test is needed to keep an
+# operator out of the count: an arm this far down the chain has already refused one. `declLine1'
+# is 0 for anything with no declaration in this document and pred(0) names no line, so a library
+# or unbound symbol is never refused here.
 const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) is func
   result
     var boolean: out is FALSE;
@@ -169,12 +176,13 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
           # R51. Ahead of `capped', because it describes the SYMBOL and leaves the cap sentence
           # last, speaking only for a document too long to list -- the same ordering rule R47
           # states. Shared here so prepareRename and rename cannot diverge on it (R45), and
-          # reached from rename through the predicate rather than as logic in rename.sd7.
-          out.reason := word.word <& " shares its declaration line with another occurrence of" <&
-                        " it, the shape a parameter takes when it is named after its routine, and"
-                        <& " a declaration found by line cannot choose between the two, so a"
-                        <& " rename could rewrite the routine or the parameter when the cursor"
-                        <& " named the other one";
+          # reached from rename through the predicate rather than as logic in rename.sd7. The
+          # sentence names only what the arm counted, because the shape it used to claim -- a
+          # parameter named after its routine -- is not in every file that reaches this arm
+          # (spec 11.12, `sameLineText').
+          out.reason := word.word <& " shares its declaration line with another record of the" <&
+                        " same name, and a declaration found by line cannot choose between them,"
+                        <& " so a rename could rewrite a record the cursor did not name";
         elsif scopeHasFieldAccess(out.oc, out.b) then
           # Spec 12.2's fork, taken in 12.1's direction. The cursor names a symbol of this file
           # and the binding resolved, so every arm above is silent -- but the same spelling also

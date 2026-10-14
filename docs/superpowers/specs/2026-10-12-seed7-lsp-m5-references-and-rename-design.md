@@ -430,8 +430,9 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     candidate list and this gate are different products that must not be merged. The meta-lesson is
     the R29 one: a number transcribed out of a probe is already stale, so the document points at
     the generator instead of at itself.
-12. **A routine and a same-named parameter share a header line, in every header shape.** The rule
-    is not the one-line-header special case I first measured. A routine `show` and a parameter
+12. **Two records of one name on the declaration line refuse a rename — a shared header line is
+    one shape of it, not the rule.** The rule is not the one-line-header special case I first
+    measured. A routine `show` and a parameter
     `show` are both reported at that header line's `line1` whether the header is one line or two,
     and the collision reaches `rename` from three directions: a single-line header with a multi-line
     body (the shared line IS the line the body region opens on, so `inScope` over-includes and no
@@ -449,10 +450,17 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     `const integer: x is 1; const integer: y is x;` — reproduced on a clean buffer
     (`/tmp/r9probe.sd7`, `diags=0`), where `prepareRename` and `rename` BOTH refuse a perfectly
     legal rename of `x`. Over-refusal, safe direction, and the correct alternative is column-aware
-    declaration identity, not another arm. Two consequences still owed: the refusal `why` sentence
-    claims "the shape a parameter takes when it is named after its routine", which is false for
-    this input, and §12's boundary statement "routines with a name-colliding parameter only" is
-    false too. Both are one-line corrections, batched for the whole-branch review's fix wave.
+    declaration identity, not another arm.
+
+    **Both consequences of that are paid on `m5-review-fixes`, and the way they were tested is the
+    finding.** The refusal sentence now says only what the arm counted — "shares its declaration
+    line with another record of the same name" — and `features_test.sd7` proves it by *absence*:
+    the `x`/`y` file has no routine and no parameter, and two assertions go red if the sentence
+    names either word. The first version of that check compared `why` to a constant spelled in the
+    same test file, so it passed green against the wrong sentence and moved with production instead
+    of questioning it; it was rewritten before it was trusted. The "§12's boundary statement"
+    this note cited does not exist in §12 — the phrase was this item's own title, now corrected
+    above — so a reader no longer hunts §12 for a rule that lives here.
 13. **`globalObjects` has no ordering contract in its signature, but does in prose**
     (`progs.s7i:533`: definitions are returned "in the same order as the definitions of the source
     program"). Task 2's `else`-reset witness, Task 3's pairing and Task 9's declaration add-back all
