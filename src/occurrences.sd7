@@ -247,6 +247,34 @@ const func blockRef: innermostRegion (in array blockRef: regions, in integer: li
     end for;
   end func;
 
+# TRUE when some record OF THE BUFFER BEING EDITED is named `name', or carries `name' among its
+# own scope entries -- the only two shapes rows 1 and 2 of `resolveBinding' can match, and the two
+# fields those rows already read (symRec.name, and symRec.locals through `scopeIndexOf'), so the
+# pre-scan and the rows cannot drift apart on a field rename. When this says FALSE there is nothing
+# for the rows to find, and no region scan to pair them with.
+# The one non-obvious consequence: row 1 sets `scopeElsewhere', which row 4 reads to label a token
+# `field' WITHOUT a dot test, so skipping rows 1-2 could change row 4's answer -- and does not,
+# because the flag is set only for a buffer record that carries `name' in its scope, which is
+# exactly the TRUE case of this function. The claim is proved by mutation, not by this sentence:
+# making this `return FALSE' reddens the local and global rows AND the `field' checks that read
+# `scopeElsewhere'. If a field answer ever goes missing with the rows left running, the claim is
+# FALSE and only `blockRegions' may be gated.
+const func boolean: bufferCouldBind (in array symRec: syms, in string: name,
+                                     in string: docPath) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(syms) do
+      if not out then
+        if isBufferFile(syms[i].file, docPath) then
+          out := syms[i].name = name or scopeIndexOf(syms[i].locals, name) <> 0;
+        end if;
+      end if;
+    end for;
+  end func;
+
 # The resolution order IS the decision. The document's own two rows are asked first (R28), so a
 # program may legally declare a symbol named `type' -- which documentSymbol lists and hover
 # answers today -- and the keyword gate comes after them but BEFORE the library row (R36), so a
@@ -279,72 +307,80 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
     # The caller's own list, capped the same way: this is the array references publishes, so
     # `capped' cannot disagree with it and no second pass is paid for a discarded length.
     out.capped := length(oc) > MAX_OCCURRENCES;
-    # ONE region scan for the whole resolution: blockRegions is the expensive half of the
-    # pairing and routineRegionFor only filters a list, so rows 1 and 2 share this call
-    # instead of paying a scan and an O(n^2) sort per declaration.
-    regions := blockRegions(text, lastLine);
-    # Row 1: a scope entry of a routine whose OWNED body region holds the cursor. A record whose
-    # declaration pairs with NO region (a body that sits on one line) is skipped by the closer
-    # test, never by startLine: a real region may open at line 0. A record that pairs with a
-    # region it does not OWN is skipped by ownsRegion -- the same pair, but it belongs to the
-    # routine below, and trusting it here renames that other routine's declaration.
-    for i range 1 to length(syms) do
-      if out.owner = "" then
-        if isBufferFile(syms[i].file, docPath) then
-          scopeIdx := scopeIndexOf(syms[i].locals, name);
-          if scopeIdx <> 0 then
-            region := routineRegionFor(regions, syms[i].line1);
-            if ownsRegion(syms, docPath, i, region) then
-              if lineIn(region, line0) then
-                out.owner := "local";
-                out.resolved := TRUE;
-                out.scopeStart := region.startLine;
-                out.scopeStop := region.endLine;
-                out.declLine1 := syms[i].locals[scopeIdx].line1;
-                # A cursor below the matched region sits in a NESTED routine, which reflection
-                # never reports as a symRec -- so its own scope may carry this name and nothing
-                # in this resolution can see it. Regions are lexical, so the depth is measurable.
-                inner := innermostRegion(regions, line0);
-                out.scopeUncertain := inner.startLine > region.startLine;
-              else
-                scopeElsewhere := TRUE;
-              end if;
-            end if;
-          end if;
-        end if;
-      end if;
-    end for;
-    # Row 2: a declaration of this buffer. Its scope is the document minus every routine that
-    # OWNS a region and carries the same name in its own scope -- without that subtraction a
-    # rename of the global would rewrite a shadowing local and its declaration, and the result
-    # would still compile. A carrier that owns no region cannot be subtracted at all, and the
-    # global row says so instead of answering a silently short list.
-    if out.owner = "" then
+    # Rows 1 and 2 are the only rows that read this buffer's records, and the only ones that need
+    # the region scan: blockRegions is the expensive half of the pairing and routineRegionFor only
+    # filters its list, so they share ONE call -- and pay for it only when the buffer could bind
+    # the name at all. A gated keyword, a library name and a name this buffer never mentions all
+    # answer the same binding with or without these rows, so the guard is not observable from
+    # outside; the saving is not yet measured -- Task 6 reproduces it with `s7c -p -O2 -l src`; if
+    # the table does not show it, this guard comes out.
+    if bufferCouldBind(syms, name, docPath) then
+      # ONE scan shared by both rows, not one per declaration: routineRegionFor only filters
+      # this list.
+      regions := blockRegions(text, lastLine);
+      # Row 1: a scope entry of a routine whose OWNED body region holds the cursor. A record whose
+      # declaration pairs with NO region (a body that sits on one line) is skipped by the closer
+      # test, never by startLine: a real region may open at line 0. A record that pairs with a
+      # region it does not OWN is skipped by ownsRegion -- the same pair, but it belongs to the
+      # routine below, and trusting it here renames that other routine's declaration.
       for i range 1 to length(syms) do
-        if not bufferDeclared then
+        if out.owner = "" then
           if isBufferFile(syms[i].file, docPath) then
-            if syms[i].name = name then
-              out.owner := "global";
-              out.resolved := TRUE;
-              out.declLine1 := syms[i].line1;
-              bufferDeclared := TRUE;
+            scopeIdx := scopeIndexOf(syms[i].locals, name);
+            if scopeIdx <> 0 then
+              region := routineRegionFor(regions, syms[i].line1);
+              if ownsRegion(syms, docPath, i, region) then
+                if lineIn(region, line0) then
+                  out.owner := "local";
+                  out.resolved := TRUE;
+                  out.scopeStart := region.startLine;
+                  out.scopeStop := region.endLine;
+                  out.declLine1 := syms[i].locals[scopeIdx].line1;
+                  # A cursor below the matched region sits in a NESTED routine, which reflection
+                  # never reports as a symRec -- so its own scope may carry this name and nothing
+                  # in this resolution can see it. Regions are lexical, so the depth is measurable.
+                  inner := innermostRegion(regions, line0);
+                  out.scopeUncertain := inner.startLine > region.startLine;
+                else
+                  scopeElsewhere := TRUE;
+                end if;
+              end if;
             end if;
           end if;
         end if;
       end for;
-      if bufferDeclared then
+      # Row 2: a declaration of this buffer. Its scope is the document minus every routine that
+      # OWNS a region and carries the same name in its own scope -- without that subtraction a
+      # rename of the global would rewrite a shadowing local and its declaration, and the result
+      # would still compile. A carrier that owns no region cannot be subtracted at all, and the
+      # global row says so instead of answering a silently short list.
+      if out.owner = "" then
         for i range 1 to length(syms) do
-          if isBufferFile(syms[i].file, docPath) then
-            if scopeIndexOf(syms[i].locals, name) <> 0 then
-              region := routineRegionFor(regions, syms[i].line1);
-              if ownsRegion(syms, docPath, i, region) then
-                out.excluded &:= region;
-              else
-                out.scopeUncertain := TRUE;
+          if not bufferDeclared then
+            if isBufferFile(syms[i].file, docPath) then
+              if syms[i].name = name then
+                out.owner := "global";
+                out.resolved := TRUE;
+                out.declLine1 := syms[i].line1;
+                bufferDeclared := TRUE;
               end if;
             end if;
           end if;
         end for;
+        if bufferDeclared then
+          for i range 1 to length(syms) do
+            if isBufferFile(syms[i].file, docPath) then
+              if scopeIndexOf(syms[i].locals, name) <> 0 then
+                region := routineRegionFor(regions, syms[i].line1);
+                if ownsRegion(syms, docPath, i, region) then
+                  out.excluded &:= region;
+                else
+                  out.scopeUncertain := TRUE;
+                end if;
+              end if;
+            end if;
+          end for;
+        end if;
       end if;
     end if;
     # The gate, between the rows that read THIS document and the rows that read every record.
@@ -374,7 +410,9 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
       end for;
     end if;
     # Row 4: unprovable, and over-included with a log line rather than refused (12.2). Either
-    # the name is some other routine's scope entry -- so this token cannot be that one -- or the
+    # the name is some other routine's scope entry -- so this token cannot be that one, and note
+    # that `scopeElsewhere' could only have been SET inside the guard above, for a name the buffer
+    # does mention, so the skip cannot cost this label -- or the
     # cursor's OWN record says a `.' sits right before it, which is a field (`slot' is 0 whenever
     # the cursor is not on an indexable name, so there is no record to read and no label to give).
     if out.owner = "" and not out.keyword then
