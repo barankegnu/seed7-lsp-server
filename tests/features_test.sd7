@@ -312,6 +312,22 @@ const func string: opDeclText is func
            "  end func;\n";
   end func;
 
+# The uncertain-scope fixture: the text occurrences_test.sd7 pins as `oneLine', at the binding
+# level, copied here so the READ can be pinned at the same shape. A global `count' and a routine
+# whose whole body sits on one line: blocks.sd7 emits no region for a body that opens and closes
+# on the same line, so `tiny' pairs with nothing, cannot be subtracted from the global's scope, and
+# the binding answers `scopeUncertain' TRUE. `main' calls `tiny' and nothing writes to an output
+# stream, because analyzeAll runs the text it reads.
+const func string: uncertainText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "const proc: tiny (inout integer: count) is func begin count := 1; end func;\n" <&
+           "var integer: count is 0;\n" <&
+           "const proc: main is func begin tiny(count); end func;\n";
+  end func;
+
 # The field refusal's tail, spelled once for the same reason as DECL_AMBIG_TAIL: the two rename
 # methods prefix their own method name and nothing else differs.
 const string: FIELD_TAIL is
@@ -524,6 +540,11 @@ const proc: main is func
     var string: pPath is "/tmp/tt_two.sd7";
     var string: pUri is "file:///tmp/tt_two.sd7";
     var wordRef: pixWord is wordRef.value;
+    var lsDoc: udoc is lsDoc.value;
+    var array symRec: usyms is 0 times symRec.value;
+    var docAnalysis: ud is docAnalysis.value;
+    var string: uPath is "/tmp/tt_uncertain.sd7";
+    var string: uUri is "file:///tmp/tt_uncertain.sd7";
     var renameCheck: dec is renameCheck.value;
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
@@ -1174,6 +1195,28 @@ const proc: main is func
     pc := prepareRenameAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, TRUE);
     check("and it is refused too, because both fields sit in that window",
           str(pc.refused) <& " " <& pc.why, "TRUE prepareRename: pix" <& FIELD_TAIL);
+
+    # ---- spec 12.2's OTHER over-inclusive read: `scopeUncertain' ---------------------------
+    # The field arm above is only one of the two widths §12.2 knows about. Here the same
+    # over-inclusion comes from scope rather than from a dot: `tiny' shadows `count' in its own
+    # scope and pairs with NO region, so nothing subtracts that body from the global's window, and
+    # two of the four published locations are the parameter's declaration and the use inside
+    # `tiny'. Measured on this cursor before the arm existed: `unresolved' FALSE, an empty `why',
+    # no log frame -- while occurrences_test.sd7 already pinned the same binding from below, as
+    # `count|global|TRUE|FALSE|FALSE|3' with `excluded' empty and a separate check that
+    # `b.scopeUncertain' is TRUE. The write refuses it (`renameDecision's scopeUncertain arm);
+    # the read cannot refuse, so this is the disclosure.
+    setVersion(udoc, uncertainText(), 1);
+    ud := analyzeAll(udoc.text, noDirs, uPath);
+    usyms := ud.syms;
+    check("the uncertain-scope fixture analyses clean", str(length(ud.parsed.diags)), "0");
+    ra := referencesAnswer(udoc, usyms, atLine("count", 3), uUri, FALSE);
+    check("an uncertain scope publishes the shadowing routine's lines as the global's own",
+          str(uriCount(ra.json)) <& " " <& str(endCount(ra.json)), "4 4");
+    check("and says the scope may be shorter than the list", str(ra.unresolved), "TRUE");
+    check("naming the shadowing scope as the reason", ra.why,
+          "references: count is bound, but a shadowing declaration of it sits in a scope this"
+          <& " server cannot see, so the list may also hold that symbol's uses");
 
     # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
     # FIRST of them, so the record the range would take IS in the truncated list -- the gap that

@@ -693,20 +693,46 @@ recorded in bold inside the item it closes, with the commit that made it and wha
    and `w.pix` is pervasive in real Seed7, so this is a permanent row-4 case on well-formed code,
    not the truncated-buffer exception §9 pins.
    **Answered on `m5-review-fixes`, by measurement first.** A `pix` token that follows a `.` is
-   now recognised — `occurrence.dotPrev`, stamped in `occurrencesOf`'s existing walk, which is the
-   only place the previous token is known. The **write refuses** on it, in `renameDecision`, when
-   the field access lies inside the symbol's own scope window: measured on `Widget` with a field
+   now recognised — `occurrence.dotPrev`, stamped in `occurrencesOf`'s existing walk, which is
+   the only place the previous token is known. The stamp is **not line-granular**, and this wave
+   is the inversion: it used to require the dot and the name to share a line, and that conjunct
+   was a wrong-write hole. Where a `box.` ends one line and a `counter` begins the next, the
+   record came back unmarked, `scopeHasFieldAccess` answered FALSE, every arm was silent, and
+   `rename` emitted an edit on the field access while the field's declaration stayed outside the
+   window — the exact harm this fork's refusal exists to prevent. Dropping the conjunct is safe
+   rather than merely stricter because a token whose text is exactly `.` can only be a selector
+   dot: comments, string and char literals and numbers are each ONE token whose text is never
+   `.`, and the range operator `..` is its own run, so a name starting the next line after a
+   line-final `.` IS a field access. The cost is the ordinary mid-typing state — `box.` at the
+   end of a line now refuses the rename of the name that begins below it — which is the
+   direction the branch's rule for writes demands. `tests/occurrences_test.sd7` pins both levels
+   of the widened rule, "a dot ending the line above marks it too -- a `.' token is only ever a
+   selector" on the flag and "a dot that ends the line above still marks the cursor's record as
+   a field" on the binding, and restoring the line test reddens exactly those two while the
+   three same-line pins stay green. The **write refuses** on it, in `renameDecision`, when the
+   field access lies inside the symbol's own scope window: measured on `Widget` with a field
    `counter` read as `box.counter` by the routine whose local is also `counter`, the pre-state
    answered `prepareRename` accepted and `rename` six edits, two of them the field access; the
-   field's declaration is at line 3 and the window is 10..15, so applying those edits renames the
-   field's uses and leaves the field, and the renamed text raises `Match for {box . amount }`.
-   The **read stays over-inclusive** — §9's count is unchanged — but it no longer claims certainty:
-   the same cursor answered six locations with `unresolved FALSE` and no log line before, and now
-   sets `unresolved` with its own sentence. **That sentence speaks about names, and the kind test
-   in `scopeHasFieldAccess` is what makes it true.** Seed7 will not parse a new operator symbol
-   without its `$ syntax expr: .(). <+ .()` rule, and that rule writes a `.` immediately before the
-   operator token — so the occurrence the rule itself contains carries `dotPrev`, while the
-   declaration's header and the use in `main` do not, and an operator is never a record field.
+   field's declaration is at line 3 and the window is 10..15, so applying those edits renames
+   the field's uses and leaves the field, and the renamed text raises
+   `Match for {box . amount }`. The **read stays over-inclusive** — §9's count is unchanged — but it
+   no longer claims certainty: the same cursor answered six locations with `unresolved FALSE` and no
+   log line before, and now sets `unresolved` with its own sentence. **It now discloses BOTH the
+   over-inclusions this answer knows about.** The field arm covers the first; the second is
+   `binding.scopeUncertain` — a routine that carries the name in its own scope and pairs with no
+   region cannot be subtracted, so the global's list reaches into that routine's body — and it
+   shipped silently: on `features_test.sd7`'s uncertain-scope fixture (the text
+   `occurrences_test.sd7` pins as `oneLine`) the global `count` answered four locations, two of
+   them the shadowing parameter's declaration and its use inside `tiny`, with `unresolved FALSE`
+   and no log line. The fourth arm closes that, pinned by "an uncertain scope publishes the
+   shadowing routine's lines as the global's own", "and says the scope may be shorter than the
+   list" and "naming the shadowing scope as the reason"; deleting the arm reddens those and
+   leaves the field and cap disclosures green. **The field sentence speaks about names, and the
+   kind test in `scopeHasFieldAccess` is what makes it true.** Seed7 will not parse a new
+   operator symbol without its `$ syntax expr: .(). <+ .()` rule, and that rule writes a `.`
+   immediately before the operator token — so the occurrence the rule itself contains carries
+   `dotPrev`, while the declaration's header and the use in `main` do not, and an operator is never
+   a record field.
    Measured before the conjunction was added, on the `<+` of `tests/features_test.sd7`'s
    operator-declaring fixture: three records, only the first (the `$ syntax` line) dot-preceded,
    and the answer was three locations with `unresolved` TRUE and the field sentence — a disclosure

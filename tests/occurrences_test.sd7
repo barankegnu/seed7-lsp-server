@@ -13,6 +13,19 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     end if;
   end func;
 
+# `dotPrev' of the i'th occurrence as "TRUE"/"FALSE", or "none" outside the array. The four flag
+# pins below ask for a FIELD of a record, which `at' cannot answer, and a bare `oc[1].dotPrev' on a
+# fixture a mutant shortened would raise INDEX_ERROR on stdout -- costing the suite its graded line
+# instead of naming the check. Same degrading rule as `at' and `recAt'.
+const func string: dotAt (in array occurrence: oc, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(oc) then
+      out := str(oc[i].dotPrev);
+    end if;
+  end func;
+
 # "name/line1" of syms[i], or "none" for an index outside the array -- the shape of an UNSET
 # ownerSym. Degrading, not indexing syms[0], keeps a mutant's INDEX_ERROR off stdout, where it
 # would cost the suite its graded line rather than name the check that failed.
@@ -321,10 +334,11 @@ const proc: main is func
     # it a field, and row 4 reads the record `occurrenceAt' names. The discriminating input is the
     # one-line text: walking the LINE labels both tokens `field' (measured -- the first binding check
     # below went red against the shipped code with got TRUE), reading the cursor's own record labels
-    # only the one the dot really precedes. The cross-line pair after it is NOT discriminating: the
-    # line-wide test and the cursor's own record answer it alike, and it stays pinned because WHICH
-    # record the slot names is the contract -- row 4 reading `oc[1]' for every cursor reddens three
-    # checks, measured. The last block states the same-line rule at the binding level.
+    # only the one the dot really precedes. The cross-line pair after it is NOT discriminating for
+    # THAT question -- the line-wide test and the cursor's own record answer it alike -- and it stays
+    # pinned because WHICH record the slot names is the contract: row 4 reading `oc[1]' for every
+    # cursor reddens three checks, measured. The last two blocks state the crossing rule, once per
+    # level: the flag itself, then the same cursor seen through `resolveBinding'.
     pixOneLine := "    pix := 1; box.pix := 2;\n";
     pixTwoLines := "    pix := 1;\n  box.pix := 2;\n";
     pixAfterBreak := "    box.\n      pix := 1;\n";
@@ -367,15 +381,16 @@ const proc: main is func
     check("while the one after the dot, on the dot's own line, is",
           str(bindAt(pixTwoLines, noSyms, "pix", 1, pred(linesIn(pixTwoLines)), DOC,
                      occurrenceAt(occurrencesOf(pixTwoLines, "pix"), 1, 6)).owner), "field");
-    # The same-line rule, seen from the binding rather than from the flag: `box.' ENDS its line and
-    # `pix' starts the next, so the dot is the previous TOKEN but not the previous LINE, and the
-    # answer stays "not a field". Spec 11.10's shortcut, deliberately not widened (Review Focus 1).
-    # Dropping `prevLine = tk.line0' from the stamp makes this check go red -- measured -- which is
-    # what makes it the binding-level witness of a rule the two pairs above only agree with.
-    check("a dot that ends the line above leaves the cursor's record no field",
+    # The crossing rule, seen from the binding rather than from the flag: `box.' ENDS its line and
+    # `pix' starts the next, so the dot is the previous TOKEN of a different line -- and a token
+    # whose text is exactly `.' can only be a selector, so this is the field access the write path
+    # must refuse. Restoring the line test the stamp used to carry (`prevLine = tk.line0') reddens
+    # this check and the flag-level one below it -- measured, which is what makes the pair the
+    # witness of the widened rule rather than of a blanket flag.
+    check("a dot that ends the line above still marks the cursor's record as a field",
           str(bindAt(pixAfterBreak, noSyms, "pix", 1, pred(linesIn(pixAfterBreak)), DOC,
-                     occurrenceAt(occurrencesOf(pixAfterBreak, "pix"), 1, 6)).owner = "field"),
-          "FALSE");
+                     occurrenceAt(occurrencesOf(pixAfterBreak, "pix"), 1, 6)).owner),
+          "field");
     # The cursor seam itself, asked directly and from no feature. `cursorAt' is what both readers
     # now call, so the record it returns needs a witness that goes through neither a refusal nor a
     # location list, and this pins all three of its fields at once. Every number is a probe print of
@@ -645,17 +660,18 @@ const proc: main is func
     check("a name that is only a substring of a longer name is not an occurrence",
           str(length(oc)), "0");
     # `dotPrev' is what lets the write path refuse a record field (spec 12.2). These four pin the
-    # flag itself. They are NOT the proof: the refusal checks in features_test.sd7 were written
+    # flag itself: three on a line, which no widening may change, and one across a break, which is
+    # the widened rule. They are NOT the proof: the refusal checks in features_test.sd7 were written
     # first and went red against the shipped code, and replacing this stamp with FALSE reddens
     # them again -- which is what makes the flag load-bearing rather than decorative.
     oc := occurrencesOf("total := box.total + 1;\n", "total");
-    check("a name written after a dot is marked", str(oc[2].dotPrev), "TRUE");
-    check("and the same spelling at the start of the line is not", str(oc[1].dotPrev), "FALSE");
+    check("a name written after a dot is marked", dotAt(oc, 2), "TRUE");
+    check("and the same spelling at the start of the line is not", dotAt(oc, 1), "FALSE");
     oc := occurrencesOf("sum := 1 + total;\n", "total");
-    check("a name after a `+' is not a field access", str(oc[1].dotPrev), "FALSE");
+    check("a name after a `+' is not a field access", dotAt(oc, 1), "FALSE");
     oc := occurrencesOf("box.\n  total := 1;\n", "total");
-    check("a dot on the line above does not mark it -- the line-granular limit",
-          str(oc[1].dotPrev), "FALSE");
+    check("a dot ending the line above marks it too -- a `.' token is only ever a selector",
+          dotAt(oc, 1), "TRUE");
 
     # ---- spec 9's two hidden-text fixtures, asked for by name and never written -------------
     # The first is the literal `prg/calc7.sd7:57-58' really uses: a BACKSLASH at the end of the

@@ -142,6 +142,31 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
                        <& " the same name";
           end if;
         end if;
+        # The OTHER over-inclusion §12.2 knows about, and the one this method shipped silent on.
+        # `scopeUncertain' says the scope answered by row 1 or row 2 may be SHORTER than the truth:
+        # a routine that carries this name in its own scope and pairs with no region (a body on one
+        # line) cannot be subtracted, and a nested routine's scope is invisible to reflection. So
+        # the list above may reach into that shadowing symbol's own body. Measured on
+        # features_test.sd7's `uncertainText': the global `count' answered four locations, two of
+        # them the parameter's declaration and its use inside `tiny', with `unresolved' FALSE and no
+        # log line. The write refuses that fact in `renameDecision'; the read may not refuse, so it
+        # says it -- §12.2's own argument for the field arm, applied to the case that arm does not
+        # cover. No `resolved' test here, unlike the block above: only rows 1 and 2 set this flag
+        # and both have resolved, so an unbound name cannot reach it and the sentence may call the
+        # name bound. The composed form is reachable -- a capped or field-holding document whose
+        # scope is also uncertain -- but no fixture here reaches it, as none reaches the field arm's
+        # composed form either. The primary sentence is the pinned one.
+        if cr.b.scopeUncertain then
+          out.unresolved := TRUE;
+          if out.why = "" then
+            out.why := "references: " <& word.word <& " is bound, but a shadowing declaration of"
+                       <& " it sits in a scope this server cannot see, so the list may also hold"
+                       <& " that symbol's uses";
+          else
+            out.why := out.why <& ", and a shadowing declaration of it sits in a scope this"
+                       <& " server cannot see, so the list may also hold that symbol's uses";
+          end if;
+        end if;
       end if;
     end if;
   end func;

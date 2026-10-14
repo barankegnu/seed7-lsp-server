@@ -27,17 +27,20 @@ const type: occurrence is new struct
     var integer: col16 is 0;      # UTF-16 column, carried by nextToken
     var integer: width16 is 0;    # in UTF-16 units, so a range needs no re-scan
     var integer: kind is 0;       # TK_NAME or TK_OP -- nothing else is indexable
-    # TRUE when the token immediately before this one, ON THE SAME LINE, is `.'. That is a lexical
-    # fact, not the field answer: a NAME after a `.' is a record field access, but a `$ syntax'
-    # rule writes `.(). <+ .()' around a buffer-declared OPERATOR, so an operator record can carry
-    # this flag without being able to be a field -- which is why `scopeHasFieldAccess' asks the
-    # kind as well. Carried on the record because the pass that finds the occurrence is the only
-    # place the previous token is known, and a caller must not re-walk the text to ask the
-    # question (see `scopeHasFieldAccess', and `resolveBinding's row 4, which reads it through
-    # `occurrenceAt', whose NAME gate gives row 4 the same protection for free). Same line, by
-    # decision: a `box.' that ends a line and a `counter' that starts the next is NOT a field
-    # access here, and no widening of this rule is available without a column-aware field index,
-    # which this module does not have.
+    # TRUE when the token immediately before this one IS `.'. That is a lexical fact, not the
+    # field answer: a NAME after a `.' is a record field access, but a `$ syntax' rule writes
+    # `.(). <+ .()' around a buffer-declared OPERATOR, so an operator record can carry this flag
+    # without being able to be a field -- which is why `scopeHasFieldAccess' asks the kind as well.
+    # Carried on the record because the pass that finds the occurrence is the only place the
+    # previous token is known, and a caller must not re-walk the text to ask the question (see
+    # `scopeHasFieldAccess', and `resolveBinding's row 4, which reads it through `occurrenceAt',
+    # whose NAME gate gives row 4 the same protection for free).
+    # Not limited to the dot's own line, and nothing is lost by crossing the break: a token whose
+    # text is exactly `.' can only be a selector dot -- comments, string and char literals and
+    # numbers are each ONE token whose text is never `.', and the range operator `..' is its own
+    # run -- so a `box.' that ends a line and a `counter' that starts the next IS a field access.
+    # Mid-typing is the case that pays for it: `box.' at the end of a line is the ordinary
+    # transient state of a document being written, and the write path must refuse on it.
     var boolean: dotPrev is FALSE;
   end struct;
 
@@ -66,7 +69,6 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
     var tok: tk is tok.value;
     var occurrence: one is occurrence.value;
     var string: prev is "";
-    var integer: prevLine is 0;
     var string: tokenText is "";
   begin
     while cur.offset <= length(text) and length(out) <= MAX_OCCURRENCES do
@@ -82,11 +84,10 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
           one.kind := tk.kind;
           # Stamped on every record this appends, so the loop-carried `one' cannot carry a flag
           # over from the previous match -- the R21 shape, a field the guard does not re-stamp.
-          one.dotPrev := prev = "." and prevLine = tk.line0;
+          one.dotPrev := prev = ".";
           out &:= one;
         end if;
         prev := tokenText;
-        prevLine := tk.line0;
       end if;
     end while;
   end func;
