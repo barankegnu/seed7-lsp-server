@@ -65,10 +65,10 @@ const func integer: headerNumber (in string: text) is func
 # arithmetic), of which `utf8Length' is 70 945 µs over 1 850 calls -- the one pass over the body
 # this paragraph promises, and 89% of the cost, and the pass writeMessage already pays on every
 # frame it sends. The same budget spent one character at a time, same accumulator, is 1 005 274 µs
-# over 10 reads: two orders of magnitude above this loop, which is why the loop is chunked. A
-# single character-counted read of the whole body is 1 034 µs over 50 reads -- two orders of
-# magnitude below it again, and wrong for any body holding a non-ASCII character, which is the bug
-# above. This loop pays roughly 1.6 ms per frame to avoid that read, and 37 `gets' calls per frame.
+# over 10 reads against this loop's 79 582 µs over 50 calls, which is why the loop is chunked. A
+# single character-counted read of the whole body is 1 034 µs over 50 reads, and wrong for any
+# body holding a non-ASCII character, which is the bug above. This loop pays roughly 1.6 ms per
+# frame to avoid that read, and 37 `gets' calls per frame.
 #
 # seek/tell would be cheaper and are unusable here: STD_UTF8_IN is a pipe, and on a pipe
 # seekable(STD_UTF8_IN) is FALSE while seek raises FILE_ERROR -- both measured, in this server's

@@ -101,6 +101,7 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
 # test reads `dotPrev' off it -- and must take a range's width from the SAME record: `width16'
 # counts UTF-16 units while doc_store.wordRef.width counts CHARACTERS, and the two differ on
 # every astral line.
+# Deleting the kind test below emits edits rather than moving the refusal one arm later (spec 6).
 const func integer: occurrenceAt (in array occurrence: oc, in integer: line0,
                                   in integer: col16) is func
   result
