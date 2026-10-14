@@ -209,6 +209,7 @@ const proc: main is func
     var string: capText is "";
     var string: pixOneLine is "";
     var string: pixTwoLines is "";
+    var string: pixAfterBreak is "";
     var array symRec: noSyms is 0 times symRec.value;
     var integer: i is 0;
   begin
@@ -294,9 +295,10 @@ const proc: main is func
     # it a field, and row 4 reads the CURSOR'S OWN RECORD. The discriminating input is the one-line
     # text: walking the LINE labels both tokens `field' (measured -- the first check below went red
     # against the shipped code with got TRUE), reading the record under the cursor labels only the
-    # one that really follows the dot. The cross-line pair after it is NOT discriminating: the
-    # line-wide test and the cursor's own record answer it alike, and it is pinned only so the
-    # line-granular rule cannot be widened by accident.
+    # one the dot really precedes. The cross-line pair after it is NOT discriminating: the line-wide
+    # test and the cursor's own record answer it alike. It is pinned because WHICH record the slot
+    # names is the contract -- row 4 reading the first record of the list instead of the cursor's
+    # reddens it, measured -- and the third block states the same-line rule at the binding level.
     pixOneLine := "    pix := 1; box.pix := 2;\n";
     check("the bare pix, on a line that also holds a field access, is not labelled field",
           str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 1).owner =
@@ -305,12 +307,21 @@ const proc: main is func
           str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 2).owner),
           "field");
     pixTwoLines := "    pix := 1;\n  box.pix := 2;\n";
-    check("a dot on the line above does not label the bare pix -- the line-granular rule",
+    check("and a pix on the line ABOVE the field access is not labelled field either",
           str(bindAt(pixTwoLines, noSyms, "pix", 0, pred(linesIn(pixTwoLines)), DOC, 1).owner =
               "field"), "FALSE");
-    check("and the dot on its own line still labels the one after it",
+    check("while the one after the dot, on the dot's own line, is",
           str(bindAt(pixTwoLines, noSyms, "pix", 1, pred(linesIn(pixTwoLines)), DOC, 2).owner),
           "field");
+    # The same-line rule, seen from the binding rather than from the flag: `box.' ENDS its line and
+    # `pix' starts the next, so the dot is the previous TOKEN but not the previous LINE, and the
+    # answer stays "not a field". Spec 11.10's shortcut, deliberately not widened (Review Focus 1).
+    # Dropping `prevLine = tk.line0' from the stamp makes this check go red -- measured -- which is
+    # what makes it the binding-level witness of a rule the two pairs above only agree with.
+    pixAfterBreak := "    box.\n      pix := 1;\n";
+    check("a dot that ends the line above leaves the cursor's record no field",
+          str(bindAt(pixAfterBreak, noSyms, "pix", 1, pred(linesIn(pixAfterBreak)), DOC, 1).owner =
+              "field"), "FALSE");
 
     # ---- rows 5 and 6: language furniture, and the mystery -----------------------
     b := bind(text, syms, "begin", 37, lastLine, DOC);
