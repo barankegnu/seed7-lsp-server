@@ -252,13 +252,21 @@ const func blockRef: innermostRegion (in array blockRef: regions, in integer: li
 # fields those rows already read (symRec.name, and symRec.locals through `scopeIndexOf'), so the
 # pre-scan and the rows cannot drift apart on a field rename. When this says FALSE there is nothing
 # for the rows to find, and no region scan to pair them with.
+# WARNING to whoever adds a binding row: this pre-scan is a guard only because it lists the two
+# ways rows 1-2 can match. A new row that keys on another symRec field (a category, a region, a
+# line) must add that key here as well, or the guard skips the row silently and the binding
+# degrades to "" for a name the buffer really does carry.
 # The one non-obvious consequence: row 1 sets `scopeElsewhere', which row 4 reads to label a token
 # `field' WITHOUT a dot test, so skipping rows 1-2 could change row 4's answer -- and does not,
 # because the flag is set only for a buffer record that carries `name' in its scope, which is
-# exactly the TRUE case of this function. The claim is proved by mutation, not by this sentence:
-# making this `return FALSE' reddens the local and global rows AND the `field' checks that read
-# `scopeElsewhere'. If a field answer ever goes missing with the rows left running, the claim is
-# FALSE and only `blockRegions' may be gated.
+# exactly the TRUE case of this function. Measured by WEAKENING this predicate, not by switching
+# the guard off: replace the line below with `out := syms[i].name = name;' and the `total|field'
+# pin at occurrences_test.sd7:296 becomes `total|' -- `total' is carried only as a scope entry, so
+# the arm this function keeps is the arm that sets the flag, while the dot-arm field checks
+# stay green because row 4 runs outside the guard. The guard-off mutant (`return FALSE') CANNOT
+# falsify this claim and is not the proof: it skips row 1 for EVERY name, so those labels vanish
+# whether or not the guard is safe. If a field answer ever goes missing with the rows left
+# running, the claim is FALSE and only `blockRegions' may be gated.
 const func boolean: bufferCouldBind (in array symRec: syms, in string: name,
                                      in string: docPath) is func
   result
@@ -410,11 +418,12 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
       end for;
     end if;
     # Row 4: unprovable, and over-included with a log line rather than refused (12.2). Either
-    # the name is some other routine's scope entry -- so this token cannot be that one, and note
-    # that `scopeElsewhere' could only have been SET inside the guard above, for a name the buffer
-    # does mention, so the skip cannot cost this label -- or the
-    # cursor's OWN record says a `.' sits right before it, which is a field (`slot' is 0 whenever
-    # the cursor is not on an indexable name, so there is no record to read and no label to give).
+    # the name is some other routine's scope entry -- so this token cannot be that one, and
+    # `scopeElsewhere' could only have been SET inside the guard above, for a name the buffer does
+    # mention, so the skip cannot cost this label --
+    # or the cursor's OWN record says a `.' sits right before it, which is a field (`slot' is 0
+    # whenever the cursor is not on an indexable name, so there is no record to read and no label
+    # to give).
     if out.owner = "" and not out.keyword then
       if scopeElsewhere then
         out.owner := "field";
@@ -447,8 +456,10 @@ const type: cursorRefs is new struct
 # `resolveBinding' runs whether or not the cursor is on an indexable name, so `slot = 0' may be
 # read ONLY as "there is no range to take from `oc'" and never as "`b' is unset" -- a caller that
 # branched on the second would be re-deriving the resolution the seam exists to hand it. The price
-# is the region scan for a cursor sitting on a number or a bracket, which the callers did not pay
-# before; no answer moves, and refusal does not depend on `b'.
+# is one resolution per cursor; the region scan 1b recorded for a cursor on a number or a bracket
+# is gated now -- `bufferCouldBind' sees a spelling no record of this buffer carries, so those
+# cursors never reach `blockRegions'. Reclaimed, and unmeasured: Task 6 Step 4b owns the figure.
+# No answer moves, and refusal does not depend on `b'.
 const func cursorRefs: cursorAt (in string: text, in array symRec: syms, in string: name,
                                  in integer: line0, in integer: col16, in integer: lastLine,
                                  in string: docPath) is func
