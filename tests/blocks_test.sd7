@@ -301,7 +301,7 @@ const proc: main is func
     # The four checks that used to call blocks.enclosingDeclarations are gone with the function,
     # and one assertion among them is NOT lost: "a non-routine region in the chain is not a
     # declaration" -- the closer <> "" filter -- is pinned where that filter actually runs, at
-    # occurrences_test.sd7:427-440 ("a carrier with no region at all is not handed the phantom
+    # occurrences_test.sd7 ("a carrier with no region at all is not handed the phantom
     # region at line 0"), which is production code with a real caller. The other three tested a
     # convenience wrapper no production path ever called.
     report("blocks");

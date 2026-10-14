@@ -147,6 +147,20 @@ const func string: initFrame (in integer: id, in string: workspaceJson) is func
            "}}";
   end func;
 
+# "line0:col16" of the i'th occurrence, or "none" for an index outside the array -- the degrading
+# rule occurrences_test.sd7's `at', `dotAt' and `recAt' follow, because a bare `capOps[6]' on a list
+# a mutant shortened would raise INDEX_ERROR on stdout and cost the suite its graded line instead of
+# naming the check. Same name and same shape as the sibling suite's `at', narrower in what it
+# returns: this check pins a position, not a width.
+const func string: at (in array occurrence: oc, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(oc) then
+      out := str(oc[i].line0) <& ":" <& str(oc[i].col16);
+    end if;
+  end func;
+
 const proc: main is func
   local
     var rpcMsg: msg is rpcMsg.value;
@@ -365,7 +379,7 @@ const proc: main is func
     check("five lines down the cursor is an operator, not a name",
           cursor(capUri, 5, 8).word, ":=");
     check("and that operator IS among the records the truncated list holds",
-          str(capOps[6].line0) <& ":" <& str(capOps[6].col16), "5:6");
+          at(capOps, 6), "5:6");
     p := prepareRenameAnswer(openDocs[capUri], 0 times symRec.value,
                              cursor(capUri, 5, 8), capUri, clientCanApplyEdits);
     check("so the refusal calls the missing class what it is: names",

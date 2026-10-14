@@ -326,7 +326,7 @@ const proc: main is func
     check("the same name on its own declaration line is no field",
           bindPin(b), "pix||FALSE|FALSE|FALSE|0");
     b := bind(text, syms, "total", 38, lastLine, DOC);
-    check("a routine's own name used outside its region is over-included, not proven",
+    check("another routine's local, cursor outside its region, is over-included, not proven",
           bindPin(b), "total|field|FALSE|FALSE|FALSE|0");
 
     # The two shapes of one spelling, pinned separately. `pix' here is bound by nothing -- no

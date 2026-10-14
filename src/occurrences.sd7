@@ -275,13 +275,13 @@ const func blockRef: innermostRegion (in array blockRef: regions, in integer: li
 # because the flag is set only for a buffer record that carries `name' in its scope, which is
 # exactly the TRUE case of this function. Measured by WEAKENING this predicate, not by switching
 # the guard off: replace the body test below with `out := syms[i].name = name;' and the
-# occurrences_test.sd7 check "a routine's own name used outside its region is over-included, not
-# proven" drops from `total|field' to `total|' -- `total' is carried only as a scope entry, so the
-# arm this mutant drops is the arm row 1 needs to set the flag, while the dot-arm field checks stay
-# green because row 4 runs outside the guard. The guard-off mutant (`return FALSE') CANNOT
+# occurrences_test.sd7 check "another routine's local, cursor outside its region, is over-included,
+# not proven" drops from `total|field' to `total|' -- `total' is carried only as a scope entry, so
+# the arm this mutant drops is the arm row 1 needs to set the flag, while the dot-arm field checks
+# stay green because row 4 runs outside the guard. The guard-off mutant (`return FALSE') CANNOT
 # falsify this claim and is not the proof: it skips row 1 for EVERY name, so those labels vanish
-# whether or not the guard is safe. If a field answer ever goes missing with the rows left
-# running, the claim is FALSE and only `blockRegions' may be gated.
+# whether or not the guard is safe. If a field answer ever goes missing with the rows left running,
+# the claim is FALSE and only `blockRegions' may be gated.
 const func boolean: bufferCouldBind (in array symRec: syms, in string: name,
                                      in string: docPath) is func
   result
