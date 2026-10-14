@@ -149,6 +149,12 @@ const type: binding is new struct
     # library record's line1 counts lines in a file the client never opened, so a range built
     # from it would point at the wrong buffer.
     var integer: declLine1 is 0;
+    # The symRec index of the routine whose scope entry row 1 matched -- the record that decides
+    # WHOSE local this is, so a caller reads it here instead of re-walking the records-and-entries
+    # cross product and drifting from that answer. It is the FIRST row-1 match (the loop body is
+    # gated on `out.owner = ""'), not the first record CARRYING the name. 0 unless `owner' is
+    # "local", and 0 is a degradation: a caller must test it before indexing `syms[ownerSym]'.
+    var integer: ownerSym is 0;
     # The regions a shadowing scope takes out of a global's scope. Kept as regions rather than
     # as a pre-filtered occurrence array because rename needs the declaration line as well, and
     # because the filter is inScope's job and only its job.
@@ -344,6 +350,7 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
                   out.scopeStart := region.startLine;
                   out.scopeStop := region.endLine;
                   out.declLine1 := syms[i].locals[scopeIdx].line1;
+                  out.ownerSym := i;
                   # A cursor below the matched region sits in a NESTED routine, which reflection
                   # never reports as a symRec -- so its own scope may carry this name and nothing
                   # in this resolution can see it. Regions are lexical, so the depth is measurable.

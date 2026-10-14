@@ -13,6 +13,18 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     end if;
   end func;
 
+# "name/line1" of syms[i], or "none" for an index outside the array -- the shape of an UNSET
+# ownerSym. Degrading, not indexing syms[0], keeps a mutant's INDEX_ERROR off stdout, where it
+# would cost the suite its graded line rather than name the check that failed.
+const func string: recAt (in array symRec: syms, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(syms) then
+      out := syms[i].name <& "/" <& str(syms[i].line1);
+    end if;
+  end func;
+
 const func string: readAll (in string: path) is func
   result
     var string: out is "";
@@ -242,6 +254,12 @@ const proc: main is func
     check("and its scope is that routine's region, not the first one's",
           scopePin(b), "25-31");
     check("and it keeps its own three occurrences", linesPin(inScope(oc, b)), "27 29 30");
+    # Pinned by NAME and line, so it does not shift when a task adds a record above it. beta is
+    # the witness because alpha carries `count' earlier in record order and is skipped (region
+    # 16-23 does not hold the cursor), so this names the OWNER, not the first carrier. Written
+    # after the field existed, so it passes on sight; the mutant that reddens it is in the commit.
+    check("the local binding carries the record whose scope holds it", recAt(syms, b.ownerSym),
+          "beta/26");
     # a local VARIABLE of the routine the cursor is in, declared two lines below its header
     b := bind(text, syms, "total", 20, lastLine, DOC);
     check("a local variable binds like a parameter",
