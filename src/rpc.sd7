@@ -1,6 +1,7 @@
 $ include "seed7_05.s7i";
   include "json.s7i";
   include "strifile.s7i";
+  include "utf8bytes.sd7";
   include "jsonw.sd7";
   include "transport.sd7";
 
@@ -55,10 +56,12 @@ const func string: joinSurrogates (in string: stri) is func
     while i <= length(stri) do
       hi := ord(stri[i]);
       paired := FALSE;
-      if hi >= 55296 and hi <= 56319 then
+      if isHighSurrogate(hi) then
         if i < length(stri) then
           lo := ord(stri[succ(i)]);
-          if lo >= 56320 and lo <= 57343 then
+          if isLowSurrogate(lo) then
+            # 65536 here is the astral base of the pair formula, not a width rule -- the bounds
+            # above are utf8bytes', which is also what jsonw refuses to write raw.
             out := out & str(chr(((hi - 55296) * 1024) + (lo - 56320) + 65536));
             paired := TRUE;
             i := succ(i);
@@ -72,6 +75,37 @@ const func string: joinSurrogates (in string: stri) is func
     end while;
   end func;
 
+# Does this string hold any code point the fold could touch? One scan, no allocation.
+# The fold returns a string with no surrogate IDENTICAL to its input, so no black-box input
+# separates the guarded path from the unguarded one and no mutant can redden a check -- what
+# justifies the guard is a measurement, taken the way AGENTS.md requires: profiled AND optimised
+# build, table read off profile_out, 50 strAt calls on the `text' of a 234-line didOpen body
+# (11 466 characters, no surrogate anywhere). Command: s7c -p -O2 -l src <probe>, then run it.
+#
+#     226 310 us  joinSurrogates (50 calls)  <- 4 529 us per call: the unconditional fold
+#      23 926 us  hasSurrogate   (50 calls)  <-   478 us per call: the scan that skips it
+#
+# Both halves of this were measured twice and the first pair of numbers was wrong, so they are
+# recorded as corrected rather than as tidy: my first probe inlined the range test and reported
+# 17 us, while the shipped scan calls the shared predicate and measured 1 392 us; collapsing
+# utf8bytes.isSurrogate from `isHigh or isLow' to one ranged test is what brought it to 478 us.
+# Every string in every request arrives through strAt, document text included, so the copy is paid
+# on each didChange. The two rpc_test checks that keep the guard honest are the pair fold at
+# :76-77 -- a real escaped pair must still come back as ONE character through strAt, which a guard
+# that always took the fast path would break -- and "BMP text is untouched" at :57.
+const func boolean: hasSurrogate (in string: stri) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(stri) do
+      if not out then
+        out := isSurrogate(ord(stri[i]));
+      end if;
+    end for;
+  end func;
+
 const func string: strAt (in jsonValue: obj, in string: name,
                           in string: fallback) is func
   result
@@ -81,7 +115,11 @@ const func string: strAt (in jsonValue: obj, in string: name,
   begin
     found := atKey(obj, name);
     if category(found) = JSON_STRING then
-      value := joinSurrogates(string(found));
+      value := string(found);
+      # Only the strings that need it pay the copy; see hasSurrogate for the measurement.
+      if hasSurrogate(value) then
+        value := joinSurrogates(value);
+      end if;
     else
       value := fallback;
     end if;

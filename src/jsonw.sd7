@@ -1,4 +1,5 @@
 $ include "seed7_05.s7i";
+  include "utf8bytes.sd7";
 
 const type: jsonWriter is new struct
     var string: buf is "";
@@ -7,14 +8,21 @@ const type: jsonWriter is new struct
 const func string: hexByte (in integer: value) is
   return str(value radix 16 lpad0 2);
 
+# The four-hex-digit form `\uXXXX' needs, for a code point above FF. Same shape as hexByte, and
+# next to it because both are the JSON escape's number formatting.
+const func string: hexQuad (in integer: value) is
+  return str(value radix 16 lpad0 4);
+
 const proc: jsonEscape (inout string: buf, in string: stri) is func
   local
     var integer: i is 0;
+    var integer: cp is 0;
     var char: ch is ' ';
   begin
     buf &:= "\"";
     for i range 1 to length(stri) do
       ch := stri[i];
+      cp := ord(ch);
       if ch = '"' then
         buf &:= "\\\"";
       elsif ch = '\\' then
@@ -25,8 +33,16 @@ const proc: jsonEscape (inout string: buf, in string: stri) is func
         buf &:= "\\r";
       elsif ch = '\9;' then
         buf &:= "\\t";
-      elsif ord(ch) < 32 then
-        buf &:= "\\" <& "u00" <& hexByte(ord(ch));
+      elsif cp < 32 then
+        buf &:= "\\" <& "u00" <& hexByte(cp);
+      elsif isSurrogate(cp) then
+        # utf8bytes owns this bound; rpc.joinSurrogates reads the same one. A surrogate is a legal
+        # SEED7 character (chr(55296) exists, and rpc keeps an unpaired one on purpose), but the
+        # server's UTF-8 writer emits its three-byte CESU-8 form -- measured as ED A0 80, a count
+        # utf8CharLength agrees with, so the frame survives and the bytes stay invalid. Escaping is
+        # what makes the JSON and the stream agree. Everything outside the range stays raw, so a
+        # real astral character and all of BMP text keep arriving readable.
+        buf &:= "\\u" <& hexQuad(cp);
       else
         buf &:= stri[i .. i];
       end if;

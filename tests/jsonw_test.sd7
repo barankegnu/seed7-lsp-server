@@ -6,6 +6,8 @@ $ include "seed7_05.s7i";
 const proc: main is func
   local
     var jsonWriter: w is jsonWriter.value;
+    var jsonWriter: s is jsonWriter.value;
+    var string: out is "";
   begin
     openObject(w);
       field(w, "message"); addStr(w, "ä€ 日本 \" \\ \n \9; end");
@@ -16,8 +18,67 @@ const proc: main is func
       openArray(w); addInt(w, 1); addInt(w, 2); closeArray(w);
       field(w, "nul"); addNull(w);
     closeObject(w);
-    check("emit", finishJson(w),
+    # The one check that compares TEXT: nothing here holds a lone surrogate, so the failure print
+    # cannot raise. It is also the suite's own positive control on BMP and control characters.
+    out := finishJson(w);
+    check("emit", out,
           "{\"message\":\"ä€ 日本 \\\" \\\\ \\n \\t end\",\"line\":0,\"ok\":true," &
           "\"ctrl\":\"\\u0001\\u0007\",\"arr\":[1,2],\"nul\":null}");
+    check("and the BMP text is not escaped away by the surrogate rule",
+          str(pos(out, "ä€ 日本") <> 0) <& "/" <& str(pos(out, "\\u0001") <> 0), "TRUE/TRUE");
+    # ---- a lone surrogate: rpc.joinSurrogates keeps it on purpose, so the writer must not ----
+    # A client that sends an unpaired `\ud800' gets that code point back as ONE character (the
+    # fold is total by construction: a stray high, a stray low and a high followed by a non-low
+    # all pass through, and rpc_test pins each). jsonw wrote any character >= 32 as it stood, so
+    # the server put ED A0 80 on the protocol channel -- measured with a probe writing
+    # chr(55296) to STD_UTF8_OUT: 3 bytes, exactly what utf8bytes.utf8CharLength claims, so
+    # Content-Length agreed and nothing raised, and the bytes are not valid UTF-8. Reachable path
+    # today: a `newName' echoed into the refusal line and into window/logMessage (rename.sd7
+    # composes `why' from the client's own string before it rejects the name).
+    #
+    # These assert on what the buffer HOLDS, never on its text. lsp_tst.sd7's check prints the
+    # value it was handed, and printing a lone surrogate raises RANGE_ERROR at fil_rtl.c(2912) --
+    # measured: the first draft of this block killed the suite mid-report, which is the
+    # exception-reaching-the-output-channel failure the repo forbids in a test as much as in the
+    # server. So every line below compares TRUE/FALSE and a length.
+    s := jsonWriter.value;   # finishJson does not clear the buffer
+    openObject(s);
+      field(s, "x"); addStr(s, "a" <& str(chr(55296)) <& "b");
+    closeObject(s);
+    out := finishJson(s);
+    check("a lone high surrogate leaves as an escape, not as raw bytes",
+          str(pos(out, "\\ud800") <> 0) <& "/" <& str(pos(out, str(chr(55296))) <> 0) <& "/" <&
+          str(length(out)), "TRUE/FALSE/16");
+    s := jsonWriter.value;   # finishJson does not clear the buffer
+    openObject(s);
+      field(s, "x"); addStr(s, "a" <& str(chr(56320)) <& "b");
+    closeObject(s);
+    out := finishJson(s);
+    check("and so does a lone low",
+          str(pos(out, "\\udc00") <> 0) <& "/" <& str(pos(out, str(chr(56320))) <> 0),
+          "TRUE/FALSE");
+    # The positive controls. This is about the two ranges no UTF-8 encoder can represent, not about
+    # making every character above 127 safe: escape everything >= 55296, or widen the bound past
+    # 57343, and these go red. The lengths were read off a probe that printed each buffer with any
+    # non-ASCII character shown as <codepoint> -- 16 for the escaped high because `\ud800' is SIX
+    # characters where the raw surrogate was one, 11 for the astral because a real astral
+    # character is ONE character and is left alone, 10 for the two just outside the range.
+    # (Each block starts a fresh writer: finishJson returns the buffer but does not clear it, so
+    # the first draft's lengths were cumulative and two of the three I wrote by hand were wrong.)
+    s := jsonWriter.value;   # finishJson does not clear the buffer
+    openObject(s);
+      field(s, "x"); addStr(s, "a" <& str(chr(128512)) <& "b");
+    closeObject(s);
+    out := finishJson(s);
+    check("while a real astral character still leaves as itself",
+          str(pos(out, str(chr(128512))) <> 0) <& "/" <& str(length(out)), "TRUE/11");
+    s := jsonWriter.value;   # finishJson does not clear the buffer
+    openObject(s);
+      field(s, "x"); addStr(s, "" <& chr(55295) <& chr(57344));
+    closeObject(s);
+    out := finishJson(s);
+    check("and the code points just outside both ranges are untouched",
+          str(pos(out, str(chr(55295))) <> 0) <& "/" <& str(pos(out, str(chr(57344))) <> 0) <&
+          "/" <& str(length(out)), "TRUE/TRUE/10");
     report("jsonw");
   end func;

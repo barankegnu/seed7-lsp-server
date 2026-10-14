@@ -475,6 +475,27 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     about **40 ms per full-document pass** at an average of ~126 occurrences per name — the figure
     behind "one request, one pass" in §3. It checks termination and finding, NOT columns; those are
     pinned by the astral checks in Tasks 1, 4 and 9.
+16. **A lone surrogate left the server as three bytes that are not valid UTF-8, and the fold was
+    copying every string on the request path.** Two findings, one bound. (a) Task 13 made
+    `joinSurrogates` total by construction — a stray high, a stray low and a high followed by a
+    non-low all pass through, each pinned in `rpc_test.sd7`. Total on the *inside*, raw on the
+    *outside*: `jsonw` wrote any character ≥ 32 as it stood, and Seed7's UTF-8 writer encodes a
+    surrogate as its CESU-8 form. Measured by writing `chr(55296)` to `STD_UTF8_OUT`: bytes
+    `41 ED A0 80 42` for `"A" & chr(55296) & "B"` — 5 bytes, which is exactly what
+    `utf8bytes.utf8CharLength` claims for it, so `Content-Length` agreed, nothing raised and the
+    stream stayed framed while the bytes stayed undecodable. `jsonw` now escapes `55296..57343` as
+    `\udXXX`; everything outside the range still leaves as itself, which `jsonw_test.sd7` pins at
+    55295, 57344 and 128512 so the branch cannot be widened by accident. The bounds live in
+    `utf8bytes` (invariant 3 extended), because the writer and the folder must not disagree about
+    where the range is. No crash was ever at stake — the Standards review's `RANGE_ERROR` worry was
+    disproved by measurement — but a mangled name in a refusal line is a bug the client cannot fix.
+    (b) `strAt` folded unconditionally, so a document-sized body paid one allocation per character
+    on every `didChange`. Measured with `s7c -p -O2 -l src`, 50 `strAt` calls on the `text` of a
+    234-line didOpen body (11 466 characters, no surrogate anywhere): **4 529 µs per call**
+    folding, **478 µs per call** for the scan that skips it. A guard whose two paths are the same
+    function — no input separates them, so no check can redden it and it is labelled as such; the
+    pair-fold check at `rpc_test.sd7:76-77` is what would catch a guard that skipped too eagerly.
+
 15. **`blocks.enclosingDeclarations` and `blocks.declarationRegion` were dead on arrival.** Task 3
     produced them for Task 6, and Task 6 grew its own pairing instead: `resolveBinding` scans
     `blockRegions` once and calls `routineRegionFor` per candidate, then `regionOwner`/`ownsRegion`

@@ -167,8 +167,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    directly is why this one is here.
 2. Only `src/doc_store.sd7` converts LSP positions to string offsets.
 3. Only `src/utf8bytes.sd7` **declares** the width rules: `utf8CharLength`,
-   `utf8Length`, and `utf16CharLength`. `src/transport.sd7`, `src/scan.sd7`, and
-   `src/doc_store.sd7` include it; nothing else re-derives a threshold.
+   `utf8Length`, and `utf16CharLength` — and the surrogate bounds (`isHighSurrogate`,
+   `isLowSurrogate`, `isSurrogate`), because the writer that must not emit bytes no JSON decoder
+   owes the server (`jsonw`) and the reader that folds a pair (`rpc.joinSurrogates`) have to agree
+   on where that range is. `src/transport.sd7`, `src/scan.sd7`, `src/doc_store.sd7`,
+   `src/jsonw.sd7` and `src/rpc.sd7` include it; nothing else re-derives a threshold.
    `src/transport.sd7` owns every **outbound byte count** — `Content-Length` is its
    arithmetic and no other file emits one. `src/doc_store.sd7` owns position conversion
    and may consume a byte-valued column only to turn it into a character column
