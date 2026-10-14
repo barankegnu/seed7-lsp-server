@@ -233,6 +233,17 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   line would sometimes rewrite the wrong symbol. Measured cost: it also refuses a legal rename of
   `const integer: x is 1; const integer: y is x;`. Refusal on a write is the rule — do not "fix" the
   over-refusal with a column test unless regions become column-aware.
+- `rename` also refuses when the symbol's own scope window holds the same spelling written after a
+  `.' — a record field (`counter := counter + box.counter;`). Measured on `m5-review-fixes`: before
+  the arm, the cursor on that local answered six edits, two of them the field access, and the
+  field's declaration sits outside the window, so the write renames the field's uses and leaves the
+  field — a file that no longer compiles, silently. The flag is `occurrence.dotPrev`, stamped in
+  `occurrencesOf` (the only pass that knows the previous token), and the predicate is
+  `occurrences.scopeHasFieldAccess`, which applies scope: a field access in another routine must
+  not refuse this one's rename, and `features_test.sd7` pins that control. Measured cost: a
+  **global** refuses on a field access anywhere in its file, because a global's window is the whole
+  document. `references` keeps the over-inclusive list but now sets `unresolved` for it — spec
+  12.2's split, read may over-include, write must not.
 - Column 0 is the *object-form* error path (`storePositionedErrorLine`), not "all
   semantic errors": `NO_MATCH`, `DECL_FAILED`, `REDECLARATION`, `PREVIOUS_DECLARATION`
   and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the

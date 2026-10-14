@@ -179,6 +179,59 @@ const func string: ambigText is func
            "  end func;\n";
   end func;
 
+# The field-clash fixture: `counter' is BOTH a routine's local and a struct's field, and the
+# routine reads `box.counter'. This is spec 12.2's case -- `w.pix is pervasive in real Seed7' --
+# and the shape the write path must refuse: the local's scope window holds the field ACCESS but
+# not the field's declaration, so an edit list built from the spelling alone rewrites two
+# different symbols. Pinned at diags 0, so every column in the expectations below is a line of
+# this text.
+const func string: fieldClashText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "const type: Widget is new struct\n" <&
+           "    var integer: counter is 0;\n" <&
+           "    var integer: total is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "var integer: total is 0;\n" <&
+           "\n" <&
+           "const proc: show (in Widget: box) is func\n" <&
+           "  local\n" <&
+           "    var integer: counter is 0;\n" <&
+           "  begin\n" <&
+           "    counter := box.counter + 1;\n" <&
+           "    counter := counter + box.counter;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: tally (in integer: n) is func\n" <&
+           "  local\n" <&
+           "    var integer: counter is 0;\n" <&
+           "  begin\n" <&
+           "    counter := n + 1;\n" <&
+           "    counter := counter + n;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var Widget: b is Widget.value;\n" <&
+           "  begin\n" <&
+           "    b.counter := 1;\n" <&
+           "    b.total := total;\n" <&
+           "    show(b);\n" <&
+           "    tally(b.counter);\n" <&
+           "  end func;\n";
+  end func;
+
+# The field refusal's tail, spelled once for the same reason as DECL_AMBIG_TAIL: the two rename
+# methods prefix their own method name and nothing else differs.
+const string: FIELD_TAIL is
+    " appears after a `.' inside its own scope, so the edit list would rewrite a record field of"
+    <& " the same name as well as the symbol the cursor named, and the field's declaration is not"
+    <& " in that list";
+
 # The refusal sentence's tail, spelled once because the word under the cursor is the only part
 # that differs: prepareRename prefixes one method name, rename the other, and each of the three
 # measured reaches names its own symbol.
@@ -363,6 +416,11 @@ const proc: main is func
     var wordRef: aword is wordRef.value;
     var string: ambigPath is "/tmp/tt_ambig.sd7";
     var string: ambigUri is "file:///tmp/tt_ambig.sd7";
+    var lsDoc: fdoc is lsDoc.value;
+    var array symRec: fsyms is 0 times symRec.value;
+    var docAnalysis: fd is docAnalysis.value;
+    var string: fPath is "/tmp/tt_field.sd7";
+    var string: fUri is "file:///tmp/tt_field.sd7";
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -853,6 +911,70 @@ const proc: main is func
           <& "\"character\":32},\"end\":{\"line\":9,\"character\":37}},\"newText\":\"amount\"},"
           <& "{\"range\":{\"start\":{\"line\":11,\"character\":20},\"end\":{\"line\":11,"
           <& "\"character\":25}},\"newText\":\"amount\"}]}}");
+
+    # ---- a field access inside the symbol's own scope (spec 12.2) --------------------------
+    # Measured on this fixture BEFORE the refusal arm existed (the run is in this branch's first
+    # commit message): prepareRename accepted the cursor and rename answered SIX edits -- line 11
+    # character 17 (the local's own declaration), line 13 characters 4 and 19, line 14 characters
+    # 4, 15 and 29 -- of which line 13 character 19 and line 14 character 29 are `box.counter'.
+    # The field's declaration is at line 3, OUTSIDE the window (10..15), so applying those edits
+    # renames the field's USES and leaves the field: analysing the renamed text raises
+    # `Match for {box . amount }' and `Declaration of "show (ref Widget: box)" failed'. A write
+    # refuses rather than guessing. The target is `amount', not `total' -- `total' is a global in
+    # this file, and a rename onto a declared name is the collision arm, not this one.
+    setVersion(fdoc, fieldClashText(), 1);
+    fd := analyzeAll(fdoc.text, noDirs, fPath);
+    fsyms := fd.syms;
+    check("the field-clash fixture analyses clean", str(length(fd.parsed.diags)), "0");
+    check("the cursor is on show's local, not on the field access beside it",
+          wordAt(fdoc, 13, 6).word <& ":" <& str(wordAt(fdoc, 13, 6).character1), "counter:4");
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, TRUE);
+    check("a field access inside the scope refuses prepareRename", str(pc.refused), "TRUE");
+    check("and names the field as the reason", pc.why, "prepareRename: counter" <& FIELD_TAIL);
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, "amount", TRUE);
+    check("rename refuses the identical cursor rather than rewriting the field",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("with the predicate's own sentence under this method's name", rn.why,
+          "rename: counter" <& FIELD_TAIL);
+    # The read keeps spec 12.2's over-inclusive list, and that is the decision -- but the list was
+    # SILENT. Measured before the disclosure: the same cursor answered its six locations with
+    # unresolved FALSE and no log line, and a resolved answer is what a client reads as "these are
+    # the symbol's uses". So what is new here is the disclosure, not the width.
+    ra := referencesAnswer(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, FALSE);
+    check("references still lists every token of this spelling", str(uriCount(ra.json)), "6");
+    check("but says the list also holds a name written after a dot", str(ra.unresolved), "TRUE");
+    check("in its own sentence", ra.why,
+          "references: counter is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
+    # The positive control, same document, same spelling, no field access in ITS scope: tally's
+    # local still renames all four records. True today and true after the arm, and that is what
+    # makes it a control -- what it would catch is an arm keyed on the document or on the type
+    # instead of on scope, which is why it is one of the two checks the no-scope mutant reddens.
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, TRUE);
+    check("a local with no field access in its scope is still renamable",
+          str(pc.refused), "FALSE");
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, "amount", TRUE);
+    check("and all four of its records are edited", str(editCount(rn.json)), "4");
+    ra := referencesAnswer(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, FALSE);
+    check("and its references stay silent, because there is nothing to disclose",
+          str(ra.unresolved) <& " " <& str(uriCount(ra.json)), "FALSE 4");
+    # The scope cost, measured rather than inferred. A global's window is the whole document, so
+    # the same arm refuses the GLOBAL `total' for `b.total' at line 31 -- the refusal is correct
+    # (renaming `total' would rewrite a field whose declaration the window also holds, at line 4,
+    # under a name the struct never had) but it is an over-refusal for the case where the field
+    # and the global are separable by column, which this index has no column for. Spec 12.2's
+    # listed cost, stated plainly: the fix is the token-level index over `const type ... end
+    # struct', not a narrower test here.
+    # `character1' is the 0-based UTF-16 column -- the same unit occurrence.col16 carries, which
+    # is why cursorName can compare them directly. `column1' beside it is 1-based.
+    check("the cursor is on the global's own declaration",
+          wordAt(fdoc, 7, 15).word <& ":" <& str(wordAt(fdoc, 7, 15).character1), "total:13");
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, TRUE);
+    check("a global refuses on a field access anywhere in its window", str(pc.refused), "TRUE");
+    check("naming the same reason", pc.why, "prepareRename: total" <& FIELD_TAIL);
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, "amount", TRUE);
+    check("and rename will not half-rewrite it", str(rn.error = "") <& " " <& rn.json,
+          "TRUE null");
 
     # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
     # FIRST of them, so the record the range would take IS in the truncated list -- the gap that

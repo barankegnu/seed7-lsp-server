@@ -121,6 +121,24 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
             out.why := out.why <& ", and the list is truncated at " <& str(MAX_OCCURRENCES);
           end if;
         end if;
+        # Spec 12.2's over-inclusive read, now said out loud. A BINDING that resolved is the one
+        # case that was silent: measured before this block, the field-clash cursor answered six
+        # locations with unresolved FALSE and no log line, and a client reads a resolved answer as
+        # "these are the symbol's uses". The list still includes the field access -- that is the
+        # branch 12.2 chose for a read, and §9 keeps its count pinned -- but it no longer claims
+        # more than it knows. An UNBOUND name needs nothing here: the arm above already says every
+        # occurrence of the spelling is listed, which covers the field tokens too.
+        if b.resolved and scopeHasFieldAccess(oc, b) then
+          out.unresolved := TRUE;
+          if out.why = "" then
+            out.why := "references: " <& word.word <& " is bound, but the list also holds a"
+                       <& " name written after a `.', which may be a record field of the same"
+                       <& " name";
+          else
+            out.why := out.why <& ", and a name written after a `.' may be a record field of"
+                       <& " the same name";
+          end if;
+        end if;
       end if;
     end if;
   end func;

@@ -106,9 +106,12 @@ const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) i
 # whole refusal list: no client that can apply the edit, a library buffer (R-F10 unpaid, so its
 # symbol lines come from disk and an edit could land on the wrong one -- spec 12.3), a token that
 # is not a name, a keyword, a symbol declared outside this buffer, a binding that resolved
-# nowhere, and a scope that may be shorter than the truth (R35: nested routines and unpaired
-# one-line routines). Branch is on resolved / scopeUncertain / owner (R40); owner "field" is not
-# a special case, it is simply unresolved. occurrencesOf runs ONCE and the same array goes to
+# nowhere, a scope that may be shorter than the truth (R35: nested routines and unpaired one-line
+# routines), a declaration line that holds more than one record of the name (R51), a scope that
+# also holds a record field of the same spelling (spec 12.2, measured in features_test.sd7: the
+# edit list rewrites `box.counter' but not the field, so the file stops compiling), and a list
+# truncated at the cap. Branch is on resolved / scopeUncertain / owner (R40); owner "field" is
+# not a special case, it is simply unresolved. occurrencesOf runs ONCE and the same array goes to
 # resolveBinding and to the range (R39).
 const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
                                         in wordRef: word, in string: docUri,
@@ -172,6 +175,19 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
                         <& " a declaration found by line cannot choose between the two, so a"
                         <& " rename could rewrite the routine or the parameter when the cursor"
                         <& " named the other one";
+        elsif scopeHasFieldAccess(out.oc, out.b) then
+          # Spec 12.2's fork, taken in 12.1's direction. The cursor names a symbol of this file
+          # and the binding resolved, so every arm above is silent -- but the same spelling also
+          # follows a `.' inside this scope, and that token is a record field of a DIFFERENT
+          # symbol whose declaration sits outside the window. Editing it renames the field's uses
+          # and leaves the field, which is a file that no longer compiles, and no arm below can
+          # see it. Measured: the preposition is load-bearing -- the same document renames a
+          # second routine's identically-spelled local in four edits, because that routine has no
+          # field access in its scope (features_test.sd7).
+          out.reason := word.word <& " appears after a `.' inside its own scope, so the edit"
+                        <& " list would rewrite a record field of the same name as well as the"
+                        <& " symbol the cursor named, and the field's declaration is not in that"
+                        <& " list";
         elsif out.b.capped then
           # R47, and the case the slot = 0 branch above cannot speak for: there the cursor is
           # missing from the list, here the CURSOR IS LISTED and its range is known, but the list

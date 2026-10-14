@@ -27,6 +27,12 @@ const type: occurrence is new struct
     var integer: col16 is 0;      # UTF-16 column, carried by nextToken
     var integer: width16 is 0;    # in UTF-16 units, so a range needs no re-scan
     var integer: kind is 0;       # TK_NAME or TK_OP -- nothing else is indexable
+    # TRUE when the token immediately before this one, ON THE SAME LINE, is `.' -- a record
+    # field access. Carried on the record because the pass that finds the occurrence is the only
+    # place the previous token is known, and a caller must not re-walk the text to ask the
+    # question (see `scopeHasFieldAccess'). Same line-granular limit as dotSelected's shortcut: a
+    # `box.' that ends a line and a `counter' that starts the next is NOT a field access here.
+    var boolean: dotPrev is FALSE;
   end struct;
 
 # The most occurrences one pass reports. Appending stops at MAX_OCCURRENCES + 1 so that
@@ -53,19 +59,28 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
     var scanCursor: cur is scanCursor.value;
     var tok: tk is tok.value;
     var occurrence: one is occurrence.value;
+    var string: prev is "";
+    var integer: prevLine is 0;
+    var string: tokenText is "";
   begin
     while cur.offset <= length(text) and length(out) <= MAX_OCCURRENCES do
       skipWhitespace(text, cur);
       if cur.offset > length(text) then
       else
         tk := nextToken(text, cur);
-        if indexableKind(tk.kind) and text[tk.start .. tk.stop] = name then
+        tokenText := text[tk.start .. tk.stop];
+        if indexableKind(tk.kind) and tokenText = name then
           one.line0 := tk.line0;
           one.col16 := tk.col16;
           one.width16 := tk.width16;
           one.kind := tk.kind;
+          # Stamped on every record this appends, so the loop-carried `one' cannot carry a flag
+          # over from the previous match -- the R21 shape, a field the guard does not re-stamp.
+          one.dotPrev := prev = "." and prevLine = tk.line0;
           out &:= one;
         end if;
+        prev := tokenText;
+        prevLine := tk.line0;
       end if;
     end while;
   end func;
@@ -395,6 +410,27 @@ const func array occurrence: inScope (in array occurrence: oc, in binding: b) is
     for i range 1 to length(oc) do
       if inScopeLine(b, oc[i].line0) then
         out &:= oc[i];
+      end if;
+    end for;
+  end func;
+
+# TRUE when the scope window holds a name written after a `.' -- a record field whose spelling
+# happens to equal this symbol. Spec 12.2 left fields as an open fork and named the cost ("w.pix
+# is pervasive in real Seed7"); what ships is 12.1's rule applied to that fork. The READ may
+# over-include provided it says so, so references asks this for its disclosure; the WRITE may not,
+# so renameDecision asks it for an arm. It lives here, and not in a feature, because it applies
+# scope, and scope is applied in this module and nowhere else (invariant 6). A feature that asked
+# "is there a dot anywhere in the file" instead would refuse a clean rename for a field access in
+# another routine -- which is the wrong answer, and why features_test.sd7 pins the control.
+const func boolean: scopeHasFieldAccess (in array occurrence: oc, in binding: b) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(oc) do
+      if not out and oc[i].dotPrev then
+        out := inScopeLine(b, oc[i].line0);
       end if;
     end for;
   end func;

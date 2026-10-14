@@ -86,7 +86,11 @@ for the same symbol, refusing rather than guessing — a library symbol, a keywo
 cannot prove, a scope it cannot fully see (a nested routine's locals are invisible to
 reflection), a `.s7i` buffer while R-F10 stands, or a client that did not declare
 `workspace.applyEdit`. A refusal is `null`, never an error, so editors grey the item out; a bad
-new name is `-32602`. Rename is file-local by decision: it will not half-rename a project.
+new name is `-32602`. Rename is file-local by decision: it will not half-rename a project. A
+symbol whose scope also holds the same spelling after a `.' — a record field, `w.counter` beside
+a local `counter` — is refused rather than rewritten, because the field's declaration is a
+different symbol the window does not hold; `references` keeps listing those tokens but says the
+list may include a field.
 
 Scanner-backed features: `foldingRange` for declaration bodies, control blocks, comments,
 and include runs (no fold for a single-line construct); `selectionRange` enclosing by line

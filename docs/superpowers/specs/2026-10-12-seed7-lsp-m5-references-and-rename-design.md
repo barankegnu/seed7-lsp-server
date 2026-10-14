@@ -485,6 +485,23 @@ raised is settled above or in §2 as a builder's call.
    token-level index over `const type … end struct` regions. Field names repeat across structs,
    and `w.pix` is pervasive in real Seed7, so this is a permanent row-4 case on well-formed code,
    not the truncated-buffer exception §9 pins.
+   **Answered on `m5-review-fixes`, by measurement first.** A `pix` token that follows a `.` is
+   now recognised — `occurrence.dotPrev`, stamped in `occurrencesOf`'s existing walk, which is the
+   only place the previous token is known. The **write refuses** on it, in `renameDecision`, when
+   the field access lies inside the symbol's own scope window: measured on `Widget` with a field
+   `counter` read as `box.counter` by the routine whose local is also `counter`, the pre-state
+   answered `prepareRename` accepted and `rename` six edits, two of them the field access; the
+   field's declaration is at line 3 and the window is 10..15, so applying those edits renames the
+   field's uses and leaves the field, and the renamed text raises `Match for {box . amount }`.
+   The **read stays over-inclusive** — §9's count is unchanged — but it no longer claims certainty:
+   the same cursor answered six locations with `unresolved FALSE` and no log line before, and now
+   sets `unresolved` with its own sentence. Two costs, both recorded rather than argued away: a
+   **global** refuses on a field access anywhere in the file, because a global's window *is* the
+   document (measured: `total` declared at line 8, read as `b.total` at line 31); and the fork's
+   third branch — a token-level index over `const type … end struct` regions, which would rename
+   the field and its uses together — is still unbuilt, so a user wanting that gets a refusal, not
+   a wrong answer. §9's `pix` in TWO structs is still not a fixture: `dotPrev` recognises the
+   access but nothing here separates the two fields, so both spellings stay one symbol.
 3. **Does M5 answer `rename` on a `.s7i` buffer?** Ship it and document the staleness, refuse
    there until R-F10 is paid, or match only `BUFFER_FILE` as "this buffer" (which quietly makes
    every library file a row-4 case).

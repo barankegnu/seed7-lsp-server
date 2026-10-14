@@ -528,6 +528,18 @@ const proc: main is func
     oc := occurrencesOf("discount := 1;\n", "count");
     check("a name that is only a substring of a longer name is not an occurrence",
           str(length(oc)), "0");
+    # `dotPrev' is what lets the write path refuse a record field (spec 12.2). These four pin the
+    # flag itself. They are NOT the proof: the refusal checks in features_test.sd7 were written
+    # first and went red against the shipped code, and replacing this stamp with FALSE reddens
+    # them again -- which is what makes the flag load-bearing rather than decorative.
+    oc := occurrencesOf("total := box.total + 1;\n", "total");
+    check("a name written after a dot is marked", str(oc[2].dotPrev), "TRUE");
+    check("and the same spelling at the start of the line is not", str(oc[1].dotPrev), "FALSE");
+    oc := occurrencesOf("sum := 1 + total;\n", "total");
+    check("a name after a `+' is not a field access", str(oc[1].dotPrev), "FALSE");
+    oc := occurrencesOf("box.\n  total := 1;\n", "total");
+    check("a dot on the line above does not mark it -- the line-granular limit",
+          str(oc[1].dotPrev), "FALSE");
 
     report("occurrences");
   end func;
