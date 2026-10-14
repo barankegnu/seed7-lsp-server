@@ -332,12 +332,14 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
     # the name at all. A gated keyword, a library name and a name this buffer never mentions all
     # answer the same binding with or without these rows, so the guard is not observable from
     # outside -- and it buys a measured amount. Profiled with `s7c -p -O2 -l src' over the
-    # 375 354-character `lib/shiftjis.s7i` (1 123 symRec records from its own synthetic-driver
-    # analysis), 20 resolutions on a name the buffer never mentions plus 20 on the empty spelling:
-    # 29 992 µs per cursor gated against 55 929 µs with the guard opened to `if TRUE then' -- one
-    # `blockRegions' pass of 25 943 µs avoided per gated cursor, 1 036 219 µs over the 40. The
-    # guard's own price is `bufferCouldBind' at 116 µs per call (27 859 µs over 240), about a
-    # two-hundred-and-twentieth of what it skips. The guard stays.
+    # 375 354-character lib/shiftjis.s7i (1 123 symRec records from its own synthetic-driver
+    # analysis): 20 resolutions on a name the buffer never mentions plus 20 on the empty spelling,
+    # run against the same probe with the guard opened to `if TRUE then'. Observed rows, usecs and
+    # calls as `profile_out' gave them -- any quotient between them is arithmetic, not a
+    # measurement: resolveBinding 15 756 / 40 gated against 1 051 975 / 40 opened, and that delta
+    # IS the guard's saving; blockRegions 515 223 / 20 gated (those 20 are the probe's own direct
+    # calls, so the gated cursors reached it 0 times) against 1 556 589 / 60 opened; the guard's
+    # own price, bufferCouldBind, 27 859 / 240. The guard stays.
     if bufferCouldBind(syms, name, docPath) then
       # ONE scan shared by both rows, not one per declaration: routineRegionFor only filters
       # this list.
@@ -476,11 +478,12 @@ const type: cursorRefs is new struct
 # is one resolution per cursor; the region scan 1b recorded for a cursor on a number or a bracket
 # is gated now -- `bufferCouldBind' sees a spelling no record of this buffer carries, so those
 # cursors never reach `blockRegions'. Measured with `s7c -p -O2 -l src' over the 375 354-character
-# `lib/shiftjis.s7i': the 40 gated resolutions made 0 `blockRegions' calls (the 20 calls in that
-# table are the probe's own direct ones), where the same 40 with the guard opened to `if TRUE then'
-# made 60 -- 25 943 µs per call, which is the figure 1b's cost estimate was waiting for. What the
-# guard does NOT reclaim is `occurrencesOf', which every cursor pays: 29 596 µs for the pass over
-# that document, even for the empty spelling, which can match no token.
+# lib/shiftjis.s7i: the 40 gated resolutions made 0 `blockRegions' calls -- the 20 calls in that
+# table are the probe's own direct ones -- where the same 40 with the guard opened to `if TRUE
+# then' made 60, costing 1 556 589 µs against 515 223 µs for those 20. That is the figure 1b's
+# cost estimate was waiting for. What the guard does NOT reclaim is `occurrencesOf', which every
+# cursor pays: 1 183 852 µs over the same 40 cursors, even for the empty spelling, which can match
+# no token.
 # No answer moves, and refusal does not depend on `b'.
 const func cursorRefs: cursorAt (in string: text, in array symRec: syms, in string: name,
                                  in integer: line0, in integer: col16, in integer: lastLine,

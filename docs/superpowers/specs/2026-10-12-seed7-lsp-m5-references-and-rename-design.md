@@ -537,10 +537,11 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     `files=342 names_probed=4104 occurrences=516044 misses=0` — reproduced verbatim by the run
     measured below. Cost, measured on a profiled build of this tool's own driver
     (`s7c -p -O2 -l src` over the same 342 files), reading the `occurrencesOf` row of `profile_out`:
-    **33 947 076 µs over 4 104 calls = 8.3 ms per full-document pass**, averaged over the
-    corpus-sized documents, at an average of ~126 occurrences per name. The document-sized large
-    input is 29.6 ms for one pass over `lib/shiftjis.s7i` (375 354 characters; `occurrencesOf`
-    1 183 852 µs over 40 calls, same build). The **~40 ms** this item carried is deleted — no
+    **33 947 076 µs over 4 104 calls** — that row is the measurement; ≈8.3 ms per full-document
+    pass is arithmetic on it, averaged over the corpus-sized documents, at an average of ~126
+    occurrences per name. The document-sized large input reads `occurrencesOf` 1 183 852 µs over
+    40 calls in the same build, so ≈29.6 ms for one pass over `lib/shiftjis.s7i` (375 354
+    characters). The **~40 ms** this item carried is deleted — no
     profiled command reproduces it, and §3's "one request, one pass" is a shape claim that needs no
     number to stand. It checks termination and finding, NOT columns; those are pinned by the astral
     checks in Tasks 1, 4 and 9.
