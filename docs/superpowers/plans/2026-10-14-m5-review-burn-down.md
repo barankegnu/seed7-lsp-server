@@ -261,6 +261,19 @@ Three statements are stale: §3's "one request costs one pass over one document"
   ("fix: correct review comments on task 3 (comment-only)") broke the plan's own commit-voice constraint
   by stating an action with a conventional-commit prefix instead of the finding — the body was fine, the
   subject was not, and a fix commit's message is part of the fix.
+  Task 5's fix round added six more of the same class — its own new citations were wrong the moment
+  they were written, which is the third time this branch has done that: `occurrences_test.sd7:703` and
+  design `:347` call the escape branch `scan.sd7:340-344` (that range is the *plain-element* branch the
+  quote spelling takes; the arm is `:337-341`); `:708`/`:350` call the width line `:343` (it is `:341` —
+  and mutating the line they cite is semantically identical on ASCII, so a reader who follows it
+  re-derives "decorative", the very conclusion the round was written to refute); design `:342` cites
+  `:295` for the string arm (that is the identifier arm; the string arm begins `:301`, break test `:304`);
+  `:704-705` enumerates re-tokenisations that do not happen (no TK_ILLEGAL, no surviving bracket — `}` is
+  eaten as a char element); and `:691-692`/`:343-344` claim a break-crossing string arm would redden the
+  next-line check, which is false unless the char arm also fails — reword to that conjunction.
+  **Standing instruction for every citation you write in this task: name the branch or the check title,
+  not the line number.** AGENTS.md's lesson is that numerals rot on the next edit; three rounds of it is
+  a pattern, not bad luck.
   Two more of the same class, found by Task 2's fix re-review and left unblocked there because they are comment-only: `src/occurrences.sd7:264` cites `occurrences_test.sd7:296`, which is the `check(` title line — the expected literal is on `:297`; and `:265` says "the arm this function keeps is the arm that sets the flag", which reads backwards under the mutant being described (the mutant *drops* the arm, and no arm sets the flag — row 1 does, when the guard lets it run). Preferred wording: "the arm this mutant drops is the arm row 1 needs". Fix both if they still read that way.
 - [ ] **Step 3c: make call-site drift structurally impossible, or record why not.** Task 1b's reviewer noted the two `cursorAt` call sites are pinned only indirectly: nothing asserts they derive `line0`/`col16` the same way. One check comparing the range `references` publishes for a cursor against the range `prepareRename` publishes for the SAME cursor would make drift fail loudly instead of collapsing into "is not a name". Decide it, do not hedge: either add the check or write one line here saying the existing exact-range pins were judged sufficient.
 - [ ] **Step 4: `README.md:11` — drop the check count, keep the command.** It reads `863 checks (683 unit + 180 wire)`; the true total on this branch is 893 (713 unit + 180 wire) as of `3fef4f6`, so the line is already wrong, and it was wrong on arrival (the PR body said 865). A number that moves with every committed check cannot be maintained in prose — the same reasoning that made the branch delete the references fixture's line-count assertion. Replace it with `make test # 18 suites + transcript, every suite reporting 0 failed`. If you would rather keep a count, put beside it the command that prints it (`make test 2>&1 | grep -E 'checks, [0-9]+ failed'` and sum), and know it goes stale the next time a check lands.
