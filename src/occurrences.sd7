@@ -388,6 +388,40 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
     # `keyword' already carrying the gate's answer for everything rows 1 and 2 did not bind.
   end func;
 
+# What ONE cursor resolution produces: the occurrence list of the cursor's spelling, the 1-based
+# index of the record the cursor is really on, and the binding of that spelling. The three calls
+# live here because both readers of a cursor -- references and the rename pair -- assembled them
+# by hand, and a rule spelled twice is what invariant 6 exists to refuse: the two copies could
+# disagree about which record is the cursor's, and the range prepareRename promises is then not
+# the record rename edits. No LSP shape in it (invariant 4), and its parameters are primitives and
+# never a `wordRef', so this module goes on not including doc_store.sd7 (invariant 2) -- each
+# feature converts its own word and only a feature may hold one.
+const type: cursorRefs is new struct
+    var array occurrence: oc is 0 times occurrence.value;
+    var integer: slot is 0;
+    var binding: b is binding.value;
+  end struct;
+
+# occurrencesOf, occurrenceAt, resolveBinding -- in that order, over ONE array. The array handed to
+# `resolveBinding' IS the one `oc' carries, which is R39's whole point: `b.capped' is a fact about
+# the list the caller publishes, not about a second pass over the text.
+#
+# `resolveBinding' runs whether or not the cursor is on an indexable name, so `slot = 0' may be
+# read ONLY as "there is no range to take from `oc'" and never as "`b' is unset" -- a caller that
+# branched on the second would be re-deriving the resolution the seam exists to hand it. The price
+# is the region scan for a cursor sitting on a number or a bracket, which the callers did not pay
+# before; no answer moves, and refusal does not depend on `b'.
+const func cursorRefs: cursorAt (in string: text, in array symRec: syms, in string: name,
+                                 in integer: line0, in integer: col16, in integer: lastLine,
+                                 in string: docPath) is func
+  result
+    var cursorRefs: out is cursorRefs.value;
+  begin
+    out.oc := occurrencesOf(text, name);
+    out.slot := occurrenceAt(out.oc, line0, col16);
+    out.b := resolveBinding(text, syms, out.oc, name, line0, lastLine, docPath, out.slot);
+  end func;
+
 # The scope rule in ONE place: an occurrence counts when its line is inside the binding's scope
 # and inside no excluded region. Line-granular, like every region this server has -- a shadowing
 # local on the same line as a use of the global is not separable without columns, and rename

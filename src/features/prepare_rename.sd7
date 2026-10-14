@@ -40,6 +40,11 @@ const type: prepareAnswer is new struct
 # may hand `b' to inScope, but must not branch on `b.owner = "field"' (R40) and must not re-derive
 # scope here (spec 4): the arm list below is the only refusal decision, and scope is inScope's.
 #
+# The three fields are COPIES of one `cursorAt' result, and they are not merged with it: this
+# record carries a REFUSAL (`refused', `reason') out of the one predicate (invariant 6, R45), while
+# `cursorRefs' carries an ASSEMBLY. Folding the two would move the refusal decision into the index
+# module, and rename.sd7 already reads no.oc / no.b / no.slot.
+#
 # `reason' carries NO method prefix so each caller names the method that refused -- the same
 # sentence has to be reachable from prepareRename and from rename with only that name differing,
 # which is why the "prepareRename: " prefix belongs to prepareRenameAnswer, not to this function.
@@ -97,8 +102,8 @@ const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) i
 # also holds a record field of the same spelling (spec 12.2, measured in features_test.sd7: the
 # edit list rewrites `box.counter' but not the field, so the file stops compiling), and a list
 # truncated at the cap. Branch is on resolved / scopeUncertain / owner (R40); owner "field" is
-# not a special case, it is simply unresolved. occurrencesOf runs ONCE and the same array goes to
-# resolveBinding and to the range (R39).
+# not a special case, it is simply unresolved. The cursor is resolved ONCE, by occurrences.sd7's
+# `cursorAt', and the same array goes to the binding and to the range (R39, invariant 6).
 const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
                                         in wordRef: word, in string: docUri,
                                         in boolean: canApplyEdits) is func
@@ -106,6 +111,7 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
     var renameCheck: out is renameCheck.value;
   local
     var string: docPath is "";
+    var cursorRefs: cr is cursorRefs.value;
   begin
     docPath := pathOf(docUri);
     # Cheapest first, and nothing above a document read: the capability and the .s7i rule are
@@ -119,11 +125,18 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
       out.reason := docPath <& " is a library buffer whose symbols come from disk while R-F10" <&
                     " stands, so an edit could land on the wrong line";
     else
-      out.oc := occurrencesOf(doc.text, word.word);
-      # The cursor's own record, from the list the range will be taken out of. 0 means the token
-      # is not an indexable name, and it is also what resolveBinding's row 4 reads as "no record,
-      # so no field label".
-      out.slot := occurrenceAt(out.oc, pred(word.line1), word.character1);
+      # ONE cursor resolution, the same call references.sd7 makes -- the two readers used to write
+      # these three calls out separately, which is what invariant 6 refuses. `cr.slot' is 0 when
+      # the cursor is not on an indexable name, and that is also what resolveBinding's row 4 reads
+      # as "no record, so no field label". `resolveBinding' has already run by the time this
+      # returns, so `out.b' is a real binding even on the slot = 0 path below; no caller may read
+      # that as the answer having been refused on the binding, because the refusal arms below are
+      # reached only when `cr.slot' is not 0.
+      cr := cursorAt(doc.text, syms, word.word, pred(word.line1), word.character1,
+                     pred(lineCount(doc)), docPath);
+      out.oc := cr.oc;
+      out.slot := cr.slot;
+      out.b := cr.b;
       if out.slot = 0 then
         if length(out.oc) > MAX_OCCURRENCES then
           # The pass keeps MAX_OCCURRENCES + 1 records and stops, so both conjuncts below are
@@ -141,8 +154,6 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
           out.reason := word.word <& " is not a name";
         end if;
       else
-        out.b := resolveBinding(doc.text, syms, out.oc, word.word, pred(word.line1),
-                                pred(lineCount(doc)), docPath, out.slot);
         if out.b.owner = "library" then
           out.reason := word.word <& " is declared outside this buffer, and M5 renames only" <&
                         " one file";

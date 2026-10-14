@@ -10,8 +10,10 @@ $ include "seed7_05.s7i";
 # ranges are not line-based (spec 5). The answer is `refsAnswer.json', a Location[] or "null";
 # `unresolved' plus `why' are the over-inclusive read's disclosure, which the dispatcher sends
 # as a window/logMessage (spec 2: an empty list reads as "unused", and that is a lie you would
-# act on). Scope comes from occurrences.sd7 -- resolveBinding and inScope, never a re-derivation
-# here (spec 4) -- and the branch is on `resolved' / `keyword', never on `owner'.
+# act on). The cursor is resolved once, by occurrences.sd7's `cursorAt', and scope comes from the
+# binding it hands back -- never a re-derivation here (spec 4, and the reason the assembly is not
+# written out in this file any more) -- and the branch is on `resolved' / `keyword', never on
+# `owner'.
 #
 # No position is converted here (invariant 2: doc_store owns that) and no LSP shape leaves this
 # file (invariant 4: features own the shapes, and nothing in occurrences.sd7 builds one).
@@ -58,25 +60,21 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
     var refsAnswer: out is refsAnswer.value;
   local
     var string: docPath is "";
-    var array occurrence: oc is 0 times occurrence.value;
+    var cursorRefs: cr is cursorRefs.value;
     var array occurrence: scoped is 0 times occurrence.value;
-    var binding: b is binding.value;
     var jsonWriter: w is jsonWriter.value;
-    var integer: slot is 0;
     var integer: emitted is 0;
     var integer: i is 0;
   begin
     if word.word <> "" then
       docPath := pathOf(docUri);
-      # ONE occurrence list. It is handed to resolveBinding and filtered by inScope, so
-      # `b.capped' is a fact about the list this answer is built from (spec 4, R39).
-      oc := occurrencesOf(doc.text, word.word);
-      # The cursor's own record, taken from the same list the locations come out of: row 4 reads
-      # that record's `dotPrev' for its field label instead of walking the document a second time.
-      # 0 means the cursor is not on an indexable name, and the label is simply left off.
-      slot := occurrenceAt(oc, pred(word.line1), word.character1);
-      b := resolveBinding(doc.text, syms, oc, word.word, pred(word.line1),
-                          pred(lineCount(doc)), docPath, slot);
+      # ONE cursor resolution, shared with the rename pair (invariant 6). `cr.oc' is the list the
+      # locations below are taken out of AND the list resolveBinding was handed, so `cr.b.capped'
+      # is a fact about the answer this call publishes (spec 4, R39). `cr.slot' is not read here:
+      # references publishes every in-scope occurrence, and row 4 already read the cursor's own
+      # record for its field label.
+      cr := cursorAt(doc.text, syms, word.word, pred(word.line1), word.character1,
+                     pred(lineCount(doc)), docPath);
       # "null", not [], for a gated word and for a token the index cannot hold at all -- a
       # number or a bracket, both of which wordAt does report as a word. Either would otherwise
       # search for the literal text, find nothing, and report the name as unused (spec 5).
@@ -85,8 +83,8 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
       # is a line's leading indentation. Anywhere else between tokens the answer is not empty:
       # wordAt is left-of-character, so a cursor one past a name -- and one past the line's
       # LAST token -- answers that token.
-      if not b.keyword and length(oc) <> 0 then
-        scoped := inScope(oc, b);
+      if not cr.b.keyword and length(cr.oc) <> 0 then
+        scoped := inScope(cr.oc, cr.b);
         emitted := length(scoped);
         if emitted > MAX_OCCURRENCES then
           # The record past the cap is the sentinel that proves truncation, not a location.
@@ -100,9 +98,9 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
         # after it does not publish.
         # The cap counts occurrence RECORDS, not locations, so a capped answer asked with
         # includeDeclaration carries MAX_OCCURRENCES + 1 locations.
-        if includeDeclaration and b.declLine1 <> 0 and
-             not declPublished(scoped, emitted, b.declLine1) then
-          emitLocation(w, docUri, lspWholeLine(b.declLine1));
+        if includeDeclaration and cr.b.declLine1 <> 0 and
+             not declPublished(scoped, emitted, cr.b.declLine1) then
+          emitLocation(w, docUri, lspWholeLine(cr.b.declLine1));
         end if;
         for i range 1 to emitted do
           emitLocation(w, docUri,
@@ -111,13 +109,13 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
         end for;
         closeArray(w);
         out.json := finishJson(w);
-        if not b.resolved then
+        if not cr.b.resolved then
           out.unresolved := TRUE;
           out.why := "references: " <& word.word <&
                      " does not bind to a declaration of this file, so every occurrence" <&
                      " of it is listed";
         end if;
-        if b.capped then
+        if cr.b.capped then
           out.unresolved := TRUE;
           if out.why = "" then
             out.why := "references: " <& word.word <&
@@ -133,7 +131,7 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
         # branch 12.2 chose for a read, and §9 keeps its count pinned -- but it no longer claims
         # more than it knows. An UNBOUND name needs nothing here: the arm above already says every
         # occurrence of the spelling is listed, which covers the field tokens too.
-        if b.resolved and scopeHasFieldAccess(oc, b) then
+        if cr.b.resolved and scopeHasFieldAccess(cr.oc, cr.b) then
           out.unresolved := TRUE;
           if out.why = "" then
             out.why := "references: " <& word.word <& " is bound, but the list also holds a"
