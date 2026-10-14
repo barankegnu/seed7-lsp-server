@@ -475,6 +475,20 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     about **40 ms per full-document pass** at an average of ~126 occurrences per name — the figure
     behind "one request, one pass" in §3. It checks termination and finding, NOT columns; those are
     pinned by the astral checks in Tasks 1, 4 and 9.
+15. **`blocks.enclosingDeclarations` and `blocks.declarationRegion` were dead on arrival.** Task 3
+    produced them for Task 6, and Task 6 grew its own pairing instead: `resolveBinding` scans
+    `blockRegions` once and calls `routineRegionFor` per candidate, then `regionOwner`/`ownsRegion`
+    decide whether the pair belongs to the record — one list, one sort, a field an `enclosing-
+    Declarations` chain could not carry. So `declarationRegion` was `routineRegionFor` over a fresh
+    scan with no caller, and `enclosingDeclarations` was a `closer <> ""` filter with no caller.
+    Both deleted on `m5-review-fixes`, with the wrapper-only checks: `grep -rn
+    'enclosingDeclarations|declarationRegion' src/` is empty, and `regionOfDeclaration` in
+    `blocks_test.sd7` now calls the surviving pair directly so the seven pairing checks still test
+    production. What did NOT move is the closer filter — "a non-routine region is not a scope" is
+    pinned where it runs, at `occurrences_test.sd7`'s phantom-region check (a carrier with no
+    region must not be handed the region at line 0), and the `closer` field itself stays pinned by
+    this suite's `closerAt` checks. The pairing rule the deleted pair was supposed to own lives in
+    §11.9's adjacency note and in `occurrences.regionOwner`, not here.
 
 ## 12. Open questions put to the partner
 
