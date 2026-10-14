@@ -2,7 +2,6 @@ $ include "seed7_05.s7i";
   include "analysis.sd7";
   include "doc_store.sd7";
   include "occurrences.sd7";
-  include "scan.sd7";
   include "uris.sd7";
   include "jsonw.sd7";
 
