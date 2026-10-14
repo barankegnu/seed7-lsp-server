@@ -279,7 +279,7 @@ const proc: main is func
     check("and the reason says what the cursor is on", p.why, "prepareRename: 1 is not a name");
     # A BRACKET is the third way a cursor fails to be a name: TK_BRACKET is not indexable, so `('
     # never enters the occurrence list at all (unlike `:=' above, which IS listed and is refused
-    # for its kind). The arm is still cursorName's 0, and the sentence names the token it found.
+    # for its kind). The arm is still occurrenceAt's 0, and the sentence names the token it found.
     check("the bracket cursor is on (", cursor(prepUri, 20, 9).word, "(");
     p := prepareRenameAnswer(openDocs[prepUri], prepSyms, cursor(prepUri, 20, 9), prepUri,
                              clientCanApplyEdits);
@@ -358,7 +358,7 @@ const proc: main is func
           " known");
     # The sentence says NAMES for a reason. Five lines into the same document the cursor answers
     # `:=', which is TK_OP, which occurrencesOf DOES index: that position is record 6 of the 2 001
-    # the capped list holds, cursorName returned 0 on its KIND, and "not among the ones listed"
+    # the capped list holds, occurrenceAt returned 0 on its KIND, and "not among the ones listed"
     # was a false statement about a token that is listed. Revert the one word and this check
     # reddens.
     capOps := occurrencesOf(capText, ":=");

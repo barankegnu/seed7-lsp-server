@@ -51,27 +51,6 @@ const type: renameCheck is new struct
     var binding: b is binding.value;
   end struct;
 
-# The occurrence that IS the cursor's token, 0 when the token is not an indexable name. `wordAt'
-# stamps character1 from the same nextToken pass occurrencesOf runs, so line plus UTF-16 column
-# identifies the record -- and the range has to come from THAT record, because wordRef.width
-# counts CHARACTERS while a range is measured in UTF-16 units.
-const func integer: cursorName (in array occurrence: oc, in wordRef: word) is func
-  result
-    var integer: out is 0;
-  local
-    var integer: i is 0;
-  begin
-    for i range 1 to length(oc) do
-      if out = 0 and oc[i].line0 = pred(word.line1) then
-        if oc[i].col16 = word.character1 then
-          if oc[i].kind = TK_NAME then
-            out := i;
-          end if;
-        end if;
-      end if;
-    end for;
-  end func;
-
 # TRUE when the declaration has to be picked out of more than one record on its own line. The
 # trigger is the LINE, and two different shapes put two records of one name on it. Shape one: a
 # Seed7 parameter may be named after its own routine -- measured legal (`const proc: show (in
@@ -141,14 +120,17 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
                     " stands, so an edit could land on the wrong line";
     else
       out.oc := occurrencesOf(doc.text, word.word);
-      out.slot := cursorName(out.oc, word);
+      # The cursor's own record, from the list the range will be taken out of. 0 means the token
+      # is not an indexable name, and it is also what resolveBinding's row 4 reads as "no record,
+      # so no field label".
+      out.slot := occurrenceAt(out.oc, pred(word.line1), word.character1);
       if out.slot = 0 then
         if length(out.oc) > MAX_OCCURRENCES then
           # The pass keeps MAX_OCCURRENCES + 1 records and stops, so both conjuncts below are
           # literally what this branch knows. Still a refusal -- only the sentence was wrong
           # ("`count` is not a name" about a token that plainly is one).
           # "names", not "ones": the list DOES carry this token when it is an operator run, and
-          # cursorName returned 0 on its KIND. Measured on the 2 002-statement fixture with the
+          # occurrenceAt returned 0 on its KIND. Measured on the 2 002-statement fixture with the
           # cursor at line 5 character 8: `:=' is record 6 of the 2 001 the truncated list keeps
           # (lsp_server_test pins capOps[6] = 5:6), so any wording about what is not listed has to
           # name the class that is missing, which is names.
@@ -160,7 +142,7 @@ const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,
         end if;
       else
         out.b := resolveBinding(doc.text, syms, out.oc, word.word, pred(word.line1),
-                                pred(lineCount(doc)), docPath);
+                                pred(lineCount(doc)), docPath, out.slot);
         if out.b.owner = "library" then
           out.reason := word.word <& " is declared outside this buffer, and M5 renames only" <&
                         " one file";

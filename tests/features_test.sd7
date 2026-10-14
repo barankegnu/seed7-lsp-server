@@ -806,12 +806,12 @@ const proc: main is func
     # that measured the text instead of its parameter would report a truncated document as
     # complete. That is the exact partial result spec 2 refuses, and these two checks are what
     # a caller swapping in a filtered or recomputed list would have to survive.
-    rb := resolveBinding(capText, rsyms, ocOne, "count", 0, MAX_OCCURRENCES, refPath);
+    rb := resolveBinding(capText, rsyms, ocOne, "count", 0, MAX_OCCURRENCES, refPath, 0);
     check("capped follows the array handed in, not the text", str(rb.capped), "FALSE");
     for k range 1 to MAX_OCCURRENCES + 1 do
       ocWide &:= occurrence.value;
     end for;
-    rb := resolveBinding("count := 1;\n", rsyms, ocWide, "count", 0, 0, refPath);
+    rb := resolveBinding("count := 1;\n", rsyms, ocWide, "count", 0, 0, refPath, 0);
     check("and a long array caps even when the text is short", str(rb.capped), "TRUE");
     # ---- R47: the cap must refuse a WRITE whose cursor IS in the truncated list ----------
     # capDoc now holds MAX_OCCURRENCES + 1 statements and the cursor is on the FIRST of them, so
@@ -1022,7 +1022,7 @@ const proc: main is func
     # listed cost, stated plainly: the fix is the token-level index over `const type ... end
     # struct', not a narrower test here.
     # `character1' is the 0-based UTF-16 column -- the same unit occurrence.col16 carries, which
-    # is why cursorName can compare them directly. `column1' beside it is 1-based.
+    # is why occurrenceAt can compare them directly. `column1' beside it is 1-based.
     check("the cursor is on the global's own declaration",
           wordAt(fdoc, 7, 15).word <& ":" <& str(wordAt(fdoc, 7, 15).character1), "total:13");
     pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, TRUE);
