@@ -338,24 +338,34 @@ Unit (`tests/occurrences_test.sd7`, new suite in `Makefile`'s `TESTS`):
   ITS OWN line is still code" is the discriminating input — an arm that fails to read the quote as
   the literal's element opens a string there, and the name on that line leaves the index — while
   "what follows a quote char literal on the next line is still code", the spelling this section
-  asked for, survives every mutation of the char arm, because a string opened at that quote stops
-  at its own line break and a name below it is code either way. It is kept because this section
-  measured that input, and it records a real answer, but it is a redundancy, not a proof.
-  "the numeric spelling of the same element is hidden the same way" witnesses the escape arm, a
-  different branch, and so survives the char-element mutant honestly.
+  asked for, survives every mutation OF THE CHAR ARM, because a string opened at that quote stops
+  at its own line break (`scan.sd7:295` with `lineEnd` at `:182-183`) and a name below it is code
+  either way. The claim is scoped to that arm: the check pins the following token's LINE, so a
+  scanner that let a string cross a break would redden it. It is kept because this section measured
+  that input, and it records a real answer, but it is a redundancy of the char arm, not a proof.
+  "the numeric spelling of the same element is hidden the same way" exercises the escape arm
+  (`scan.sd7:340-344`), which the quote spelling never reaches, yet no deletion of that branch
+  reddens it — the leftovers re-tokenise and the total column advance is unchanged, so this suite
+  stayed green while `scan_test.sd7` went red four times. Its value is the escape arm's WIDTH
+  (`scan.sd7:343`): a fixed count moves `count` from `0:34:5` to `0:31:5` and reddens this check
+  alone. The same regression is already pinned in `tests/scan_test.sd7` (`:351`, `:358`, and the
+  mask `:449` for the deletion), so this is a duplicate seen from the occurrence index, not a new
+  proof — and not the cannot-fail class either, since the width mutant kills it.
 - a truncated buffer (the normal state mid-typing) resolves to *unknown* and `references` answers
   over-inclusive plus the log line — this is the check that keeps §4's fourth row honest;
 - a field access `w.pix` where `pix` exists in two structs in one file — §12.2's answer.
   **Pinned** in `tests/features_test.sd7` on a fresh inline fixture (two structs each declaring
   `pix`, a global `pix`, and a routine whose own local is `pix`): "references over-includes across
-  both structs, and lists them in column order" answers six locations for the cursor on `x.pix`
+  both structs, and lists them in document order" answers six locations for the cursor on `x.pix`
   and the list holds BOTH structs' field declarations, at lines 4 and 8; "and it says the list
   holds both structs' fields" sets `unresolved` with the field sentence rather than the unbound
   one, because the global row binds the spelling before §4's fourth row is reached; "prepareRename
   refuses a field access inside the symbol's window" and "and rename answers null with no error,
   refusing to half-rewrite two structs" state the write's side; "the field access inside a local
-  of the same name answers its own window only" gives the same ruling for a cursor inside the
-  routine that declares `pix` itself, where the window holds one field of each struct.
+  of the same name answers its own window only" and "and that cursor is disclosed too, by the same
+  arm" give the same ruling, disclosure included, for a cursor inside the routine that declares
+  `pix` itself, where the window holds one field of each struct. The list is in DOCUMENT order: the
+  six ranges descend 17, 17, 13, 6, 6, 4 as the lines rise, so nothing here is a column sort.
 - a name that is a keyword, a number or a bracket yields `null` from `prepareRename`.
 
 Wire (`tests/transcript.py`): initialize advertises both providers; `references` on an opened

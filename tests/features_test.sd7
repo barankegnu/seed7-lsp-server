@@ -244,7 +244,7 @@ const func string: fieldClashText is func
   end func;
 
 # The two-struct fixture spec 9 asked for and never had: `pix' is a field of TWO structs in one
-# file, the global `pix' is a fourth symbol of the same spelling, and one routine declares `pix'
+# file, the global `pix' is one of four symbols of the same spelling, and one routine declares `pix'
 # as its own local. This is spec 12.2's permanent row-4 case -- `field names repeat across structs,
 # and w.pix is pervasive in real Seed7' -- and there is no machine here that separates the two
 # fields, so both spellings stay one symbol. The bodies only assign: analysis runs what it reads.
@@ -1132,7 +1132,7 @@ const proc: main is func
           pixWord.word <& ":" <& str(pixWord.line1) <& ":" <& str(pixWord.character1),
           "pix:25:6");
     ra := referencesAnswer(pdoc, psyms, pixWord, pUri, FALSE);
-    check("references over-includes across both structs, and lists them in column order",
+    check("references over-includes across both structs, and lists them in document order",
           ra.json,
           "[{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
           "{\"start\":{\"line\":3,\"character\":17},\"end\":{\"line\":3,\"character\":20}}}," <&
@@ -1164,6 +1164,13 @@ const proc: main is func
     ra := referencesAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, FALSE);
     check("the field access inside a local of the same name answers its own window only",
           str(uriCount(ra.json)) <& " " <& str(endCount(ra.json)), "4 4");
+    # The disclosure fires for this cursor too -- references.sd7 asks `scopeHasFieldAccess' of the
+    # binding, and show's window holds one field of EACH struct -- so it is asserted here rather
+    # than left inferred from the count above, which would pass silently if the sentence vanished.
+    check("and it says so, with the field sentence for its own window",
+          str(ra.unresolved) <& " " <& ra.why,
+          "TRUE references: pix is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
     pc := prepareRenameAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, TRUE);
     check("and it is refused too, because both fields sit in that window",
           str(pc.refused) <& " " <& pc.why, "TRUE prepareRename: pix" <& FIELD_TAIL);

@@ -684,11 +684,14 @@ const proc: main is func
     # The second is `lib/chartype.s7i:45' -- `{'"'}', a char literal whose element IS the double
     # quote. Read as a string introducer it opens a literal that runs to the end of its line, and
     # every name after it on that line silently leaves the index. The NEXT-line form below is the
-    # one spec 9 measured, and it is stated as measured (one occurrence) -- but it is a REDUNDANCY,
-    # not a proof: it survived the char-arm mutant ("do not read the element"), because a string
-    # opened at that quote stops at its own line break and a name on the line after it is code
-    # either way. The same-line form is the check that can fail; the quote arm failing to read one
-    # element and its closing quote turns its expected column into "none".
+    # one spec 9 measured, and it is stated as measured (one occurrence) -- but it is a REDUNDANCY
+    # OF THE CHAR ARM, not a proof: it survived every mutation of that arm ("read no element", "read
+    # no escape element"), because a string opened at that quote stops at its own line break, so the
+    # literal never reaches the line below and a name there is code either way. The claim is scoped
+    # to that arm on purpose: this check DOES pin the following token's LINE, and a scanner that let
+    # a string cross a break would redden it -- unqualified, "cannot fail" is too strong. The
+    # same-line form is the check that can fail on the arm: the quote arm failing to read one element
+    # and its closing quote turns its expected column into "none".
     quoteText := "const set of char: q is {'\"'};\ncount := 1;\n";
     oc := occurrencesOf(quoteText, "count");
     check("what follows a quote char literal on the next line is still code",
@@ -696,9 +699,17 @@ const proc: main is func
     quoteText := "const set of char: q is {'\"'}; count := 1;\n";
     oc := occurrencesOf(quoteText, "count");
     check("and what follows it on ITS OWN line is still code", at(oc, 1), "0:31:5");
-    # The same character written numerically, the fallback spec 9 names. It witnesses the ESCAPE arm
-    # of the char literal -- a different branch -- so it honestly survives the element mutant: the
-    # escape form is three characters longer, so the column moves and the NAME still arrives.
+    # The same character written numerically, the fallback spec 9 names. It takes the ESCAPE arm of
+    # the char literal (`scan.sd7:340-344'), which the quote spelling above never reaches -- yet NO
+    # deletion of that arm reddens it: the leftover 34 and closing marks re-tokenise as illegal,
+    # number, operator and bracket with an unchanged total column advance, so `count' still arrives at
+    # 0:34:5. Measured: deleting the branch left all 94 checks of this suite green while
+    # scan_test.sd7 went red four times. What this check does depend on is the arm's WIDTH line
+    # (`scan.sd7:343`): fixing that count at 1 makes the token 3 wide instead of 6, moves `count' to
+    # 0:31:5, and reddens THIS check alone.
+    # The same regression is already pinned in tests/scan_test.sd7 (`:351`, `:358`), so this is a
+    # duplicate seen from the occurrence index, not a new proof -- and not the decorative class
+    # either, because a width mutant does kill it.
     quoteText := "const set of char: q is {'\\34;'}; count := 1;\n";
     oc := occurrencesOf(quoteText, "count");
     check("the numeric spelling of the same element is hidden the same way",
