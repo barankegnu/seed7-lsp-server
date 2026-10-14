@@ -362,9 +362,10 @@ Unit (`tests/occurrences_test.sd7`, new suite in `Makefile`'s `TESTS`):
   one, because the global row binds the spelling before §4's fourth row is reached; "prepareRename
   refuses a field access inside the symbol's window" and "and rename answers null with no error,
   refusing to half-rewrite two structs" state the write's side; "the field access inside a local
-  of the same name answers its own window only" and "and that cursor is disclosed too, by the same
-  arm" give the same ruling, disclosure included, for a cursor inside the routine that declares
-  `pix` itself, where the window holds one field of each struct. The list is in DOCUMENT order: the
+  of the same name answers its own window only" and "and it says so, with the field sentence for
+  its own window" give the same ruling, disclosure included, for a cursor inside the routine that
+  declares `pix` itself, where the window holds one field of each struct. The list is in DOCUMENT
+  order: the
   six ranges descend 17, 17, 13, 6, 6, 4 as the lines rise, so nothing here is a column sort.
 - a name that is a keyword, a number or a bracket yields `null` from `prepareRename`.
 
