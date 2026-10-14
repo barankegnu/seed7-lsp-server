@@ -210,6 +210,7 @@ const proc: main is func
     var string: pixOneLine is "";
     var string: pixTwoLines is "";
     var string: pixAfterBreak is "";
+    var array occurrence: pixOc is 0 times occurrence.value;
     var array symRec: noSyms is 0 times symRec.value;
     var integer: i is 0;
   begin
@@ -278,12 +279,16 @@ const proc: main is func
           bindPin(b), "for||FALSE|TRUE|FALSE|0");
 
     # ---- row 4: a struct field, which has no declaration source at all -----------
-    # `box.pix' at line0 37. globalObjects reports Widget and never pix (spec 11.10), so
-    # this is over-included with a log line by the controller's 12.2 ruling, not proven.
-    b := bindAt(text, syms, "pix", 37, lastLine, DOC, 2);
+    # `box.pix' at line0 37, col16 8 -- the slot is LOOKED UP, not hand-counted, so an edit to the
+    # fixture moves the answer instead of raising INDEX_ERROR past the array. globalObjects reports
+    # Widget and never pix (spec 11.10), so this is over-included with a log line by the
+    # controller's 12.2 ruling, not proven.
+    b := bindAt(text, syms, "pix", 37, lastLine, DOC,
+                occurrenceAt(occurrencesOf(text, "pix"), 37, 8));
     check("a dot-selected name is a field, and says it is not proven",
           bindPin(b), "pix|field|FALSE|FALSE|FALSE|0");
-    b := bindAt(text, syms, "pix", 4, lastLine, DOC, 1);
+    b := bindAt(text, syms, "pix", 4, lastLine, DOC,
+                occurrenceAt(occurrencesOf(text, "pix"), 4, 17));
     check("the same name on its own declaration line is no field",
           bindPin(b), "pix||FALSE|FALSE|FALSE|0");
     b := bind(text, syms, "total", 38, lastLine, DOC);
@@ -292,36 +297,64 @@ const proc: main is func
 
     # The two shapes of one spelling, pinned separately. `pix' here is bound by nothing -- no
     # declaration, no scope entry, no library record -- so row 4 is the only thing that can call
-    # it a field, and row 4 reads the CURSOR'S OWN RECORD. The discriminating input is the one-line
-    # text: walking the LINE labels both tokens `field' (measured -- the first check below went red
-    # against the shipped code with got TRUE), reading the record under the cursor labels only the
-    # one the dot really precedes. The cross-line pair after it is NOT discriminating: the line-wide
-    # test and the cursor's own record answer it alike. It is pinned because WHICH record the slot
-    # names is the contract -- row 4 reading the first record of the list instead of the cursor's
-    # reddens it, measured -- and the third block states the same-line rule at the binding level.
+    # it a field, and row 4 reads the record `occurrenceAt' names. The discriminating input is the
+    # one-line text: walking the LINE labels both tokens `field' (measured -- the first binding check
+    # below went red against the shipped code with got TRUE), reading the cursor's own record labels
+    # only the one the dot really precedes. The cross-line pair after it is NOT discriminating: the
+    # line-wide test and the cursor's own record answer it alike, and it stays pinned because WHICH
+    # record the slot names is the contract -- row 4 reading `oc[1]' for every cursor reddens three
+    # checks, measured. The last block states the same-line rule at the binding level.
     pixOneLine := "    pix := 1; box.pix := 2;\n";
-    check("the bare pix, on a line that also holds a field access, is not labelled field",
-          str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 1).owner =
-              "field"), "FALSE");
-    check("while the pix after the dot on that same line is",
-          str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 2).owner),
-          "field");
     pixTwoLines := "    pix := 1;\n  box.pix := 2;\n";
+    pixAfterBreak := "    box.\n      pix := 1;\n";
+    # The seam every caller now stands on, asked directly. Nothing else in any suite calls
+    # `occurrenceAt' -- the features reach it only through a slot no test asserts -- so every number
+    # here is a probe print, not arithmetic: occurrencesOf(pixOneLine, "pix") answers 1 = line0 0
+    # col16 4 dotPrev FALSE and 2 = line0 0 col16 18 dotPrev TRUE; its ":=" records are line0 0
+    # col16 8 and col16 22, both TK_OP; occurrencesOf(pixTwoLines, "pix") answers 1 = line0 0
+    # col16 4 and 2 = line0 1 col16 6; occurrencesOf(pixAfterBreak, "pix") answers 1 = line0 1
+    # col16 6.
+    pixOc := occurrencesOf(pixOneLine, "pix");
+    check("the record under a cursor on the dotted pix is the second one",
+          str(occurrenceAt(pixOc, 0, 18)), "2");
+    check("and under the bare pix on that same line it is the first",
+          str(occurrenceAt(pixOc, 0, 4)), "1");
+    check("an operator run IS in the list and is NOT a name, so the answer is 0",
+          str(occurrenceAt(occurrencesOf(pixOneLine, ":="), 0, 8)), "0");
+    pixOc := occurrencesOf(pixTwoLines, "pix");
+    check("a column that holds no record on the cursor's line answers 0",
+          str(occurrenceAt(pixOc, 0, 6)), "0");
+    check("and a line that holds the name at another column answers 0 too",
+          str(occurrenceAt(pixOc, 1, 4)), "0");
+    # These two slots are the thing under test, so they stay literal. The length check and the `if'
+    # hold the line: a future edit of this fixture then fails as a FAIL rather than raising
+    # INDEX_ERROR inside `oc[slot]' on stdout, which would cost the suite its graded line.
+    pixOc := occurrencesOf(pixOneLine, "pix");
+    check("the one-line fixture still answers two pix records", str(length(pixOc)), "2");
+    if length(pixOc) >= 2 then
+      check("the bare pix, on a line that also holds a field access, is not labelled field",
+            str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 1).owner =
+                "field"), "FALSE");
+      check("while the pix after the dot on that same line is",
+            str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 2).owner),
+            "field");
+    end if;
     check("and a pix on the line ABOVE the field access is not labelled field either",
-          str(bindAt(pixTwoLines, noSyms, "pix", 0, pred(linesIn(pixTwoLines)), DOC, 1).owner =
-              "field"), "FALSE");
+          str(bindAt(pixTwoLines, noSyms, "pix", 0, pred(linesIn(pixTwoLines)), DOC,
+                     occurrenceAt(occurrencesOf(pixTwoLines, "pix"), 0, 4)).owner = "field"),
+          "FALSE");
     check("while the one after the dot, on the dot's own line, is",
-          str(bindAt(pixTwoLines, noSyms, "pix", 1, pred(linesIn(pixTwoLines)), DOC, 2).owner),
-          "field");
+          str(bindAt(pixTwoLines, noSyms, "pix", 1, pred(linesIn(pixTwoLines)), DOC,
+                     occurrenceAt(occurrencesOf(pixTwoLines, "pix"), 1, 6)).owner), "field");
     # The same-line rule, seen from the binding rather than from the flag: `box.' ENDS its line and
     # `pix' starts the next, so the dot is the previous TOKEN but not the previous LINE, and the
     # answer stays "not a field". Spec 11.10's shortcut, deliberately not widened (Review Focus 1).
     # Dropping `prevLine = tk.line0' from the stamp makes this check go red -- measured -- which is
     # what makes it the binding-level witness of a rule the two pairs above only agree with.
-    pixAfterBreak := "    box.\n      pix := 1;\n";
     check("a dot that ends the line above leaves the cursor's record no field",
-          str(bindAt(pixAfterBreak, noSyms, "pix", 1, pred(linesIn(pixAfterBreak)), DOC, 1).owner =
-              "field"), "FALSE");
+          str(bindAt(pixAfterBreak, noSyms, "pix", 1, pred(linesIn(pixAfterBreak)), DOC,
+                     occurrenceAt(occurrencesOf(pixAfterBreak, "pix"), 1, 6)).owner = "field"),
+          "FALSE");
 
     # ---- rows 5 and 6: language furniture, and the mystery -----------------------
     b := bind(text, syms, "begin", 37, lastLine, DOC);
