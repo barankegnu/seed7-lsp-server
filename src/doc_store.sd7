@@ -78,8 +78,13 @@ const func integer: lineWidth (in string: text, in integer: start) is func
 # the START of the text, so the width that used to be `utf16Before(start + lineWidth) -
 # utf16Before(start)' cost one pass over every character ahead of the line. Measured on the
 # capped references answer -- one range per occurrence, 2 000 of them in a 22 000-character
-# document -- the old form spent 7.9 s building the ranges alone. No other feature asks for
-# more than two ranges per response, which is why it was never felt before this one.
+# document -- measures at 896 µs per range for the old form (the two `utf16Before' calls only:
+# 1 791 629 µs over 4 002 calls, 2 000 evenly spaced line starts in a 22 000-character ASCII body,
+# `s7c -p -O2 -l src') against 0.44 µs for `lineUnits' (17 586 µs over 40 020 calls). The ratio is
+# the document over the line, which IS the O(document)-vs-O(line) claim. The 7.9 s that used to sit
+# here is deleted: no honest run of that shape reproduces it, and a number no command produces is
+# worse than none. No other feature asks for more than two ranges per response, which is why it was
+# never felt before this one.
 const func integer: lineUnits (in string: text, in integer: start) is func
   result
     var integer: units is 0;

@@ -54,12 +54,20 @@ const func integer: headerNumber (in string: text) is func
 # boundary, and the same suite's astral run is the end-to-end proof that the next frame survives.
 #
 # No character is wider than four bytes (utf8bytes.utf8CharLength), so a read of `remaining div 4'
-# characters can never cross the boundary, and `remaining' falls by at least a quarter per pass.
-# Measured on the largest frame this server receives -- the 2 002-line capped-document didOpen,
-# 34 319 bytes of ASCII: 37 passes, 5.0 ms per read against 80 ms for the same budget spent one
-# character at a time (which is why the loop is chunked) and 0.03 ms for the single character-counted
-# read it replaces. The work is one utf8Length pass over the body -- the pass writeMessage already
-# pays on every frame it sends -- plus 37 C calls; the capped wire session went 0.161 s to 0.177 s.
+# characters can never cross the boundary, and `remaining' falls by at least a quarter per pass --
+# from 34 319 that recurrence (`remaining - max(1, remaining div 4)') reaches 0 in 37 steps, and the
+# 37 is not only arithmetic: the profiled run below counts 345 090 `gets' calls, which is exactly
+# 50 x 37 (chunked) + 50 (single) + 10 x 34 319 (character at a time).
+#
+# Measured on the largest frame this server receives -- the 2 002-line capped-document didOpen body,
+# 34 319 bytes of pure ASCII -- by `s7c -p -O2 -l src' on a probe that reads that body from
+# STD_UTF8_IN 50 times per variant. `readFrameBody': 79 582 µs over 50 calls, 1 592 µs per read, of
+# which `utf8Length' is 70 945 µs -- the one pass over the body this paragraph promises, 89% of the
+# cost, and the pass writeMessage already pays on every frame it sends. The same budget spent one
+# character at a time, same accumulator, is 1 005 274 µs over 10 reads: 100 527 µs per read, 63x
+# (which is why the loop is chunked). A single character-counted read of the whole body is 1 034 µs
+# over 50 reads -- 21 µs per read, 76x cheaper than this loop, and wrong for any body holding a
+# non-ASCII character, which is the bug above. The loop pays 1 592 µs per frame to avoid it.
 #
 # seek/tell would be cheaper and are unusable here: STD_UTF8_IN is a pipe, and on a pipe
 # seekable(STD_UTF8_IN) is FALSE while seek raises FILE_ERROR -- both measured, in this server's

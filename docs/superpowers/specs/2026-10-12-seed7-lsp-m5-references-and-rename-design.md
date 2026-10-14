@@ -534,10 +534,16 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     first 12 indexable tokens off each file and asks `occurrencesOf` for each — a positive control,
     since the name came from the same scanner, so a zero is a bug in the index and not a missing
     fixture. Over every file in the checkout (`lib/*.s7i` 213, `prg/*.sd7` 129):
-    `files=342 names_probed=4104 occurrences=516044 misses=0`. Cost, measured on the same run:
-    about **40 ms per full-document pass** at an average of ~126 occurrences per name — the figure
-    behind "one request, one pass" in §3. It checks termination and finding, NOT columns; those are
-    pinned by the astral checks in Tasks 1, 4 and 9.
+    `files=342 names_probed=4104 occurrences=516044 misses=0` — reproduced verbatim by the run
+    measured below. Cost, measured on a profiled build of this tool's own driver
+    (`s7c -p -O2 -l src` over the same 342 files), reading the `occurrencesOf` row of `profile_out`:
+    **33 947 076 µs over 4 104 calls = 8.3 ms per full-document pass**, averaged over the
+    corpus-sized documents, at an average of ~126 occurrences per name. The document-sized large
+    input is 29.6 ms for one pass over `lib/shiftjis.s7i` (375 354 characters; `occurrencesOf`
+    1 183 852 µs over 40 calls, same build). The **~40 ms** this item carried is deleted — no
+    profiled command reproduces it, and §3's "one request, one pass" is a shape claim that needs no
+    number to stand. It checks termination and finding, NOT columns; those are pinned by the astral
+    checks in Tasks 1, 4 and 9.
 16. **A lone surrogate left the server as three bytes that are not valid UTF-8, and the fold was
     copying every string on the request path.** Two findings, one bound. (a) Task 13 made
     `joinSurrogates` total by construction — a stray high, a stray low and a high followed by a

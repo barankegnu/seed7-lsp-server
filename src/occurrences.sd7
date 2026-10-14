@@ -331,8 +331,13 @@ const func binding: resolveBinding (in string: text, in array symRec: syms,
     # filters its list, so they share ONE call -- and pay for it only when the buffer could bind
     # the name at all. A gated keyword, a library name and a name this buffer never mentions all
     # answer the same binding with or without these rows, so the guard is not observable from
-    # outside; the saving is not yet measured -- Task 6 reproduces it with `s7c -p -O2 -l src`; if
-    # the table does not show it, this guard comes out.
+    # outside -- and it buys a measured amount. Profiled with `s7c -p -O2 -l src' over the
+    # 375 354-character `lib/shiftjis.s7i` (1 123 symRec records from its own synthetic-driver
+    # analysis), 20 resolutions on a name the buffer never mentions plus 20 on the empty spelling:
+    # 29 992 µs per cursor gated against 55 929 µs with the guard opened to `if TRUE then' -- one
+    # `blockRegions' pass of 25 943 µs avoided per gated cursor, 1 036 219 µs over the 40. The
+    # guard's own price is `bufferCouldBind' at 116 µs per call (27 859 µs over 240), about a
+    # two-hundred-and-twentieth of what it skips. The guard stays.
     if bufferCouldBind(syms, name, docPath) then
       # ONE scan shared by both rows, not one per declaration: routineRegionFor only filters
       # this list.
@@ -470,7 +475,12 @@ const type: cursorRefs is new struct
 # branched on the second would be re-deriving the resolution the seam exists to hand it. The price
 # is one resolution per cursor; the region scan 1b recorded for a cursor on a number or a bracket
 # is gated now -- `bufferCouldBind' sees a spelling no record of this buffer carries, so those
-# cursors never reach `blockRegions'. Reclaimed, and unmeasured: Task 6 Step 4b owns the figure.
+# cursors never reach `blockRegions'. Measured with `s7c -p -O2 -l src' over the 375 354-character
+# `lib/shiftjis.s7i': the 40 gated resolutions made 0 `blockRegions' calls (the 20 calls in that
+# table are the probe's own direct ones), where the same 40 with the guard opened to `if TRUE then'
+# made 60 -- 25 943 µs per call, which is the figure 1b's cost estimate was waiting for. What the
+# guard does NOT reclaim is `occurrencesOf', which every cursor pays: 29 596 µs for the pass over
+# that document, even for the empty spelling, which can match no token.
 # No answer moves, and refusal does not depend on `b'.
 const func cursorRefs: cursorAt (in string: text, in array symRec: syms, in string: name,
                                  in integer: line0, in integer: col16, in integer: lastLine,
