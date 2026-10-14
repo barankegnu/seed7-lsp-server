@@ -82,8 +82,9 @@ const func string: joinSurrogates (in string: stri) is func
 # build, table read off profile_out, 50 strAt calls on the `text' of a 234-line didOpen body
 # (11 466 characters, no surrogate anywhere). Command: s7c -p -O2 -l src <probe>, then run it.
 #
-#     226 310 us  joinSurrogates (50 calls)  <- 4 529 us per call: the unconditional fold
+#     226 310 us  joinSurrogates (50 calls)  <- 4 526 us per call: the unconditional fold
 #      23 926 us  hasSurrogate   (50 calls)  <-   478 us per call: the scan that skips it
+#   The two per-call figures are arithmetic on the rows beside them; the rows are the measurement.
 #
 # Both halves of this were measured twice and the first pair of numbers was wrong, so they are
 # recorded as corrected rather than as tidy: my first probe inlined the range test and reported

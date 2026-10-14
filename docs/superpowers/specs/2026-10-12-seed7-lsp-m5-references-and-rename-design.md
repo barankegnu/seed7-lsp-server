@@ -74,13 +74,18 @@ the mask", which this keeps.
 document. `resolveBinding` then runs a second O(document) pass — `blockRegions` — and it runs it only
 when `bufferCouldBind` finds a record of this buffer that is named by the cursor's spelling or carries
 it among its scope entries. So a gated keyword, a library name and a name the document never mentions
-cost ONE document pass; a name this buffer declares costs TWO. Nothing else in a cursor request walks
-the whole document: `rename` edits the array the shared predicate hands back rather than re-passing,
-and the field question reads the cursor's own record instead of scanning the document for a `.' as it
-used to. The first draft's "one request costs one pass over one document" was therefore true of the
-token pass and false of the whole request; the review burn-down's Task 1 deleted the second document
-walk outright — the whole-document `.' search — and Task 2 made the region scan conditional, which is
-the shape that is left.
+cost ONE index pass; a name this buffer declares costs TWO. Neither count includes the walk that
+resolves the cursor's own token: `lsp_server.wordOfRequest` → `doc_store.wordAt` → `scan.tokenAt`
+starts a fresh `scanCursor` at offset 1 and calls `nextToken` until a token starts past the position,
+and it cannot seek because `nextToken` carries `col16` forward incrementally. That prefix walk runs on
+every cursor request, so a cursor near the end of a large buffer pays a THIRD whole-document pass —
+the one taken to find out which token the client meant. Nothing else in a cursor request walks the
+whole document: `rename` edits the array the shared predicate hands back rather than re-passing, and
+the field question reads the cursor's own record instead of scanning the document for a `.' as it used
+to. The first draft's "one request costs one pass over one document" was therefore true of the token
+pass and false of the whole request; the review burn-down's Task 1 deleted the second document walk
+outright — the whole-document `.' search — and Task 2 made the region scan conditional, which is the
+shape that is left.
 
 The figures are §11.14's, measured with `s7c -p -O2 -l src` and quoted there with their rows: ≈8.3 ms
 per full-document `occurrencesOf` pass over the corpus, ~29.6 ms for one pass over
@@ -120,8 +125,12 @@ exactly the category `formalParams` / `localConsts` / `localVars` / `resultVar` 
 those inner objects carries `file()` and `line()` — a local's declaration line, inside the
 buffer.
 
-`analysis.sd7` grows two functions beside the existing `paramsOf` (`src/analysis.sd7:100`):
-`constsOf` and `varsOf`, same shape, same `RANGE_ERROR` guard.
+`analysis.sd7` grew two functions beside the existing `paramsOf`: `scopeOf`, which answers ONE
+`scopeRec` for one object, and `localsOf`, which answers the `array scopeRec` of a routine's whole
+scope. They are NOT the same shape as `paramsOf` — that one answers `array string`, which is exactly
+what the next paragraph refuses to be enough — and `localsOf` keeps `paramsOf`'s total-answer habit
+under a wider guard: `RANGE_ERROR`, `INDEX_ERROR` and `ILLEGAL_ACTION`, because a routine whose own
+declaration failed raises all three from the same accessors.
 
 **Scope is not a list of names.** A `string` array like `params` cannot support either half of
 what §4 needs: shadowing subtraction wants the *region* a local lives in, and
@@ -227,11 +236,47 @@ answers `null` and logs why, rather than returning an edit the client will ignor
 from the design §6, "a capability is advertised only once its method is answered", applied one
 level down.
 
-**`prepareRename`** returns `{range, placeholder}` or `null`. It runs the resolution of §4 and
-refuses, with a log line naming the reason, when: the binding is a library symbol; the token is
-a keyword or a `$ syntax` operator (none of `if`, `then`, `do`, `:=`, `&` is renameable —
-`seed7_05.s7i` declares them); the token's name is not a name at all; or the client cannot apply
-edits. Refusal is `null`, not an error, which is what makes an editor grey out the menu item
+**`prepareRename`** returns `{range, placeholder}` or `null`. It runs the resolution of §4, and
+`renameDecision` is the one predicate that refuses — for `prepareRename` and for `rename` alike —
+with a log line naming the reason. Its arms, in the order the code asks them; the order is itself a
+ruling (R47, R51: a fact about the SYMBOL speaks before a fact about the document's length):
+
+1. **no token under the cursor at all** — `word.word = ""`, decided before the document is read, so
+   the cheapest refusal is the cheapest to compute. Ruled here; §12.1's shape (a refusal is `null`)
+   applies to it as to every arm below.
+2. **the client cannot apply edits** — no `workspace.applyEdit` in its `initialize` params. Ruled
+   above in this section and in §7, which is why the arm sits second: it costs nothing to ask.
+3. **the document is a library `.s7i` buffer** — `uris.isLibraryBufferPath`, asked before a token is
+   scanned because it is the one refusal that costs no resolution at all. **§12.3 rules it**, with
+   the commits that made it and the read that stays answered.
+4. **the cursor's token is not a name at all** — `occurrenceAt` leaves `slot` at 0, decided by
+   the token's KIND, not by where the symbol came from. This is where a `$ syntax` operator, an
+   operator run like `:=` or `&`, a bracket, a number and a cursor with no token to its left all
+   die. Ruled by the operator paragraph below. The arm speaks TWO sentences: the plain "is not a
+   name", and, when the list is truncated at `MAX_OCCURRENCES` and the cursor fell past the end of
+   it, the sentence the cap paragraph below owns.
+5. **the symbol is declared outside this buffer** — `owner = "library"`. §4's row 3 and §2's
+   file-local decision; the read still answers the whole document, the write refuses.
+6. **the name is a keyword** — `binding.keyword`, answered by `keywords.isKeyword`: the 63 words
+   §11.11 measured, not a hand-written list. This is the arm a cursor on `if`, `then` or `do` dies
+   at — they scan as names, so the kind gate above never sees them — while `:=` and `&` are stopped
+   one arm earlier.
+7. **the binding resolves nowhere** — `not binding.resolved`, §4's row 4. **§12.1 rules this arm:** a
+   write refuses rather than renaming every same-named token in the file.
+8. **the scope may be shorter than the truth** — `binding.scopeUncertain`: a nested routine's locals,
+   or a one-line routine whose region never closed (§11.12's fourth case, R35). It refuses on its own
+   arm rather than folding into §12.1, and §12.1's closing sentence says why; §12.2 now discloses the
+   same uncertainty on the read.
+9. **two records of the name share its declaration line** — `declLineAmbiguous`. **§11.12 rules
+   it**, with the legal rename it over-refuses (`x` and `y` on one line) and the reason a column test
+   is the only alternative.
+10. **a record field of the same spelling sits inside the symbol's own scope** —
+    `scopeHasFieldAccess`. **§12.2 rules it**: the read over-includes and says so, the write refuses.
+11. **the list is truncated and the cursor IS in it** — `binding.capped`, last in the chain so every
+    arm above gets the sentence that describes the symbol rather than the document. Ruled by §6's cap
+    paragraph below and §12.1's direction.
+
+Refusal is `null`, not an error, which is what makes an editor grey out the menu item
 instead of showing a failure.
 
 Operators are refused by the "not a name at all" clause, not by the keyword arm, and what refuses
@@ -607,15 +652,39 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     measured below. Cost, measured on a profiled build of this tool's own driver
     (`s7c -p -O2 -l src` over the same 342 files), reading the `occurrencesOf` row of `profile_out`:
     **33 947 076 µs over 4 104 calls** — that row is the measurement; ≈8.3 ms per full-document
-    pass is arithmetic on it, averaged over the corpus-sized documents, at an average of ~126
-    occurrences per name. The document-sized large input reads `occurrencesOf` 1 183 852 µs over
-    40 calls in the same build, so ≈29.6 ms for one pass over `lib/shiftjis.s7i` (375 354
-    characters). The **~40 ms** this item carried is deleted — no
-    profiled command reproduces it, and §3's pass claim is a shape claim that needs no number to
-    stand — §3 now states that shape exactly: one token pass on every cursor, and one region pass only
-    when a record of this buffer could bind the name. It checks termination and finding, NOT columns;
-    those are pinned by the astral
-    checks in Tasks 1, 4 and 9.
+    pass is arithmetic on it. The documents it averages over have a mean size of **70 710
+    characters**: `readAll` over the same 342 files totals 24 183 079 characters (24 183 079 div 342
+    is 70 710, remainder 259), and every file yields exactly 12 probes (4 104 = 342 × 12), so the
+    probe-weighted mean IS the plain mean. Same unit as the 375 354 below, and measured the same way:
+    that driver's `readAll` answers one character per BYTE of the file plus one newline per file (the
+    corpus's 24 182 737 bytes, plus 342), so this is the size `occurrencesOf` is handed, not a
+    Unicode code-point count. Average ~126 occurrences per
+    name. The document-sized large input reads `occurrencesOf` 1 183 852 µs over 40 calls in the same
+    build, so ≈29.6 ms for one pass over `lib/shiftjis.s7i` (375 354 characters). The **~40 ms** this
+    item carried is deleted — no profiled command reproduces it, and §3's pass claim is a shape claim
+    that needs no number to stand — §3 now states that shape exactly: the `scan.tokenAt` prefix walk
+    on every cursor, one index pass on every cursor, and one region pass only when a record of this
+    buffer could bind the name. The two cost rows do NOT convert into each other, and the mean is what
+    shows it: 8.3 ms over a 70 710-character document is ≈0.117 µs per character, while
+    `shiftjis.s7i`'s own row is ≈0.079 µs per character — both arithmetic on the rows above — so a
+    reader must not use one rate to price the other document. What this item checks is termination and
+    finding, NOT columns; those are pinned by the astral checks in Tasks 1, 4 and 9.
+
+15. **`blocks.enclosingDeclarations` and `blocks.declarationRegion` were dead on arrival.** Task 3
+    produced them for Task 6, and Task 6 grew its own pairing instead: `resolveBinding` scans
+    `blockRegions` once and calls `routineRegionFor` per candidate, then `regionOwner`/`ownsRegion`
+    decide whether the pair belongs to the record — one list, one sort, a field an `enclosing-
+    Declarations` chain could not carry. So `declarationRegion` was `routineRegionFor` over a fresh
+    scan with no caller, and `enclosingDeclarations` was a `closer <> ""` filter with no caller.
+    Both deleted on `m5-review-fixes`, with the wrapper-only checks: `grep -rn
+    'enclosingDeclarations|declarationRegion' src/` is empty, and `regionOfDeclaration` in
+    `blocks_test.sd7` now calls the surviving pair directly so the seven pairing checks still test
+    production. What did NOT move is the closer filter — "a non-routine region is not a scope" is
+    pinned where it runs, at `occurrences_test.sd7`'s phantom-region check (a carrier with no
+    region must not be handed the region at line 0), and the `closer` field itself stays pinned by
+    this suite's `closerAt` checks. The pairing rule the deleted pair was supposed to own lives in
+    §11.9's adjacency note and in `occurrences.regionOwner`, not here.
+
 16. **A lone surrogate left the server as three bytes that are not valid UTF-8, and the fold was
     copying every string on the request path.** Two findings, one bound. (a) Task 13 made
     `joinSurrogates` total by construction — a stray high, a stray low and a high followed by a
@@ -632,25 +701,12 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     disproved by measurement — but a mangled name in a refusal line is a bug the client cannot fix.
     (b) `strAt` folded unconditionally, so a document-sized body paid one allocation per character
     on every `didChange`. Measured with `s7c -p -O2 -l src`, 50 `strAt` calls on the `text` of a
-    234-line didOpen body (11 466 characters, no surrogate anywhere): **4 529 µs per call**
-    folding, **478 µs per call** for the scan that skips it. A guard whose two paths are the same
-    function — no input separates them, so no check can redden it and it is labelled as such; the
+    234-line didOpen body (11 466 characters, no surrogate anywhere): **226 310 µs over the 50
+    calls** folding, **23 926 µs over the same 50 calls** for the scan that skips it. The per-call
+    figures `rpc.sd7` quotes beside those rows — ≈4 526 µs and ≈478 µs — are arithmetic on them, and
+    the 4 529 this item carried was neither a row nor that arithmetic. A guard whose two paths are the
+    same function — no input separates them, so no check can redden it and it is labelled as such; the
     pair-fold check at `rpc_test.sd7:76-77` is what would catch a guard that skipped too eagerly.
-
-15. **`blocks.enclosingDeclarations` and `blocks.declarationRegion` were dead on arrival.** Task 3
-    produced them for Task 6, and Task 6 grew its own pairing instead: `resolveBinding` scans
-    `blockRegions` once and calls `routineRegionFor` per candidate, then `regionOwner`/`ownsRegion`
-    decide whether the pair belongs to the record — one list, one sort, a field an `enclosing-
-    Declarations` chain could not carry. So `declarationRegion` was `routineRegionFor` over a fresh
-    scan with no caller, and `enclosingDeclarations` was a `closer <> ""` filter with no caller.
-    Both deleted on `m5-review-fixes`, with the wrapper-only checks: `grep -rn
-    'enclosingDeclarations|declarationRegion' src/` is empty, and `regionOfDeclaration` in
-    `blocks_test.sd7` now calls the surviving pair directly so the seven pairing checks still test
-    production. What did NOT move is the closer filter — "a non-routine region is not a scope" is
-    pinned where it runs, at `occurrences_test.sd7`'s phantom-region check (a carrier with no
-    region must not be handed the region at line 0), and the `closer` field itself stays pinned by
-    this suite's `closerAt` checks. The pairing rule the deleted pair was supposed to own lives in
-    §11.9's adjacency note and in `occurrences.regionOwner`, not here.
 
 ## 12. Open questions put to the partner
 
