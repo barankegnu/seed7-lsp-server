@@ -157,8 +157,9 @@ const type: binding is new struct
     # WHOSE local this is, so a caller reads it here instead of re-walking the records-and-entries
     # cross product and drifting from that answer. It is the FIRST row-1 match (the loop body is
     # gated on `out.owner = ""'), not the first record CARRYING the name. 0 unless `owner' is
-    # "local", and 0 is a degradation: a caller must test it before indexing `syms[ownerSym]',
-    # of the `syms' array this binding was resolved from; meaningless against any other.
+    # "local", and 0 is a degradation: a caller must test it before indexing `syms[ownerSym]' --
+    # `ownerSym' is a position in the `syms' array this binding was resolved from, and meaningless
+    # against any other array.
     var integer: ownerSym is 0;
     # The regions a shadowing scope takes out of a global's scope. Kept as regions rather than
     # as a pre-filtered occurrence array because rename needs the declaration line as well, and
@@ -271,10 +272,11 @@ const func blockRef: innermostRegion (in array blockRef: regions, in integer: li
 # `field' WITHOUT a dot test, so skipping rows 1-2 could change row 4's answer -- and does not,
 # because the flag is set only for a buffer record that carries `name' in its scope, which is
 # exactly the TRUE case of this function. Measured by WEAKENING this predicate, not by switching
-# the guard off: replace the line below with `out := syms[i].name = name;' and the `total|field'
-# pin at occurrences_test.sd7:296 becomes `total|' -- `total' is carried only as a scope entry, so
-# the arm this function keeps is the arm that sets the flag, while the dot-arm field checks
-# stay green because row 4 runs outside the guard. The guard-off mutant (`return FALSE') CANNOT
+# the guard off: replace the body test below with `out := syms[i].name = name;' and the
+# occurrences_test.sd7 check "a routine's own name used outside its region is over-included, not
+# proven" drops from `total|field' to `total|' -- `total' is carried only as a scope entry, so the
+# arm this mutant drops is the arm row 1 needs to set the flag, while the dot-arm field checks stay
+# green because row 4 runs outside the guard. The guard-off mutant (`return FALSE') CANNOT
 # falsify this claim and is not the proof: it skips row 1 for EVERY name, so those labels vanish
 # whether or not the guard is safe. If a field answer ever goes missing with the rows left
 # running, the claim is FALSE and only `blockRegions' may be gated.
@@ -475,8 +477,10 @@ const type: cursorRefs is new struct
 # `resolveBinding' runs whether or not the cursor is on an indexable name, so `slot = 0' may be
 # read ONLY as "there is no range to take from `oc'" and never as "`b' is unset" -- a caller that
 # branched on the second would be re-deriving the resolution the seam exists to hand it. The price
-# is one resolution per cursor; the region scan 1b recorded for a cursor on a number or a bracket
-# is gated now -- `bufferCouldBind' sees a spelling no record of this buffer carries, so those
+# is one resolution per cursor, and ONE caller gained it: before the seam `references' already called
+# `resolveBinding' for every non-empty word, while `prepareRename' resolved only when `occurrenceAt'
+# named a record, so the cursor on a number or a bracket is new work for `prepareRename' alone. That
+# work is gated now -- `bufferCouldBind' sees a spelling no record of this buffer carries, so those
 # cursors never reach `blockRegions'. Measured with `s7c -p -O2 -l src' over the 375 354-character
 # lib/shiftjis.s7i: the 40 gated resolutions made 0 `blockRegions' calls -- the 20 calls in that
 # table are the probe's own direct ones -- where the same 40 with the guard opened to `if TRUE

@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 18 suites + transcript, 863 checks (683 unit + 180 wire), no editor required
+    make test          # 19 suites, every one reporting 0 failed, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code

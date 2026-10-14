@@ -688,8 +688,10 @@ const proc: main is func
     # OF THE CHAR ARM, not a proof: it survived every mutation of that arm ("read no element", "read
     # no escape element"), because a string opened at that quote stops at its own line break, so the
     # literal never reaches the line below and a name there is code either way. The claim is scoped
-    # to that arm on purpose: this check DOES pin the following token's LINE, and a scanner that let
-    # a string cross a break would redden it -- unqualified, "cannot fail" is too strong. The
+    # to that arm on purpose: this check DOES pin the following token's LINE, so it would go red only
+    # on the CONJUNCTION -- a string arm that lets a literal cross a break AND a char arm that fails
+    # to read the quote as its element. The string arm alone cannot redden it, because the literal it
+    # opens here never reaches the next line. Unqualified, "cannot fail" is too strong. The
     # same-line form is the check that can fail on the arm: the quote arm failing to read one element
     # and its closing quote turns its expected column into "none".
     quoteText := "const set of char: q is {'\"'};\ncount := 1;\n";
@@ -700,14 +702,20 @@ const proc: main is func
     oc := occurrencesOf(quoteText, "count");
     check("and what follows it on ITS OWN line is still code", at(oc, 1), "0:31:5");
     # The same character written numerically, the fallback spec 9 names. It takes the ESCAPE arm of
-    # the char literal (`scan.sd7:340-344'), which the quote spelling above never reaches -- yet NO
-    # deletion of that arm reddens it: the leftover 34 and closing marks re-tokenise as illegal,
-    # number, operator and bracket with an unchanged total column advance, so `count' still arrives at
-    # 0:34:5. Measured: deleting the branch left all 94 checks of this suite green while
-    # scan_test.sd7 went red four times. What this check does depend on is the arm's WIDTH line
-    # (`scan.sd7:343`): fixing that count at 1 makes the token 3 wide instead of 6, moves `count' to
-    # 0:31:5, and reddens THIS check alone.
-    # The same regression is already pinned in tests/scan_test.sd7 (`:351`, `:358`), so this is a
+    # the char literal -- the branch that runs `pastEscape' and then counts what it swallowed -- which
+    # the quote spelling above never reaches (a quote is an ordinary element, so the plain branch reads
+    # it) -- yet NO deletion of that arm reddens it: the leftovers re-tokenise as a two-character char
+    # literal, a number, an operator, and a second char literal whose ELEMENT is the closing brace, so
+    # nothing survives as a bracket and nothing reports TK_ILLEGAL. Measured on the mutated scanner:
+    # `'\' 2, `34' 2, `;' 1, `'}' 2, `;' 1 against the shipped `'\34;' 6 + `}' 1 + `;' 1 -- an
+    # unchanged total column advance, so `count' still arrives at 0:34:5. Deleting the branch left all
+    # 94 checks of this suite green while scan_test.sd7 went red four times. What this check DOES
+    # depend on is the escape arm's width statement (`units +:= j - before'): fixing that count at 1
+    # makes the token 3 wide instead of 6, moves `count' to 0:31:5, and reddens THIS check alone -- the
+    # quote spellings are 3 wide either way, so they stay green, and the plain branch's
+    # `units +:= utf16CharLength(text[j])' cannot be separated from a fixed 1 by any ASCII element.
+    # The same regression is already pinned in tests/scan_test.sd7 by "the five char spellings and
+    # their widths" and "the name after a numeric-escape char literal is still code", so this is a
     # duplicate seen from the occurrence index, not a new proof -- and not the decorative class
     # either, because a width mutant does kill it.
     quoteText := "const set of char: q is {'\\34;'}; count := 1;\n";

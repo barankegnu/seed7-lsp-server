@@ -42,7 +42,10 @@ const type: prepareAnswer is new struct
 # The three fields are COPIES of one `cursorAt' result, and they are not merged with it: this
 # record carries a REFUSAL (`refused', `reason') out of the one predicate (invariant 6, R45), while
 # `cursorRefs' carries an ASSEMBLY. Folding the two would move the refusal decision into the index
-# module, and rename.sd7 already reads no.oc / no.b / no.slot.
+# module. All three are read, by two different files: `rename.sd7' takes `oc' (the edit list), `b'
+# (the scope for its collision test) and the refusal pair `refused' / `reason', and it never reads
+# `slot' -- that one belongs to `prepareRenameAnswer' below, which takes its range from
+# `no.oc[no.slot]'.
 #
 # `reason' carries NO method prefix so each caller names the method that refused -- the same
 # sentence has to be reachable from prepareRename and from rename with only that name differing,
@@ -93,14 +96,16 @@ const func boolean: declLineAmbiguous (in array occurrence: oc, in binding: b) i
 
 # A WRITE refuses where a READ over-includes (spec 12.1): references can list a wider set with a
 # log line, an edit cannot, so anything this resolution cannot prove is refused here. That is the
-# whole refusal list: no client that can apply the edit, a library buffer (R-F10 unpaid, so its
-# symbol lines come from disk and an edit could land on the wrong one -- spec 12.3), a token that
-# is not a name, a keyword, a symbol declared outside this buffer, a binding that resolved
-# nowhere, a scope that may be shorter than the truth (R35: nested routines and unpaired one-line
-# routines), a declaration line that holds more than one record of the name (R51), a scope that
-# also holds a record field of the same spelling (spec 12.2, measured in features_test.sd7: the
-# edit list rewrites `box.counter' but not the field, so the file stops compiling), and a list
-# truncated at the cap. Branch is on resolved / scopeUncertain / owner (R40); owner "field" is
+# whole refusal list, in the order the arms are asked: nothing under the cursor to name, no client
+# that can apply the edit, a library buffer (R-F10 unpaid, so its symbol lines come from disk and an
+# edit could land on the wrong one -- spec 12.3), a token that is not a name -- which speaks twice,
+# once when the cursor itself fell off the end of the truncated list and once for an ordinary
+# non-name -- a keyword, a symbol declared outside this buffer, a binding that resolved nowhere, a
+# scope that may be shorter than the truth (R35: nested routines and unpaired one-line routines), a
+# declaration line that holds more than one record of the name (R51), a scope that also holds a
+# record field of the same spelling (spec 12.2, measured in features_test.sd7: the edit list rewrites
+# `box.counter' but not the field, so the file stops compiling), and a list truncated at the cap with
+# the cursor still inside it. Branch is on resolved / scopeUncertain / owner (R40); owner "field" is
 # not a special case, it is simply unresolved. The cursor is resolved ONCE, by occurrences.sd7's
 # `cursorAt', and the same array goes to the binding and to the range (R39, invariant 6).
 const func renameCheck: renameDecision (in lsDoc: doc, in array symRec: syms,

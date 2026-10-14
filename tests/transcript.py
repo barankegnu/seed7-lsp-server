@@ -978,9 +978,10 @@ expect(answered_null(by_id, 141),
 # dropped every occurrence through a null context would have passed the type test. Measured on
 # this cursor: the two answers are the SAME list, because reportWidget's `counter' is declared on
 # the header line, which IS the line its body region opens on, so the declaration is already one
-# of the occurrences and includeDeclaration has nothing to add (tests/features_test.sd7:596 says
-# the same for the unit fixture). If the null context ever cost the client its locations, the
-# first check below stays green and this one reddens on `[18, 59, 66], [21, 4, 11]` -> `[]'.
+# of the occurrences and includeDeclaration has nothing to add (features_test.sd7's "a declaration
+# already in the list is not published twice" says the same for the unit fixture). If the null
+# context ever cost the client its locations, the first check below stays green and this one
+# reddens on `[18, 59, 66], [21, 4, 11]` -> `[]'.
 NW_EXPECT = [(l, PR_LINES[l].index("counter"), PR_LINES[l].index("counter") + 7)
              for l in (RN_HEAD, RN_USE)]
 nw_obj = by_id.get(142, {}).get("result")
@@ -1003,10 +1004,11 @@ one_answer_per_request(NW_MSGS, replies, "the workspace-null run")
 # production regression that ignored the flag entirely was visible only in units. This document is
 # the shape the flag exists for: a TWO-LINE routine header puts the first parameter's declaration
 # on the line ABOVE the one the body region opens on, so inScope does not hold it and
-# includeDeclaration is the only thing that can add it (spec 11.9; the unit pin is
-# tests/features_test.sd7:614-619, and it never crossed a frame). The whole-line location is what
-# production emits -- start of the declaration line to start of the next -- because reflection
-# gives a declaration no column.
+# includeDeclaration is the only thing that can add it (spec 11.9; the unit pins are
+# features_test.sd7's "without includeDeclaration the declaration above the region stays out" and
+# "includeDeclaration adds it as a whole line, because reflection has no column", and they never
+# crossed a frame). The whole-line location is what production emits -- start of the declaration
+# line to start of the next -- because reflection gives a declaration no column.
 HDR_TEXT = ('$ include "seed7_05.s7i";\n'
             '  include "console.s7i";\n'
             '\n'

@@ -121,10 +121,12 @@ const func boolean: bufferHasDataNamed (in array symRec: syms, in string: docPat
 # `writeln'. The comparison is by NAME, never by signature: an overload sibling is one symbol to
 # this feature (spec 2), and a rename that produces a REDECLARATION is what the caller sees next
 # from the diagnostic publisher either way.
-# The local's owner is `b.ownerSym', the record row 1 found while deciding whose local this is, so
-# Unreachable today -- row 1 sets `owner' and `ownerSym' together (occurrences.sd7:348/353);
-# kept so that a binding row added later cannot hand `syms[0]' an INDEX_ERROR onto
-# the protocol channel.
+# The local's owner is `b.ownerSym', the record row 1 found while deciding whose local this is, and
+# the only `syms' index this function reads. The `<> 0' test is the guard `binding.ownerSym' demands,
+# not decoration: 0 is a real value of that field, and indexing with it would put an INDEX_ERROR onto
+# the protocol channel. What the guard costs instead is the degrade -- a 0 owner means no collision
+# test runs. Unreachable today, because row 1 assigns `owner' and `ownerSym' in the same block, so no
+# local binding arrives without an owner; kept so a binding row added later cannot hand one without.
 const func boolean: collides (in string: nm, in binding: b, in array symRec: syms,
                               in string: docPath) is func
   result
