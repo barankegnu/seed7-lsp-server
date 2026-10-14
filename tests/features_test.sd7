@@ -243,6 +243,46 @@ const func string: fieldClashText is func
            "  end func;\n";
   end func;
 
+# The two-struct fixture spec 9 asked for and never had: `pix' is a field of TWO structs in one
+# file, the global `pix' is a fourth symbol of the same spelling, and one routine declares `pix'
+# as its own local. This is spec 12.2's permanent row-4 case -- `field names repeat across structs,
+# and w.pix is pervasive in real Seed7' -- and there is no machine here that separates the two
+# fields, so both spellings stay one symbol. The bodies only assign: analysis runs what it reads.
+const func string: twoStructText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "const type: Alpha is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "const type: Beta is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "var integer: pix is 0;\n" <&
+           "\n" <&
+           "const proc: show (in Alpha: a, in Beta: b) is func\n" <&
+           "  local\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  begin\n" <&
+           "    pix := a.pix + b.pix;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var Alpha: x is Alpha.value;\n" <&
+           "    var Beta: y is Beta.value;\n" <&
+           "  begin\n" <&
+           "    x.pix := 1;\n" <&
+           "    y.pix := 2;\n" <&
+           "    pix := 3;\n" <&
+           "    show(x, y);\n" <&
+           "  end func;\n";
+  end func;
+
 # The operator-declaring fixture: a buffer that declares its OWN operator, the shape §6's
 # refusal had no witness for. Seed7 will not parse a new operator symbol until a syntax rule
 # gives it a priority -- measured: without the `$ syntax' line the analyzer answers
@@ -478,6 +518,12 @@ const proc: main is func
     var string: opPath is "/tmp/tt_opdecl.sd7";
     var string: opUri is "file:///tmp/tt_opdecl.sd7";
     var wordRef: opWord is wordRef.value;
+    var lsDoc: pdoc is lsDoc.value;
+    var array symRec: psyms is 0 times symRec.value;
+    var docAnalysis: pd is docAnalysis.value;
+    var string: pPath is "/tmp/tt_two.sd7";
+    var string: pUri is "file:///tmp/tt_two.sd7";
+    var wordRef: pixWord is wordRef.value;
     var renameCheck: dec is renameCheck.value;
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
@@ -1067,6 +1113,60 @@ const proc: main is func
     rn := renameResult(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, "amount", TRUE);
     check("and rename will not half-rewrite it", str(rn.error = "") <& " " <& rn.json,
           "TRUE null");
+
+    # ---- `pix' in TWO structs (spec 9, answered by spec 12.2) -------------------------------
+    # The cursor is on `x.pix' -- a field access -- in a file where `pix' is also Alpha's field, a
+    # global and another routine's local. Expected BEFORE running it, from 12.2's answer: the read
+    # over-includes and says so; the write refuses. Measured, and the two structs' field
+    # DECLARATIONS are in the list (lines 4 and 8, 1-based), which is the whole point -- nothing in
+    # this machine knows which struct a field belongs to, so a cursor on Alpha's field answers a
+    # list that also holds Beta's. The global row binds the spelling first, so `resolveBinding'
+    # never reaches its field row for this cursor and the answer is `resolved' with the field
+    # disclosure rather than the unresolved one the single-struct field gets.
+    setVersion(pdoc, twoStructText(), 1);
+    pd := analyzeAll(pdoc.text, noDirs, pPath);
+    psyms := pd.syms;
+    check("the two-struct fixture analyses clean", str(length(pd.parsed.diags)), "0");
+    pixWord := wordAt(pdoc, 24, 7);
+    check("the cursor is on main's field access, at the column wordAt answers",
+          pixWord.word <& ":" <& str(pixWord.line1) <& ":" <& str(pixWord.character1),
+          "pix:25:6");
+    ra := referencesAnswer(pdoc, psyms, pixWord, pUri, FALSE);
+    check("references over-includes across both structs, and lists them in column order",
+          ra.json,
+          "[{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":3,\"character\":17},\"end\":{\"line\":3,\"character\":20}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":7,\"character\":17},\"end\":{\"line\":7,\"character\":20}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":10,\"character\":13},\"end\":{\"line\":10,\"character\":16}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":24,\"character\":6},\"end\":{\"line\":24,\"character\":9}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":25,\"character\":6},\"end\":{\"line\":25,\"character\":9}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":26,\"character\":4},\"end\":{\"line\":26,\"character\":7}}}]");
+    check("and it says the list holds both structs' fields", str(ra.unresolved), "TRUE");
+    check("in the field sentence, not the unresolved one", ra.why,
+          "references: pix is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
+    pc := prepareRenameAnswer(pdoc, psyms, pixWord, pUri, TRUE);
+    check("prepareRename refuses a field access inside the symbol's window", str(pc.refused),
+          "TRUE");
+    rn := renameResult(pdoc, psyms, pixWord, pUri, "amount", TRUE);
+    check("and rename answers null with no error, refusing to half-rewrite two structs",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    # The same spelling under the routine that declares it as its OWN local: the window is show's
+    # region, and it holds both `a.pix' and `b.pix' -- two different symbols' fields, one per
+    # struct -- so the read is over-inclusive inside the window and the write refuses for the same
+    # reason. Measured as four records: the local's declaration line and the three names on the
+    # assignment line.
+    ra := referencesAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, FALSE);
+    check("the field access inside a local of the same name answers its own window only",
+          str(uriCount(ra.json)) <& " " <& str(endCount(ra.json)), "4 4");
+    pc := prepareRenameAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, TRUE);
+    check("and it is refused too, because both fields sit in that window",
+          str(pc.refused) <& " " <& pc.why, "TRUE prepareRename: pix" <& FIELD_TAIL);
 
     # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
     # FIRST of them, so the record the range would take IS in the truncated list -- the gap that

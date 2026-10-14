@@ -329,10 +329,33 @@ Unit (`tests/occurrences_test.sd7`, new suite in `Makefile`'s `TESTS`):
 - a name bound to the library is not renameable but is referenceable;
 - `occurrencesOf` finds nothing for `count` inside a `prg/calc7.sd7`-style continuation string,
   and nothing inside `{'"'}` in `lib/chartype.s7i` — the two cases `hiddenKind` skipping exists
-  for, now proved from the real text rather than from the mask;
+  for, now proved from the real text rather than from the mask. **Pinned** in
+  `tests/occurrences_test.sd7`: "a name inside a continued string literal is not an occurrence"
+  (killed by letting the string arm end at the backslash) and "one name survives the continuation,
+  and it is the one after the closing quote" (killed by dropping `scanLineBreak` inside
+  `skipContinuation`, which leaves the literal spanning lines but reports the later token on the
+  line it started on). For the char literal the two checks are not equal: "and what follows it on
+  ITS OWN line is still code" is the discriminating input — an arm that fails to read the quote as
+  the literal's element opens a string there, and the name on that line leaves the index — while
+  "what follows a quote char literal on the next line is still code", the spelling this section
+  asked for, survives every mutation of the char arm, because a string opened at that quote stops
+  at its own line break and a name below it is code either way. It is kept because this section
+  measured that input, and it records a real answer, but it is a redundancy, not a proof.
+  "the numeric spelling of the same element is hidden the same way" witnesses the escape arm, a
+  different branch, and so survives the char-element mutant honestly.
 - a truncated buffer (the normal state mid-typing) resolves to *unknown* and `references` answers
   over-inclusive plus the log line — this is the check that keeps §4's fourth row honest;
-- a field access `w.pix` where `pix` exists in two structs in one file — §12.2's answer;
+- a field access `w.pix` where `pix` exists in two structs in one file — §12.2's answer.
+  **Pinned** in `tests/features_test.sd7` on a fresh inline fixture (two structs each declaring
+  `pix`, a global `pix`, and a routine whose own local is `pix`): "references over-includes across
+  both structs, and lists them in column order" answers six locations for the cursor on `x.pix`
+  and the list holds BOTH structs' field declarations, at lines 4 and 8; "and it says the list
+  holds both structs' fields" sets `unresolved` with the field sentence rather than the unbound
+  one, because the global row binds the spelling before §4's fourth row is reached; "prepareRename
+  refuses a field access inside the symbol's window" and "and rename answers null with no error,
+  refusing to half-rewrite two structs" state the write's side; "the field access inside a local
+  of the same name answers its own window only" gives the same ruling for a cursor inside the
+  routine that declares `pix` itself, where the window holds one field of each struct.
 - a name that is a keyword, a number or a bracket yields `null` from `prepareRename`.
 
 Wire (`tests/transcript.py`): initialize advertises both providers; `references` on an opened
@@ -569,8 +592,11 @@ raised is settled above or in §2 as a builder's call.
    document (measured: `total` declared at line 8, read as `b.total` at line 31); and the fork's
    third branch — a token-level index over `const type … end struct` regions, which would rename
    the field and its uses together — is still unbuilt, so a user wanting that gets a refusal, not
-   a wrong answer. §9's `pix` in TWO structs is still not a fixture: `dotPrev` recognises the
-   access but nothing here separates the two fields, so both spellings stay one symbol.
+   a wrong answer. §9's `pix` in TWO structs is now a fixture, added on `m5-review-fixes` and
+   pinned in `tests/features_test.sd7` (§9 names the checks): `dotPrev` recognises the
+   access but nothing here separates the two fields, so both spellings stay one symbol — measured,
+   the cursor on `x.pix` answers six locations and two of them are the field declarations of the
+   two different structs.
 3. **Does M5 answer `rename` on a `.s7i` buffer?** Ship it and document the staleness, refuse
    there until R-F10 is paid, or match only `BUFFER_FILE` as "this buffer" (which quietly makes
    every library file a row-4 case).

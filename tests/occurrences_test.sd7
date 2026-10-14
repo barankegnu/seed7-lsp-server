@@ -222,6 +222,8 @@ const proc: main is func
     var string: pixOneLine is "";
     var string: pixTwoLines is "";
     var string: pixAfterBreak is "";
+    var string: contText is "";
+    var string: quoteText is "";
     var array occurrence: pixOc is 0 times occurrence.value;
     var cursorRefs: cr is cursorRefs.value;
     var array symRec: noSyms is 0 times symRec.value;
@@ -654,6 +656,53 @@ const proc: main is func
     oc := occurrencesOf("box.\n  total := 1;\n", "total");
     check("a dot on the line above does not mark it -- the line-granular limit",
           str(oc[1].dotPrev), "FALSE");
+
+    # ---- spec 9's two hidden-text fixtures, asked for by name and never written -------------
+    # The first is the literal `prg/calc7.sd7:57-58' really uses: a BACKSLASH at the end of the
+    # line, inside the quotes, which Seed7 ignores together with the break and the blanks that
+    # follow it, so the literal goes on. A scanner that stopped the literal at that break makes
+    # the continued text code, and a name written inside it -- `count' below -- then enters the
+    # index. The fixture is built with escapes because `\" <& chr(92)' at statement level is the
+    # trap this branch already hit: the escape eats the closing quote and the file will not parse.
+    contText := "x := \"abc \\\n  count\";\n";
+    oc := occurrencesOf(contText, "count");
+    check("a name inside a continued string literal is not an occurrence",
+          str(length(oc)), "0");
+    oc := occurrencesOf("x := count;\n", "count");
+    check("the control, the same name with no literal around it", at(oc, 1), "0:5:5");
+    # What the two records above cannot say, this one does: the literal is ONE token that ends at
+    # the quote on the LATER line, so the code after that quote is indexed, and its column is
+    # counted from the start of the continued line -- measured 1:10:5, and wrong in the line if the
+    # continuation is honoured without moving the cursor over the break. Mutating the string arm of
+    # `nextToken' to end at the backslash reddens the first check; dropping the scanLineBreak call
+    # inside `skipContinuation' reddens this one.
+    contText := "x := \"abc \\\n  count\"; count := 1;\n";
+    oc := occurrencesOf(contText, "count");
+    check("one name survives the continuation, and it is the one after the closing quote",
+          str(length(oc)) <& " " <& at(oc, 1), "1 1:10:5");
+
+    # The second is `lib/chartype.s7i:45' -- `{'"'}', a char literal whose element IS the double
+    # quote. Read as a string introducer it opens a literal that runs to the end of its line, and
+    # every name after it on that line silently leaves the index. The NEXT-line form below is the
+    # one spec 9 measured, and it is stated as measured (one occurrence) -- but it is a REDUNDANCY,
+    # not a proof: it survived the char-arm mutant ("do not read the element"), because a string
+    # opened at that quote stops at its own line break and a name on the line after it is code
+    # either way. The same-line form is the check that can fail; the quote arm failing to read one
+    # element and its closing quote turns its expected column into "none".
+    quoteText := "const set of char: q is {'\"'};\ncount := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("what follows a quote char literal on the next line is still code",
+          at(oc, 1), "1:0:5");
+    quoteText := "const set of char: q is {'\"'}; count := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("and what follows it on ITS OWN line is still code", at(oc, 1), "0:31:5");
+    # The same character written numerically, the fallback spec 9 names. It witnesses the ESCAPE arm
+    # of the char literal -- a different branch -- so it honestly survives the element mutant: the
+    # escape form is three characters longer, so the column moves and the NAME still arrives.
+    quoteText := "const set of char: q is {'\\34;'}; count := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("the numeric spelling of the same element is hidden the same way",
+          str(length(oc)) <& " " <& at(oc, 1), "1 0:34:5");
 
     report("occurrences");
   end func;
