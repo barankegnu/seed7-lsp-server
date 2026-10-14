@@ -10,8 +10,10 @@ $ include "seed7_05.s7i";
 # ranges are not line-based (spec 5). The answer is `refsAnswer.json', a Location[] or "null";
 # `unresolved' plus `why' are the over-inclusive read's disclosure, which the dispatcher sends
 # as a window/logMessage (spec 2: an empty list reads as "unused", and that is a lie you would
-# act on). Scope comes from occurrences.sd7 -- resolveBinding and inScope, never a re-derivation
-# here (spec 4) -- and the branch is on `resolved' / `keyword', never on `owner'.
+# act on). The cursor is resolved once, by occurrences.sd7's `cursorAt', and scope comes from the
+# binding it hands back -- never a re-derivation here (spec 4, and the reason the assembly is not
+# written out in this file any more) -- and the branch is on `resolved' / `keyword', never on
+# `owner'.
 #
 # No position is converted here (invariant 2: doc_store owns that) and no LSP shape leaves this
 # file (invariant 4: features own the shapes, and nothing in occurrences.sd7 builds one).
@@ -58,20 +60,21 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
     var refsAnswer: out is refsAnswer.value;
   local
     var string: docPath is "";
-    var array occurrence: oc is 0 times occurrence.value;
+    var cursorRefs: cr is cursorRefs.value;
     var array occurrence: scoped is 0 times occurrence.value;
-    var binding: b is binding.value;
     var jsonWriter: w is jsonWriter.value;
     var integer: emitted is 0;
     var integer: i is 0;
   begin
     if word.word <> "" then
       docPath := pathOf(docUri);
-      # ONE occurrence list. It is handed to resolveBinding and filtered by inScope, so
-      # `b.capped' is a fact about the list this answer is built from (spec 4, R39).
-      oc := occurrencesOf(doc.text, word.word);
-      b := resolveBinding(doc.text, syms, oc, word.word, pred(word.line1),
-                          pred(lineCount(doc)), docPath);
+      # ONE cursor resolution, shared with the rename pair (invariant 6). `cr.oc' is the list the
+      # locations below are taken out of AND the list resolveBinding was handed, so `cr.b.capped'
+      # is a fact about the answer this call publishes (spec 4, R39). `cr.slot' is not read here:
+      # references publishes every in-scope occurrence, and row 4 already read the cursor's own
+      # record for its field label.
+      cr := cursorAt(doc.text, syms, word.word, pred(word.line1), word.character1,
+                     pred(lineCount(doc)), docPath);
       # "null", not [], for a gated word and for a token the index cannot hold at all -- a
       # number or a bracket, both of which wordAt does report as a word. Either would otherwise
       # search for the literal text, find nothing, and report the name as unused (spec 5).
@@ -80,8 +83,8 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
       # is a line's leading indentation. Anywhere else between tokens the answer is not empty:
       # wordAt is left-of-character, so a cursor one past a name -- and one past the line's
       # LAST token -- answers that token.
-      if not b.keyword and length(oc) <> 0 then
-        scoped := inScope(oc, b);
+      if not cr.b.keyword and length(cr.oc) <> 0 then
+        scoped := inScope(cr.oc, cr.b);
         emitted := length(scoped);
         if emitted > MAX_OCCURRENCES then
           # The record past the cap is the sentinel that proves truncation, not a location.
@@ -95,9 +98,9 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
         # after it does not publish.
         # The cap counts occurrence RECORDS, not locations, so a capped answer asked with
         # includeDeclaration carries MAX_OCCURRENCES + 1 locations.
-        if includeDeclaration and b.declLine1 <> 0 and
-             not declPublished(scoped, emitted, b.declLine1) then
-          emitLocation(w, docUri, lspWholeLine(b.declLine1));
+        if includeDeclaration and cr.b.declLine1 <> 0 and
+             not declPublished(scoped, emitted, cr.b.declLine1) then
+          emitLocation(w, docUri, lspWholeLine(cr.b.declLine1));
         end if;
         for i range 1 to emitted do
           emitLocation(w, docUri,
@@ -106,19 +109,62 @@ const func refsAnswer: referencesAnswer (in lsDoc: doc, in array symRec: syms,
         end for;
         closeArray(w);
         out.json := finishJson(w);
-        if not b.resolved then
+        if not cr.b.resolved then
           out.unresolved := TRUE;
           out.why := "references: " <& word.word <&
                      " does not bind to a declaration of this file, so every occurrence" <&
                      " of it is listed";
         end if;
-        if b.capped then
+        if cr.b.capped then
           out.unresolved := TRUE;
           if out.why = "" then
             out.why := "references: " <& word.word <&
                        " has more occurrences than this server lists, so the result is truncated";
           else
             out.why := out.why <& ", and the list is truncated at " <& str(MAX_OCCURRENCES);
+          end if;
+        end if;
+        # Spec 12.2's over-inclusive read, now said out loud. A BINDING that resolved is the one
+        # case that was silent: measured before this block, the field-clash cursor answered six
+        # locations with unresolved FALSE and no log line, and a client reads a resolved answer as
+        # "these are the symbol's uses". The list still includes the field access -- that is the
+        # branch 12.2 chose for a read, and §9 keeps its count pinned -- but it no longer claims
+        # more than it knows. An UNBOUND name needs nothing here: the arm above already says every
+        # occurrence of the spelling is listed, which covers the field tokens too.
+        if cr.b.resolved and scopeHasFieldAccess(cr.oc, cr.b) then
+          out.unresolved := TRUE;
+          if out.why = "" then
+            out.why := "references: " <& word.word <& " is bound, but the list also holds a"
+                       <& " name written after a `.', which may be a record field of the same"
+                       <& " name";
+          else
+            out.why := out.why <& ", and a name written after a `.' may be a record field of"
+                       <& " the same name";
+          end if;
+        end if;
+        # The OTHER over-inclusion §12.2 knows about, and the one this method shipped silent on.
+        # `scopeUncertain' says the scope answered by row 1 or row 2 may be SHORTER than the truth:
+        # a routine that carries this name in its own scope and pairs with no region (a body on one
+        # line) cannot be subtracted, and a nested routine's scope is invisible to reflection. So
+        # the list above may reach into that shadowing symbol's own body. Measured on
+        # features_test.sd7's `uncertainText': the global `count' answered four locations, two of
+        # them the parameter's declaration and its use inside `tiny', with `unresolved' FALSE and no
+        # log line. The write refuses that fact in `renameDecision'; the read may not refuse, so it
+        # says it -- §12.2's own argument for the field arm, applied to the case that arm does not
+        # cover. No `resolved' test here, unlike the block above: only rows 1 and 2 set this flag
+        # and both have resolved, so an unbound name cannot reach it and the sentence may call the
+        # name bound. The composed form is reachable -- a capped or field-holding document whose
+        # scope is also uncertain -- but no fixture here reaches it, as none reaches the field arm's
+        # composed form either. The primary sentence is the pinned one.
+        if cr.b.scopeUncertain then
+          out.unresolved := TRUE;
+          if out.why = "" then
+            out.why := "references: " <& word.word <& " is bound, but a shadowing declaration of"
+                       <& " it sits in a scope this server cannot see, so the list may also hold"
+                       <& " that symbol's uses";
+          else
+            out.why := out.why <& ", and a shadowing declaration of it sits in a scope this"
+                       <& " server cannot see, so the list may also hold that symbol's uses";
           end if;
         end if;
       end if;

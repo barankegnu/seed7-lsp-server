@@ -68,9 +68,40 @@ const func array occurrence: occurrencesOf (in string: text, in string: name) is
 `occurrencesOf` is a single pass of `nextToken` over **`doc.text`**, collecting name and
 operator tokens whose text equals `name` and whose `kind` is not `hiddenKind`. It is not a
 stored table: `scan.sd7` is O(document) per pass and the M4 decision was "stream; cache only
-the mask", which this keeps. One request costs one pass over one document; `didChange`
-invalidates nothing because nothing was cached, so the M4 one-analysis-per-version cache is
-untouched.
+the mask", which this keeps.
+
+**What one request costs, stated exactly.** A cursor resolution is `occurrencesOf` once, over the
+document. `resolveBinding` then runs a second O(document) pass — `blockRegions` — and it runs it only
+when `bufferCouldBind` finds a record of this buffer that is named by the cursor's spelling or carries
+it among its scope entries. So a gated keyword, a library name and a name the document never mentions
+cost ONE index pass; a name this buffer declares costs TWO. Neither count includes the walk that
+resolves the cursor's own token: `lsp_server.wordOfRequest` → `doc_store.wordAt` → `scan.tokenAt`
+starts a fresh `scanCursor` at offset 1 and calls `nextToken` until a token starts past the position,
+and it cannot seek because `nextToken` carries `col16` forward incrementally. That prefix walk runs on
+every cursor request, so a cursor near the end of a large buffer pays a THIRD whole-document pass —
+the one taken to find out which token the client meant. Nothing else in a cursor request walks the
+whole document: `rename` edits the array the shared predicate hands back rather than re-passing, and
+the field question reads the cursor's own record instead of scanning the document for a `.' as it used
+to. The first draft's "one request costs one pass over one document" was therefore true of the token
+pass and false of the whole request; the review burn-down's Task 1 deleted the second document walk
+outright — the whole-document `.' search — and Task 2 made the region scan conditional, which is the
+shape that is left.
+
+The figures are §11.14's, measured with `s7c -p -O2 -l src` and quoted there with their rows: ≈8.3 ms
+per full-document `occurrencesOf` pass over the corpus, ~29.6 ms for one pass over
+`lib/shiftjis.s7i` (375 354 characters), and `resolveBinding` at 15 756 µs over 40 gated cursors
+against 1 051 975 µs over the same 40 cursors with the guard opened — `occurrences.sd7` carries those
+rows beside the guard, with the guard's own price (27 859 µs over 240 `bufferCouldBind` calls) next to
+them. Four checks hold the shape, and none of them is a line count: `occurrences_test.sd7`'s "cursorAt
+hands back the list, the cursor's record and the binding from one pass" pins the triple coming out of
+one assembly, `features_test.sd7`'s "capped follows the array handed in, not the text" and "and a long
+array caps even when the text is short" pin `capped` as a fact about that one array rather than a
+re-pass over the text, and "a capped document is refused even when the cursor is listed" pins the
+consequence for the write path. `didChange` invalidates nothing because nothing was cached, so the M4
+one-analysis-per-version cache is untouched.
+
+Carrying `TK_OP` makes an operator *referenceable*, and it does not make it renameable — §6 owns
+that refusal and states why a read can list what a write cannot rewrite.
 
 **Why not `codeText`, corrected:** the first draft of this section claimed columns measured on
 the mask "transfer to the real document unchanged". They do not. `scan.maskOf` replaces a hidden
@@ -94,8 +125,12 @@ exactly the category `formalParams` / `localConsts` / `localVars` / `resultVar` 
 those inner objects carries `file()` and `line()` — a local's declaration line, inside the
 buffer.
 
-`analysis.sd7` grows two functions beside the existing `paramsOf` (`src/analysis.sd7:100`):
-`constsOf` and `varsOf`, same shape, same `RANGE_ERROR` guard.
+`analysis.sd7` grew two functions beside the existing `paramsOf`: `scopeOf`, which answers ONE
+`scopeRec` for one object, and `localsOf`, which answers the `array scopeRec` of a routine's whole
+scope. They are NOT the same shape as `paramsOf` — that one answers `array string`, which is exactly
+what the next paragraph refuses to be enough — and `localsOf` keeps `paramsOf`'s total-answer habit
+under a wider guard: `RANGE_ERROR`, `INDEX_ERROR` and `ILLEGAL_ACTION`, because a routine whose own
+declaration failed raises all three from the same accessors.
 
 **Scope is not a list of names.** A `string` array like `params` cannot support either half of
 what §4 needs: shadowing subtraction wants the *region* a local lives in, and
@@ -153,7 +188,7 @@ Nested routines are one level deeper than the table admits and stay that way: a 
 inside a `const func` resolves against the innermost routine's scope first, then the file's
 globals. A struct body is not a scope with routines in it — a `const type … end struct` holds
 fields only, and putting a routine inside its `begin` section does not parse (§11.7) — so field
-access is a separate case, and an open question (§12).
+access is a separate case, and §12.2 answers it: the read over-includes and says so, the write refuses.
 
 ## 5. `textDocument/references`
 
@@ -189,7 +224,13 @@ Request `ReferenceParams { textDocument, position, context { includeDeclaration 
   program that declares `const func integer: type (in integer: n)` has a real symbol that
   `documentSymbol` and `hover` already list; gating on the word first would answer `null` for it.
 - A name bound to nothing yields every occurrence plus the log line (§2, §4). For a rename the
-  same state is an open question (§12.1).
+  same state is a refusal (§12.1, answered: `null` with the reason logged, never an error).
+  The read discloses four states in total, each with its own sentence and each composable with the
+  others: the binding resolved nowhere, the list truncated at `MAX_OCCURRENCES`, a name written
+  after a `.' inside the scope (a possible record field, §12.2), and a scope that may be SHORTER
+  than the truth (`scopeUncertain` — a nested routine's locals, or a one-line routine with no
+  region). All four are the same honesty rule: a resolved answer is what a client reads as "these
+  are the symbol's uses", so an answer known to be wide says so.
 - No capability key is needed: `referencesProvider` is a boolean.
 
 ## 6. `prepareRename` and `rename`
@@ -201,12 +242,78 @@ answers `null` and logs why, rather than returning an edit the client will ignor
 from the design §6, "a capability is advertised only once its method is answered", applied one
 level down.
 
-**`prepareRename`** returns `{range, placeholder}` or `null`. It runs the resolution of §4 and
-refuses, with a log line naming the reason, when: the binding is a library symbol; the token is
-a keyword or a `$ syntax` operator (none of `if`, `then`, `do`, `:=`, `&` is renameable —
-`seed7_05.s7i` declares them); the token's name is not a name at all; or the client cannot apply
-edits. Refusal is `null`, not an error, which is what makes an editor grey out the menu item
+**`prepareRename`** returns `{range, placeholder}` or `null`. It runs the resolution of §4, and
+`renameDecision` is the one predicate that refuses — for `prepareRename` and for `rename` alike —
+with a log line naming the reason. Its arms, in the order the code asks them; the order is itself a
+ruling (R47, R51: a fact about the SYMBOL speaks before a fact about the document's length):
+
+1. **no token under the cursor at all** — `word.word = ""`, decided before the document is read, so
+   the cheapest refusal is the cheapest to compute. Ruled here; §12.1's shape (a refusal is `null`)
+   applies to it as to every arm below.
+2. **the client cannot apply edits** — no `workspace.applyEdit` in its `initialize` params. Ruled
+   above in this section and in §7, which is why the arm sits second: it costs nothing to ask.
+3. **the document is a library `.s7i` buffer** — `uris.isLibraryBufferPath`, asked before a token is
+   scanned because it is the one refusal that costs no resolution at all. **§12.3 rules it**, with
+   the commits that made it and the read that stays answered.
+4. **the cursor's token is not a name at all** — `occurrenceAt` leaves `slot` at 0, decided by
+   the token's KIND, not by where the symbol came from. This is where a `$ syntax` operator, an
+   operator run like `:=` or `&`, a bracket, a number and a cursor with no token to its left all
+   die. Ruled by the operator paragraph below. The arm speaks TWO sentences: the plain "is not a
+   name", and, when the list is truncated at `MAX_OCCURRENCES`, the sentence the cap paragraph
+   below owns. The second sentence is NOT restricted to a cursor that fell past the cut: it fires
+   whenever the list is capped and `slot` is 0, which includes an operator cursor whose own token IS
+   in the kept list and was rejected on KIND. That is why the sentence says the list omits "names"
+   rather than "ones" — measured on the 2 002-statement fixture, where `:=` is record 6 of the 2 001
+   kept.
+5. **the symbol is declared outside this buffer** — `owner = "library"`. §4's row 3 and §2's
+   file-local decision; the read still answers the whole document, the write refuses.
+6. **the name is a keyword** — `binding.keyword`, answered by `keywords.isKeyword`: the 63 words
+   §11.11 measured, not a hand-written list. This is the arm a cursor on `if`, `then` or `do` dies
+   at — they scan as names, so the kind gate above never sees them — while `:=` and `&` are stopped
+   one arm earlier.
+7. **the binding resolves nowhere** — `not binding.resolved`, §4's row 4. **§12.1 rules this arm:** a
+   write refuses rather than renaming every same-named token in the file.
+8. **the scope may be shorter than the truth** — `binding.scopeUncertain`: a nested routine's locals,
+   or a one-line routine whose region never closed (§11.12's fourth case, R35). It refuses on its own
+   arm rather than folding into §12.1, and §12.1's closing sentence says why; §12.2 now discloses the
+   same uncertainty on the read.
+9. **two records of the name share its declaration line** — `declLineAmbiguous`. **§11.12 rules
+   it**, with the legal rename it over-refuses (`x` and `y` on one line) and the reason a column test
+   is the only alternative.
+10. **a record field of the same spelling sits inside the symbol's own scope** —
+    `scopeHasFieldAccess`. **§12.2 rules it**: the read over-includes and says so, the write refuses.
+11. **the list is truncated and the cursor IS in it** — `binding.capped`, last in the chain so every
+    arm above gets the sentence that describes the symbol rather than the document. Ruled by §6's cap
+    paragraph below and §12.1's direction.
+
+Refusal is `null`, not an error, which is what makes an editor grey out the menu item
 instead of showing a failure.
+
+Operators are refused by the "not a name at all" clause, not by the keyword arm, and what refuses
+them is the token's KIND, not the symbol's provenance: `occurrenceAt` takes a record only when
+`kind = TK_NAME`, so an operator cursor leaves `slot` at 0 whatever the index otherwise knows.
+Two shapes reach that gate and `tests/features_test.sd7` pins both. A library operator — the `+`
+in `counter := left + right;` — binds through the library row to `owner = "library"` with
+`declLine1 = 0`, publishes one real location (§5) to `references`, and answers
+`prepareRename: + is not a name`. An operator this buffer DECLARES is the case the kind gate alone
+decides, because row 2 matches `syms[i].name` for any spelling: `<+`, declared as
+`const func integer: (in integer: x) <+ (in integer: y)`, measures `owner = "global"`, resolved,
+`declLine1 = 5`, `scopeUncertain = FALSE` — the arms that speak for a bound name are silent for
+it — and `slot` is still 0, with all three of its records `TK_OP`, so the answer is the
+same sentence, `prepareRename: <+ is not a name`, and `rename` answers it with its own name in
+front. Take the kind gate away and this cursor is refused by NOTHING: measured after §12.2's
+disclosure learned to count names only, `prepareRename` answers a range for `<+` and `rename`
+answers three edits, one of them inside the `$ syntax` rule itself. It used to be caught one arm
+later, by the `.` that the `$ syntax` rule writes immediately before the operator token, and the
+kind test in `scopeHasFieldAccess` closed that backstop — which is why the refusal, not merely its
+sentence, is now the proof that the gate fired. (Seed7 needs a `$ syntax expr:` rule before a new
+operator symbol parses; measured, without one the analyzer answers "is" expected found "<+".) An operator handed in as `newName` is the
+other half of the asymmetry and a `-32602` rejection rather than a refusal, because `scan.nameStart`
+rejects `<` before any document is consulted; the two identifier rejections emit the identical
+sentence, so the pin is on the words `rename: <+> is not a Seed7 identifier`, not on which arm
+spoke them. `references` may publish the locations of a symbol whose spelling is punctuation,
+because a list needs only the tokens, and `rename` may not rewrite one, because the cursor rule of
+the write path admits `TK_NAME` and nothing else. M5 renames names.
 
 **`rename`** re-runs resolution — `prepareRename` is not trusted to have happened, and the spec
 does not require it — and answers `WorkspaceEdit { changes: { <uri>: [TextEdit] } }` with one
@@ -240,14 +347,32 @@ Each rejection answers the JSON-RPC error `-32602 InvalidParams`, which is what 
 for a bad name. Overwriting a sibling declaration in the same scope is a rename that compiles
 into a `REDECLARATION` wall, and the client cannot warn about it.
 
-`MAX_OCCURRENCES` caps both methods. Past the cap `references` truncates with the log line, and
-`rename` refuses with `-32602`: a silently partial rename is the exact failure mode §2 refused.
+`MAX_OCCURRENCES` caps both methods, and the two answers are different events. Past the cap
+`references` truncates and discloses with the log line, while `prepareRename` and `rename` **refuse
+with `null`** — not with `-32602`, which is what the first draft of this paragraph claimed. A refusal
+is the shape 12.1 rules for anything the write path will not do, and an error frame would show the
+user a failure instead of greying the item out; a rejected `newName` stays `-32602`, and it is checked
+before the document is read, so it is still `-32602` on a capped document. Two refusal sentences speak
+for the two shapes of the same cap, and the arm list decides which one a cursor gets: where the
+cursor's own record is missing from the truncated list, the not-a-name branch says the token "is not
+among the names listed, so its range is not known"; where the cursor IS listed and the list stops
+short of the document, the capped arm says "so a rename could not rewrite all of them". Measured and
+pinned at three layers — `transcript.py`'s "rename refuses a capped document whose cursor IS listed"
+and "and prepareRename refuses the very same cursor", with "and not the other truncation sentence,
+which speaks about the cursor" keeping the two sentences apart; `lsp_server_test.sd7`'s "a name past
+the cap still refuses, and answers null" and "and says the list is capped, not that the token is not a
+name"; `features_test.sd7`'s "a capped document is refused rather than half-edited" and "at exactly
+the cap the list is complete, so all 2000 are edited".
 
-**`.s7i` buffers are an open question (§12.3).** A library buffer is analysed through the
-driver, which reads from disk, so its `symRec` lines are the *disk* lines (R-F10). Today
-staleness only makes a diagnostic or a jump wrong; here stale lines would feed a scope decision
-and an edit range, so a rename in an unsaved-edited `.s7i` can write TextEdits to the wrong
-lines.
+**`.s7i` buffers refuse; §12.3 is answered.** A library buffer is analysed through the driver, which
+reads from disk, so its `symRec` lines are the *disk* lines (R-F10). Staleness used to make a
+diagnostic or a jump wrong; here stale lines would feed a scope decision and an edit range, so a
+rename in an unsaved-edited `.s7i` can write TextEdits to the wrong lines. The answer is a refusal arm
+high in the list, where it costs no document read: `uris.isLibraryBufferPath(docPath)`, the one test
+`textToAnalyze` also uses to decide whether to analyse the buffer's text or the file on disk.
+`references` still answers inside a library buffer — a list damages nothing — and both write methods
+refuse with the sentence that names the path and R-F10. §12.3 carries the ruling, the commits that
+made it, and the checks that hold it.
 
 ## 7. Protocol surface changes
 
@@ -294,7 +419,10 @@ Unit (`tests/occurrences_test.sd7`, new suite in `Makefile`'s `TESTS`):
 - `occurrencesOf` on a line whose earlier text holds an astral character inside a string, where
   the mask loses a UTF-16 unit: `x := "😀😀"; count := 1;` must answer column 13, not 11
   (§11.6). The BMP `"ππ"` fixture that was here would not have caught it, which is why it moved;
-- a rename refused while the buffer is truncated — §12.1's answer, whichever it is;
+- a rename refused while the buffer is truncated — §12.1's answer, which is a refusal: the truncated
+  buffer is row 4's normal input, so `prepareRename` and `rename` answer `null` there. Pinned by
+  `lsp_server_test.sd7`'s "a truncated buffer refuses, so the text cannot be damaged" and "as the
+  unbound name it is";
 - a cursor on `16#beef`, on `(` and on `end` answers `null` from `references`, not an empty list
   (§5);
 - `newName` rejects: empty, `1abc`, a local's name inside that local's own routine, `:=`, `if`,
@@ -303,10 +431,52 @@ Unit (`tests/occurrences_test.sd7`, new suite in `Makefile`'s `TESTS`):
 - a name bound to the library is not renameable but is referenceable;
 - `occurrencesOf` finds nothing for `count` inside a `prg/calc7.sd7`-style continuation string,
   and nothing inside `{'"'}` in `lib/chartype.s7i` — the two cases `hiddenKind` skipping exists
-  for, now proved from the real text rather than from the mask;
+  for, now proved from the real text rather than from the mask. **Pinned** in
+  `tests/occurrences_test.sd7`: "a name inside a continued string literal is not an occurrence"
+  (killed by letting the string arm end at the backslash) and "one name survives the continuation,
+  and it is the one after the closing quote" (killed by dropping `scanLineBreak` inside
+  `skipContinuation`, which leaves the literal spanning lines but reports the later token on the
+  line it started on). For the char literal the two checks are not equal: "and what follows it on
+  ITS OWN line is still code" is the discriminating input — an arm that fails to read the quote as
+  the literal's element opens a string there, and the name on that line leaves the index — while
+  "what follows a quote char literal on the next line is still code", the spelling this section
+  asked for, survives every mutation OF THE CHAR ARM, because a string opened at that quote stops at
+  the line break its own loop condition tests for (`lineEnd`, which `nextToken`'s string arm applies
+  to every body character) and a name below it is code either way. The claim is scoped to that arm:
+  the check pins the following token's LINE, so it reddens only on the CONJUNCTION — a string arm that
+  lets a literal cross a break AND a char arm that fails to read the quote as its element. It is kept
+  because this section measured that input, and it records a real answer, but it is a redundancy of
+  the char arm, not a proof. "the numeric spelling of the same element is hidden the same way"
+  exercises the char arm's ESCAPE branch — the one that runs `pastEscape` and then counts what it
+  swallowed — which the quote spelling never reaches, because a quote is an ordinary element and the
+  plain-element branch reads it. No deletion of that escape branch reddens it either: the leftovers
+  re-tokenise and the total column advance is unchanged, so this suite stayed green while
+  `scan_test.sd7` went red four times. Its value is the escape branch's width statement
+  (`units +:= j - before`): a fixed count there moves `count` from `0:34:5` to `0:31:5` and reddens
+  this check alone, while the quote spellings are 3 wide either way. Mutating the plain branch's
+  `units +:= utf16CharLength(text[j])` instead is semantically identical on ASCII, so a reader who
+  follows THAT line re-derives "decorative" from a mutant that cannot separate the two paths. The same
+  regression is already pinned in `tests/scan_test.sd7` by "the five char spellings and their widths",
+  by "the name after a numeric-escape char literal is still code", and for the deletion by the mask
+  check "a numeric-escape char literal masks exactly itself", so this is a duplicate seen from the
+  occurrence index, not a new proof — and not the cannot-fail class either, since the width mutant
+  kills it.
 - a truncated buffer (the normal state mid-typing) resolves to *unknown* and `references` answers
   over-inclusive plus the log line — this is the check that keeps §4's fourth row honest;
-- a field access `w.pix` where `pix` exists in two structs in one file — §12.2's answer;
+- a field access `w.pix` where `pix` exists in two structs in one file — §12.2's answer.
+  **Pinned** in `tests/features_test.sd7` on a fresh inline fixture (two structs each declaring
+  `pix`, a global `pix`, and a routine whose own local is `pix`): "references over-includes across
+  both structs, and lists them in document order" answers six locations for the cursor on `x.pix`
+  and the list holds BOTH structs' field declarations, at lines 4 and 8; "and it says the list
+  holds both structs' fields" sets `unresolved` with the field sentence rather than the unbound
+  one, because the global row binds the spelling before §4's fourth row is reached; "prepareRename
+  refuses a field access inside the symbol's window" and "and rename answers null with no error,
+  refusing to half-rewrite two structs" state the write's side; "the field access inside a local
+  of the same name answers its own window only" and "and it says so, with the field sentence for
+  its own window" give the same ruling, disclosure included, for a cursor inside the routine that
+  declares `pix` itself, where the window holds one field of each struct. The list is in DOCUMENT
+  order: the
+  six ranges descend 17, 17, 13, 6, 6, 4 as the lines rise, so nothing here is a column sort.
 - a name that is a keyword, a number or a bracket yields `null` from `prepareRename`.
 
 Wire (`tests/transcript.py`): initialize advertises both providers; `references` on an opened
@@ -315,6 +485,22 @@ fixture decodes to exact ranges; `prepareRename` on a library symbol answers `nu
 `workspace.applyEdit` gets `null` and the server still answers everything else normally; the
 log line for an unresolved binding arrives as a `window/logMessage` notification, not on
 stdout.
+
+**No cross-method drift check, and why that was the decision.** `references.sd7` and
+`renameDecision` each convert the cursor's `wordRef` into the `line0`/`col16` pair `cursorAt` takes,
+and today both write `pred(word.line1)` and `word.character1`. No check asserts that the two
+derivations agree; the ruling is that the exact-range pins already enforce it, transitively, because
+each method's own answer is pinned against the fixture's literal columns — `lsp_server_test.sd7`'s
+"and answers the cursor's own range with the name as placeholder" and "at the use site under the
+cursor, not the declaration" hold `prepareRename`'s range, and `transcript.py`'s "references answers
+this file's occurrences with exact columns" plus `features_test.sd7`'s "the global loses the shadowing
+routine's occurrences, with exact columns" hold the list. A drift in one call site moves that method's
+answer away from ground truth and reddens its own pin; only a change that moved BOTH sites identically
+could stay green, and that is not drift. An equality check between the two answers would compare two
+pins to each other rather than to the fixture, which is the tautology AGENTS.md refuses to call
+coverage. The claim this paragraph owns is therefore about coverage, not about the code: if a future
+feature converts its own word differently, the check to look for is the named `prepareRename` range
+pin above.
 
 Corpus, free and new: `seed7` ships 213 `lib/*.s7i` and 129 `prg/*.sd7`. A throwaway loop that
 builds the occurrence index for every one of them, printing only failures, is the check that
@@ -353,7 +539,8 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
    `getValue(b, attr reference)` on it **fails to match**. `globalObjects` for a hello-world
    program: 3053 entries, 0 of category `SYMBOLOBJECT`. `globalObjects` is documented to return
    definitions in source declaration order (`progs.s7i:533`), which is what makes a
-   declaration-order-dependent test meaningful at all — see §12.4.
+   declaration-order-dependent test meaningful at all — see §11.13, which records that promise and the
+   three tasks that depend on it.
 2. **Scope is reachable.** On `/tmp/m5_scope.sd7`: `double` at line 3 → formals
    `count(REFPARAMOBJECT)`, `limit(VALUEPARAMOBJECT)` plus a trailing `double(SYMBOLOBJECT)`;
    `localVars` → `hidden(LOCALVOBJECT)`; `resultVar` → `total`. `main` at line 12 → `localVars`
@@ -411,7 +598,7 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     structs named by their field with `file = "?"`, which `collectSyms`' existing filter drops;
     that half I did not re-run. Either way there is no declaration source for a field, so a
     "find references" cursor on `pix` in `w.pix` is a permanent row-4 case on well-formed code —
-    not the truncated-buffer exception §9 pins — and it is §12.2's question.
+    not the truncated-buffer exception §9 pins — and it is §12.2's case, now answered there.
 11. **"Is this a keyword?" is answerable only behaviourally, and the answer is 63 — which is also a
     correction to this document.** Seed7 has no reserved words (`Seed7Home/manual/intro.htm:230`),
     so a word's status is a property of the interpreter, not of any list, and the interpreter
@@ -430,8 +617,9 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     candidate list and this gate are different products that must not be merged. The meta-lesson is
     the R29 one: a number transcribed out of a probe is already stale, so the document points at
     the generator instead of at itself.
-12. **A routine and a same-named parameter share a header line, in every header shape.** The rule
-    is not the one-line-header special case I first measured. A routine `show` and a parameter
+12. **Two records of one name on the declaration line refuse a rename — a shared header line is
+    one shape of it, not the rule.** The rule is not the one-line-header special case I first
+    measured. A routine `show` and a parameter
     `show` are both reported at that header line's `line1` whether the header is one line or two,
     and the collision reaches `rename` from three directions: a single-line header with a multi-line
     body (the shared line IS the line the body region opens on, so `inScope` over-includes and no
@@ -449,10 +637,17 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     `const integer: x is 1; const integer: y is x;` — reproduced on a clean buffer
     (`/tmp/r9probe.sd7`, `diags=0`), where `prepareRename` and `rename` BOTH refuse a perfectly
     legal rename of `x`. Over-refusal, safe direction, and the correct alternative is column-aware
-    declaration identity, not another arm. Two consequences still owed: the refusal `why` sentence
-    claims "the shape a parameter takes when it is named after its routine", which is false for
-    this input, and §12's boundary statement "routines with a name-colliding parameter only" is
-    false too. Both are one-line corrections, batched for the whole-branch review's fix wave.
+    declaration identity, not another arm.
+
+    **Both consequences of that are paid on `m5-review-fixes`, and the way they were tested is the
+    finding.** The refusal sentence now says only what the arm counted — "shares its declaration
+    line with another record of the same name" — and `features_test.sd7` proves it by *absence*:
+    the `x`/`y` file has no routine and no parameter, and two assertions go red if the sentence
+    names either word. The first version of that check compared `why` to a constant spelled in the
+    same test file, so it passed green against the wrong sentence and moved with production instead
+    of questioning it; it was rewritten before it was trusted. The "§12's boundary statement"
+    this note cited does not exist in §12 — the phrase was this item's own title, now corrected
+    above — so a reader no longer hunts §12 for a rule that lives here.
 13. **`globalObjects` has no ordering contract in its signature, but does in prose**
     (`progs.s7i:533`: definitions are returned "in the same order as the definitions of the source
     program"). Task 2's `else`-reset witness, Task 3's pairing and Task 9's declaration add-back all
@@ -463,16 +658,73 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     first 12 indexable tokens off each file and asks `occurrencesOf` for each — a positive control,
     since the name came from the same scanner, so a zero is a bug in the index and not a missing
     fixture. Over every file in the checkout (`lib/*.s7i` 213, `prg/*.sd7` 129):
-    `files=342 names_probed=4104 occurrences=516044 misses=0`. Cost, measured on the same run:
-    about **40 ms per full-document pass** at an average of ~126 occurrences per name — the figure
-    behind "one request, one pass" in §3. It checks termination and finding, NOT columns; those are
-    pinned by the astral checks in Tasks 1, 4 and 9.
+    `files=342 names_probed=4104 occurrences=516044 misses=0` — reproduced verbatim by the run
+    measured below. Cost, measured on a profiled build of this tool's own driver
+    (`s7c -p -O2 -l src` over the same 342 files), reading the `occurrencesOf` row of `profile_out`:
+    **33 947 076 µs over 4 104 calls** — that row is the measurement; ≈8.3 ms per full-document
+    pass is arithmetic on it. The documents it averages over have a mean size of **70 710
+    characters**: `readAll` over the same 342 files totals 24 183 079 characters (24 183 079 div 342
+    is 70 710, remainder 259), and every file yields exactly 12 probes (4 104 = 342 × 12), so the
+    probe-weighted mean IS the plain mean. Same unit as the 375 354 below, and measured the same way:
+    that driver's `readAll` answers one character per BYTE of the file plus one newline per file (the
+    corpus's 24 182 737 bytes, plus 342), so this is the size `occurrencesOf` is handed, not a
+    Unicode code-point count. Average ~126 occurrences per
+    name. The document-sized large input reads `occurrencesOf` 1 183 852 µs over 40 calls in the same
+    build, so ≈29.6 ms for one pass over `lib/shiftjis.s7i` (375 354 characters). The **~40 ms** this
+    item carried is deleted — no profiled command reproduces it, and §3's pass claim is a shape claim
+    that needs no number to stand — §3 now states that shape exactly: the `scan.tokenAt` prefix walk
+    on every cursor, one index pass on every cursor, and one region pass only when a record of this
+    buffer could bind the name. The two cost rows do NOT convert into each other, and the mean is what
+    shows it: 8.3 ms over a 70 710-character document is ≈0.117 µs per character, while
+    `shiftjis.s7i`'s own row is ≈0.079 µs per character — both arithmetic on the rows above — so a
+    reader must not use one rate to price the other document. What this item checks is termination and
+    finding, NOT columns; those are pinned by the astral checks in Tasks 1, 4 and 9.
+
+15. **`blocks.enclosingDeclarations` and `blocks.declarationRegion` were dead on arrival.** Task 3
+    produced them for Task 6, and Task 6 grew its own pairing instead: `resolveBinding` scans
+    `blockRegions` once and calls `routineRegionFor` per candidate, then `regionOwner`/`ownsRegion`
+    decide whether the pair belongs to the record — one list, one sort, a field an `enclosing-
+    Declarations` chain could not carry. So `declarationRegion` was `routineRegionFor` over a fresh
+    scan with no caller, and `enclosingDeclarations` was a `closer <> ""` filter with no caller.
+    Both deleted on `m5-review-fixes`, with the wrapper-only checks: `grep -rn
+    'enclosingDeclarations|declarationRegion' src/` is empty, and `regionOfDeclaration` in
+    `blocks_test.sd7` now calls the surviving pair directly so the seven pairing checks still test
+    production. What did NOT move is the closer filter — "a non-routine region is not a scope" is
+    pinned where it runs, at `occurrences_test.sd7`'s phantom-region check (a carrier with no
+    region must not be handed the region at line 0), and the `closer` field itself stays pinned by
+    this suite's `closerAt` checks. The pairing rule the deleted pair was supposed to own lives in
+    §11.9's adjacency note and in `occurrences.regionOwner`, not here.
+
+16. **A lone surrogate left the server as three bytes that are not valid UTF-8, and the fold was
+    copying every string on the request path.** Two findings, one bound. (a) Task 13 made
+    `joinSurrogates` total by construction — a stray high, a stray low and a high followed by a
+    non-low all pass through, each pinned in `rpc_test.sd7`. Total on the *inside*, raw on the
+    *outside*: `jsonw` wrote any character ≥ 32 as it stood, and Seed7's UTF-8 writer encodes a
+    surrogate as its CESU-8 form. Measured by writing `chr(55296)` to `STD_UTF8_OUT`: bytes
+    `41 ED A0 80 42` for `"A" & chr(55296) & "B"` — 5 bytes, which is exactly what
+    `utf8bytes.utf8CharLength` claims for it, so `Content-Length` agreed, nothing raised and the
+    stream stayed framed while the bytes stayed undecodable. `jsonw` now escapes `55296..57343` as
+    `\udXXX`; everything outside the range still leaves as itself, which `jsonw_test.sd7` pins at
+    55295, 57344 and 128512 so the branch cannot be widened by accident. The bounds live in
+    `utf8bytes` (invariant 3 extended), because the writer and the folder must not disagree about
+    where the range is. No crash was ever at stake — the Standards review's `RANGE_ERROR` worry was
+    disproved by measurement — but a mangled name in a refusal line is a bug the client cannot fix.
+    (b) `strAt` folded unconditionally, so a document-sized body paid one allocation per character
+    on every `didChange`. Measured with `s7c -p -O2 -l src`, 50 `strAt` calls on the `text` of a
+    234-line didOpen body (11 466 characters, no surrogate anywhere): **226 310 µs over the 50
+    calls** folding, **23 926 µs over the same 50 calls** for the scan that skips it. The per-call
+    figures `rpc.sd7` quotes beside those rows — ≈4 526 µs and ≈478 µs — are arithmetic on them, and
+    the 4 529 this item carried was neither a row nor that arithmetic. A guard whose two paths are the
+    same function — no input separates them, so no check can redden it and it is labelled as such; the
+    pair-fold check "strAt joins the pair a client escaped" is what would catch a guard that skipped
+    too eagerly.
 
 ## 12. Open questions put to the partner
 
 These three are forks where both branches are buildable, the answer changes what gets built, and
 the wrong one either damages text or silently drops a use case. Everything else the builder check
-raised is settled above or in §2 as a builder's call.
+raised is settled above or in §2 as a builder's call. All three are now answered: each ruling is
+recorded in bold inside the item it closes, with the commit that made it and what is still unbuilt.
 
 1. **What does `rename`/`prepareRename` do on an unprovable binding (§4 row 4)?** Refuse with
    `null`, or rename every same-named token in the file as `references` would list them. The
@@ -480,11 +732,115 @@ raised is settled above or in §2 as a builder's call.
    over-inclusive answer rewrites locals the user did not mean. A refusal costs a daily friction
    — a truncated buffer is the normal state while typing, so rename would do nothing in the exact
    moment rename is asked for.
+   **Answered: the write refuses, and the refusal is `null` with its reason on the log.** The arm is
+   `renameDecision`'s unbound branch, and its own sentence is the ruling — "`pix` does not bind to
+   one declaration of this file, so a rename could rewrite a symbol the cursor is not on", which is
+   what the wire fixture's struct-field cursor is answered with. The fork's two halves are now
+   answered by two different methods from one cursor resolution: `references` keeps
+   §2's over-inclusive list with its disclosure sentence, and both write methods answer `null`. The
+   arm shipped in `8f3465f` ("prepareRename, and the first client capability the server reads");
+   `2a162c7` ("textDocument/rename: one document, refused rather than partial") gave `rename` the same
+   answer by calling that predicate instead of re-typing the list, and `5a41569` ("the rename refusal
+   list moves where rename can reach it") moved the whole list into `renameDecision`, where a symbol
+   cannot be accepted by one method and refused by the other. The *shape* was settled separately, by
+   `1f6d72c` ("a refusal must be null, not an error: the wire checks now say so"), which added the
+   harness's `answered_null` helper: it requires `result` to be present with a null value, because
+   `"result" not in frame` is what an error frame looks like and a value test alone would pass a
+   `-32603`. The friction this item predicted is real and accepted. Four named checks hold the ruling:
+   `transcript.py`'s "an unprovable symbol answers null, not an error" and "an unresolved rename speaks
+   the reason to the client before its null", and `lsp_server_test.sd7`'s "a truncated buffer refuses,
+   so the text cannot be damaged" with "as the unbound name it is". What is still not built is the
+   other branch's precondition — a binding that can be proved in a truncated buffer. §11.1 is why not:
+   reflection yields declarations only, so there is no partial use-site walk to fall back on, which is
+   also why a scope that may be shorter than the truth refuses on its own arm rather than being folded
+   in here.
 2. **Struct fields:** over-inclusive (every `pix` token in the file, including other structs'
    fields), refused (`null`, which needs a machine to recognise a field access at all), or a new
    token-level index over `const type … end struct` regions. Field names repeat across structs,
    and `w.pix` is pervasive in real Seed7, so this is a permanent row-4 case on well-formed code,
    not the truncated-buffer exception §9 pins.
+   **Answered on `m5-review-fixes`, by measurement first.** A `pix` token that follows a `.` is
+   now recognised — `occurrence.dotPrev`, stamped in `occurrencesOf`'s existing walk, which is
+   the only place the previous token is known. The stamp is **not line-granular**, and this wave
+   is the inversion: it used to require the dot and the name to share a line, and that conjunct
+   was a wrong-write hole. Where a `box.` ends one line and a `counter` begins the next, the
+   record came back unmarked, `scopeHasFieldAccess` answered FALSE, every arm was silent, and
+   `rename` emitted an edit on the field access while the field's declaration stayed outside the
+   window — the exact harm this fork's refusal exists to prevent. Dropping the conjunct is safe
+   rather than merely stricter because a token whose text is exactly `.` can only be a selector
+   dot: comments, string and char literals and numbers are each ONE token whose text is never
+   `.`, and the range operator `..` is its own run, so a name starting the next line after a
+   line-final `.` IS a field access. The cost is the ordinary mid-typing state — `box.` at the
+   end of a line now refuses the rename of the name that begins below it — which is the
+   direction the branch's rule for writes demands. `tests/occurrences_test.sd7` pins both levels
+   of the widened rule, "a dot ending the line above marks it too -- a `.' token is only ever a
+   selector" on the flag and "a dot that ends the line above still marks the cursor's record as
+   a field" on the binding, and restoring the line test reddens exactly those two while the
+   three same-line pins stay green. The **write refuses** on it, in `renameDecision`, when the
+   field access lies inside the symbol's own scope window: measured on `Widget` with a field
+   `counter` read as `box.counter` by the routine whose local is also `counter`, the pre-state
+   answered `prepareRename` accepted and `rename` six edits, two of them the field access; the
+   field's declaration is at line 3 and the window is 10..15, so applying those edits renames
+   the field's uses and leaves the field, and the renamed text raises
+   `Match for {box . amount }`. The **read stays over-inclusive** — §9's count is unchanged — but it
+   no longer claims certainty: the same cursor answered six locations with `unresolved FALSE` and no
+   log line before, and now sets `unresolved` with its own sentence. **It now discloses BOTH the
+   over-inclusions this answer knows about.** The field arm covers the first; the second is
+   `binding.scopeUncertain` — a routine that carries the name in its own scope and pairs with no
+   region cannot be subtracted, so the global's list reaches into that routine's body — and it
+   shipped silently: on `features_test.sd7`'s uncertain-scope fixture (the text
+   `occurrences_test.sd7` pins as `oneLine`) the global `count` answered four locations, two of
+   them the shadowing parameter's declaration and its use inside `tiny`, with `unresolved FALSE`
+   and no log line. The fourth arm closes that, pinned by "an uncertain scope publishes the
+   shadowing routine's lines as the global's own", "and says the scope may be shorter than the
+   list" and "naming the shadowing scope as the reason"; deleting the arm reddens those and
+   leaves the field and cap disclosures green. **The field sentence speaks about names, and the
+   kind test in `scopeHasFieldAccess` is what makes it true.** Seed7 will not parse a new
+   operator symbol without its `$ syntax expr: .(). <+ .()` rule, and that rule writes a `.`
+   immediately before the operator token — so the occurrence the rule itself contains carries
+   `dotPrev`, while the declaration's header and the use in `main` do not, and an operator is never
+   a record field.
+   Measured before the conjunction was added, on the `<+` of `tests/features_test.sd7`'s
+   operator-declaring fixture: three records, only the first (the `$ syntax` line) dot-preceded,
+   and the answer was three locations with `unresolved` TRUE and the field sentence — a disclosure
+   naming a thing that cannot exist. The suite now pins the corrected answer as "the field
+   disclosure speaks of names, so a declared operator discloses nothing". The write path never
+   showed the defect, and shows no change from fixing it: an operator cursor leaves `slot` at 0, so
+   `renameDecision` refuses on its not-a-name arm before this predicate is consulted — "a
+   buffer-declared operator is refused, null, on the not-a-name arm" and "and rename refuses the
+   identical cursor with the identical sentence" stay green. Two costs, both recorded rather than
+   argued away: a **global** refuses on a field access anywhere in the file, because a global's
+   window *is* the document (measured: `total` declared at line 8, read as `b.total` at line 31);
+   and the fork's third branch — a token-level index over `const type … end struct` regions, which
+   would rename the field and its uses together — is still unbuilt, so a user wanting that gets a
+   refusal, not a wrong answer. §9's `pix` in TWO structs is now a fixture, added on
+   `m5-review-fixes` and pinned in `tests/features_test.sd7` (§9 names the checks): `dotPrev`
+   recognises the access but nothing here separates the two fields, so both spellings stay one
+   symbol — measured, the cursor on `x.pix` answers six locations and two of them are the field
+   declarations of the two different structs.
 3. **Does M5 answer `rename` on a `.s7i` buffer?** Ship it and document the staleness, refuse
    there until R-F10 is paid, or match only `BUFFER_FILE` as "this buffer" (which quietly makes
    every library file a row-4 case).
+   **Answered on `m5-review-fixes`: refuse there until R-F10 is paid, and refuse from ONE predicate.**
+   The arm asks `uris.isLibraryBufferPath(docPath)`, which is "the path ends in `.s7i`". It is not the
+   fork's third branch, and could not be: an open `.s7i` is analysed through the synthetic driver, so
+   its own declarations come back with `file` equal to the document's PATH and never `BUFFER_FILE`
+   (`analysis_test.sd7`'s "the document's own path fills the scope" measures it, and `isBufferFile`
+   accepts that path as this buffer). A `BUFFER_FILE`-only test therefore cannot tell a library buffer
+   apart from any other document, which is the thing the refusal has to know. Nothing is
+   guessed about staleness either: the refusal names the file and the risk, "`/path/to/lib.s7i` is a
+   library buffer whose symbols come from disk while R-F10 stands, so an edit could land on the wrong
+   line". The arm first shipped in `8f3465f` ("prepareRename, and the first client capability the
+   server reads"), reached `rename` through `2a162c7`, and `5a41569` ("the rename refusal list moves
+   where rename can reach it") did both halves of the settling: it moved the list into `renameDecision`
+   and it created `uris.isLibraryBufferPath`, so the `.s7i` rule is spelled once for the analyser's
+   `textToAnalyze` and for the refusal instead of twice. Measured, and the asymmetry is deliberate: the
+   READ is not refused — `transcript.py`'s "references still ANSWERS inside a .s7i buffer, with the
+   declaration and the use" pins the list — while "prepareRename refuses the same cursor in a .s7i
+   buffer" and "and rename refuses it too, so no edit can land on a stale line" pin the two write
+   answers, each with its sentence logged before its null. `lsp_server_test.sd7`'s "rename refuses
+   inside a .s7i buffer while R-F10 stands" and `features_test.sd7`'s "and a .s7i buffer refuses while
+   R-F10 stands" hold the same rule one layer down. The cost is a use case, stated plainly: editing a
+   library file means no rename in it at all. The fork's first branch — ship rename and document the
+   staleness — waits for R-F10 (§10), which is a spec violation as well as stale data, because an open
+   document must not be read through its uri.

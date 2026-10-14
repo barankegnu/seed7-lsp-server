@@ -10,6 +10,23 @@ $ include "seed7_05.s7i";
 # There is no whole-string utf16 count here on purpose: nothing calls for one, and a column
 # table belongs to a document, not to a string.
 
+# The surrogate range, in the one file that states code-point rules. Two callers need it and must
+# not disagree on a bound: rpc.joinSurrogates folds a pair a client escaped, and it must know
+# which half it is looking at; jsonw must NOT write one raw, because Seed7's UTF-8 encoder emits a
+# surrogate as three bytes (measured: chr(55296) goes out as ED A0 80) -- a count utf8CharLength
+# happily agrees with, and bytes no JSON decoder is obliged to accept. The halves are named
+# separately because the fold's test is on a pair, not on one code point.
+# A SURROGATE is one of the 2 048 code points 55296..57343 that UTF-8 reserves for nothing: they
+# exist only as the two halves of a pair standing for a character above 65535.
+const func boolean: isHighSurrogate (in integer: cp) is
+  return cp >= 55296 and cp <= 56319;
+
+const func boolean: isLowSurrogate (in integer: cp) is
+  return cp >= 56320 and cp <= 57343;
+
+const func boolean: isSurrogate (in integer: cp) is
+  return cp >= 55296 and cp <= 57343;
+
 const func integer: utf8CharLength (in char: ch) is func
   result
     var integer: n is 0;

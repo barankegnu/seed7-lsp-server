@@ -13,6 +13,31 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     end if;
   end func;
 
+# `dotPrev' of the i'th occurrence as "TRUE"/"FALSE", or "none" outside the array. The four flag
+# pins below ask for a FIELD of a record, which `at' cannot answer, and a bare `oc[1].dotPrev' on a
+# fixture a mutant shortened would raise INDEX_ERROR on stdout -- costing the suite its graded line
+# instead of naming the check. Same degrading rule as `at' and `recAt'.
+const func string: dotAt (in array occurrence: oc, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(oc) then
+      out := str(oc[i].dotPrev);
+    end if;
+  end func;
+
+# "name/line1" of syms[i], or "none" for an index outside the array -- the shape of an UNSET
+# ownerSym. Degrading, not indexing syms[0], keeps a mutant's INDEX_ERROR off stdout, where it
+# would cost the suite its graded line rather than name the check that failed.
+const func string: recAt (in array symRec: syms, in integer: i) is func
+  result
+    var string: out is "none";
+  begin
+    if i >= 1 and i <= length(syms) then
+      out := syms[i].name <& "/" <& str(syms[i].line1);
+    end if;
+  end func;
+
 const func string: readAll (in string: path) is func
   result
     var string: out is "";
@@ -59,6 +84,20 @@ const func docAnalysis: analysisOf (in string: text, in string: docPath) is func
     out := analyzeAll(text, dirs, docPath);
   end func;
 
+# `bind' with the slot of the record that IS the cursor's token, which is what resolveBinding's
+# row 4 now reads for its field answer: a test that puts the cursor on a token has to say WHICH
+# record it is on, and a test that does not forwards 0 -- the same input the features hand in when
+# `occurrenceAt' finds nothing indexable under the cursor.
+const func binding: bindAt (in string: text, in array symRec: syms, in string: name,
+                            in integer: line0, in integer: lastLine, in string: docPath,
+                            in integer: slot) is func
+  result
+    var binding: out is binding.value;
+  begin
+    out := resolveBinding(text, syms, occurrencesOf(text, name), name, line0, lastLine,
+                          docPath, slot);
+  end func;
+
 # The call shape Task 7 will use: the occurrence list is computed from the same text BEFORE
 # resolution and handed in, so `capped' is a fact about the list the caller is going to publish
 # rather than about a second pass over the document.
@@ -68,7 +107,7 @@ const func binding: bind (in string: text, in array symRec: syms, in string: nam
   result
     var binding: out is binding.value;
   begin
-    out := resolveBinding(text, syms, occurrencesOf(text, name), name, line0, lastLine, docPath);
+    out := bindAt(text, syms, name, line0, lastLine, docPath, 0);
   end func;
 
 # Every binding field except the two scope pins, in one string, so a failing check shows all
@@ -193,6 +232,13 @@ const proc: main is func
     var docAnalysis: nd is docAnalysis.value;
     var array symRec: nsyms is 0 times symRec.value;
     var string: capText is "";
+    var string: pixOneLine is "";
+    var string: pixTwoLines is "";
+    var string: pixAfterBreak is "";
+    var string: contText is "";
+    var string: quoteText is "";
+    var array occurrence: pixOc is 0 times occurrence.value;
+    var cursorRefs: cr is cursorRefs.value;
     var array symRec: noSyms is 0 times symRec.value;
     var integer: i is 0;
   begin
@@ -223,6 +269,12 @@ const proc: main is func
     check("and its scope is that routine's region, not the first one's",
           scopePin(b), "25-31");
     check("and it keeps its own three occurrences", linesPin(inScope(oc, b)), "27 29 30");
+    # Pinned by NAME and line, so it does not shift when a task adds a record above it. beta is
+    # the witness because alpha carries `count' earlier in record order and is skipped (region
+    # 16-23 does not hold the cursor), so this names the OWNER, not the first carrier. Written
+    # after the field existed, so it passes on sight; the mutant that reddens it is in the commit.
+    check("the local binding carries the record whose scope holds it", recAt(syms, b.ownerSym),
+          "beta/26");
     # a local VARIABLE of the routine the cursor is in, declared two lines below its header
     b := bind(text, syms, "total", 20, lastLine, DOC);
     check("a local variable binds like a parameter",
@@ -261,17 +313,95 @@ const proc: main is func
           bindPin(b), "for||FALSE|TRUE|FALSE|0");
 
     # ---- row 4: a struct field, which has no declaration source at all -----------
-    # `box.pix' at line0 37. globalObjects reports Widget and never pix (spec 11.10), so
-    # this is over-included with a log line by the controller's 12.2 ruling, not proven.
-    b := bind(text, syms, "pix", 37, lastLine, DOC);
+    # `box.pix' at line0 37, col16 8 -- the slot is LOOKED UP, not hand-counted, so an edit to the
+    # fixture moves the answer instead of raising INDEX_ERROR past the array. globalObjects reports
+    # Widget and never pix (spec 11.10), so this is over-included with a log line by the
+    # controller's 12.2 ruling, not proven.
+    b := bindAt(text, syms, "pix", 37, lastLine, DOC,
+                occurrenceAt(occurrencesOf(text, "pix"), 37, 8));
     check("a dot-selected name is a field, and says it is not proven",
           bindPin(b), "pix|field|FALSE|FALSE|FALSE|0");
-    b := bind(text, syms, "pix", 4, lastLine, DOC);
+    b := bindAt(text, syms, "pix", 4, lastLine, DOC,
+                occurrenceAt(occurrencesOf(text, "pix"), 4, 17));
     check("the same name on its own declaration line is no field",
           bindPin(b), "pix||FALSE|FALSE|FALSE|0");
     b := bind(text, syms, "total", 38, lastLine, DOC);
-    check("a routine's own name used outside its region is over-included, not proven",
+    check("another routine's local, cursor outside its region, is over-included, not proven",
           bindPin(b), "total|field|FALSE|FALSE|FALSE|0");
+
+    # The two shapes of one spelling, pinned separately. `pix' here is bound by nothing -- no
+    # declaration, no scope entry, no library record -- so row 4 is the only thing that can call
+    # it a field, and row 4 reads the record `occurrenceAt' names. The discriminating input is the
+    # one-line text: walking the LINE labels both tokens `field' (measured -- the first binding check
+    # below went red against the shipped code with got TRUE), reading the cursor's own record labels
+    # only the one the dot really precedes. The cross-line pair after it is NOT discriminating for
+    # THAT question -- the line-wide test and the cursor's own record answer it alike -- and it stays
+    # pinned because WHICH record the slot names is the contract: row 4 reading `oc[1]' for every
+    # cursor reddens three checks, measured. The last two blocks state the crossing rule, once per
+    # level: the flag itself, then the same cursor seen through `resolveBinding'.
+    pixOneLine := "    pix := 1; box.pix := 2;\n";
+    pixTwoLines := "    pix := 1;\n  box.pix := 2;\n";
+    pixAfterBreak := "    box.\n      pix := 1;\n";
+    # The seam every caller now stands on, asked directly. Nothing else in any suite calls
+    # `occurrenceAt' -- the features reach it only through a slot no test asserts -- so every number
+    # here is a probe print, not arithmetic: occurrencesOf(pixOneLine, "pix") answers 1 = line0 0
+    # col16 4 dotPrev FALSE and 2 = line0 0 col16 18 dotPrev TRUE; its ":=" records are line0 0
+    # col16 8 and col16 22, both TK_OP; occurrencesOf(pixTwoLines, "pix") answers 1 = line0 0
+    # col16 4 and 2 = line0 1 col16 6; occurrencesOf(pixAfterBreak, "pix") answers 1 = line0 1
+    # col16 6.
+    pixOc := occurrencesOf(pixOneLine, "pix");
+    check("the record under a cursor on the dotted pix is the second one",
+          str(occurrenceAt(pixOc, 0, 18)), "2");
+    check("and under the bare pix on that same line it is the first",
+          str(occurrenceAt(pixOc, 0, 4)), "1");
+    check("an operator run IS in the list and is NOT a name, so the answer is 0",
+          str(occurrenceAt(occurrencesOf(pixOneLine, ":="), 0, 8)), "0");
+    pixOc := occurrencesOf(pixTwoLines, "pix");
+    check("a column that holds no record on the cursor's line answers 0",
+          str(occurrenceAt(pixOc, 0, 6)), "0");
+    check("and a line that holds the name at another column answers 0 too",
+          str(occurrenceAt(pixOc, 1, 4)), "0");
+    # These two slots are the thing under test, so they stay literal. The length check and the `if'
+    # hold the line: a future edit of this fixture then fails as a FAIL rather than raising
+    # INDEX_ERROR inside `oc[slot]' on stdout, which would cost the suite its graded line.
+    pixOc := occurrencesOf(pixOneLine, "pix");
+    check("the one-line fixture still answers two pix records", str(length(pixOc)), "2");
+    if length(pixOc) >= 2 then
+      check("the bare pix, on a line that also holds a field access, is not labelled field",
+            str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 1).owner =
+                "field"), "FALSE");
+      check("while the pix after the dot on that same line is",
+            str(bindAt(pixOneLine, noSyms, "pix", 0, pred(linesIn(pixOneLine)), DOC, 2).owner),
+            "field");
+    end if;
+    check("and a pix on the line ABOVE the field access is not labelled field either",
+          str(bindAt(pixTwoLines, noSyms, "pix", 0, pred(linesIn(pixTwoLines)), DOC,
+                     occurrenceAt(occurrencesOf(pixTwoLines, "pix"), 0, 4)).owner = "field"),
+          "FALSE");
+    check("while the one after the dot, on the dot's own line, is",
+          str(bindAt(pixTwoLines, noSyms, "pix", 1, pred(linesIn(pixTwoLines)), DOC,
+                     occurrenceAt(occurrencesOf(pixTwoLines, "pix"), 1, 6)).owner), "field");
+    # The crossing rule, seen from the binding rather than from the flag: `box.' ENDS its line and
+    # `pix' starts the next, so the dot is the previous TOKEN of a different line -- and a token
+    # whose text is exactly `.' can only be a selector, so this is the field access the write path
+    # must refuse. Restoring the line test the stamp used to carry (`prevLine = tk.line0') reddens
+    # this check and the flag-level one below it -- measured, which is what makes the pair the
+    # witness of the widened rule rather than of a blanket flag.
+    check("a dot that ends the line above still marks the cursor's record as a field",
+          str(bindAt(pixAfterBreak, noSyms, "pix", 1, pred(linesIn(pixAfterBreak)), DOC,
+                     occurrenceAt(occurrencesOf(pixAfterBreak, "pix"), 1, 6)).owner),
+          "field");
+    # The cursor seam itself, asked directly and from no feature. `cursorAt' is what both readers
+    # now call, so the record it returns needs a witness that goes through neither a refusal nor a
+    # location list, and this pins all three of its fields at once. Every number is a probe print of
+    # the shipped code (`s7 -q -l src' over these fixtures), not arithmetic. The third part is the
+    # part that pays: owner "field" is reachable only through row 4's `slot <> 0 and
+    # oc[slot].dotPrev', so the pin also proves the slot found here is the slot handed to
+    # `resolveBinding'. Written after working code, it passes on sight; the mutant that reddens it
+    # is named in the commit.
+    cr := cursorAt(pixOneLine, noSyms, "pix", 0, 18, pred(linesIn(pixOneLine)), DOC);
+    check("cursorAt hands back the list, the cursor's record and the binding from one pass",
+          str(length(cr.oc)) <& "|" <& str(cr.slot) <& "|" <& cr.b.owner, "2|2|field");
 
     # ---- rows 5 and 6: language furniture, and the mystery -----------------------
     b := bind(text, syms, "begin", 37, lastLine, DOC);
@@ -307,10 +437,10 @@ const proc: main is func
     check("but it still answers the whole document", scopePin(b), "0-5");
 
     # ---- an empty buffer: the first state of a new file ---------------------------------
-    # Total by inspection -- blockRegions, occurrencesOf and dotSelected each walk an empty text
+    # Total by inspection -- blockRegions and occurrencesOf each walk an empty text
     # without indexing anything -- but nothing pinned it, and an empty document is the first
     # request a client ever sends.
-    b := resolveBinding("", noSyms, 0 times occurrence.value, "count", 0, 0, DOC);
+    b := resolveBinding("", noSyms, 0 times occurrence.value, "count", 0, 0, DOC, 0);
     check("an empty buffer binds nothing",
           bindPin(b), "count||FALSE|FALSE|FALSE|0");
     check("and answers a one-line scope rather than raising", scopePin(b), "0-0");
@@ -513,7 +643,8 @@ const proc: main is func
     oc := occurrencesOf("x := \"\128512;\128512;\"; count := 1;\n", "count");
     check("the column counts the astral characters in the literal before it",
           at(oc, 1), "0:13:5");
-    # an operator run is indexable, so rename can reach a user-declared operator name
+    # an operator run is indexable, so references finds it; rename refuses it on the token kind
+    # (spec 6), and features_test.sd7 pins both shapes -- library `+' and buffer-declared `<+'
     oc := occurrencesOf("a := b <+ c;\nd := b <+ c;\n", "<+");
     check("an operator token is an occurrence", str(length(oc)), "2");
     # These two are what reach the kind filter. A comment token's text is "# count" and a
@@ -528,6 +659,85 @@ const proc: main is func
     oc := occurrencesOf("discount := 1;\n", "count");
     check("a name that is only a substring of a longer name is not an occurrence",
           str(length(oc)), "0");
+    # `dotPrev' is what lets the write path refuse a record field (spec 12.2). These four pin the
+    # flag itself: three on a line, which no widening may change, and one across a break, which is
+    # the widened rule. They are NOT the proof: the refusal checks in features_test.sd7 were written
+    # first and went red against the shipped code, and replacing this stamp with FALSE reddens
+    # them again -- which is what makes the flag load-bearing rather than decorative.
+    oc := occurrencesOf("total := box.total + 1;\n", "total");
+    check("a name written after a dot is marked", dotAt(oc, 2), "TRUE");
+    check("and the same spelling at the start of the line is not", dotAt(oc, 1), "FALSE");
+    oc := occurrencesOf("sum := 1 + total;\n", "total");
+    check("a name after a `+' is not a field access", dotAt(oc, 1), "FALSE");
+    oc := occurrencesOf("box.\n  total := 1;\n", "total");
+    check("a dot ending the line above marks it too -- a `.' token is only ever a selector",
+          dotAt(oc, 1), "TRUE");
+
+    # ---- spec 9's two hidden-text fixtures, asked for by name and never written -------------
+    # The first is the literal `prg/calc7.sd7:57-58' really uses: a BACKSLASH at the end of the
+    # line, inside the quotes, which Seed7 ignores together with the break and the blanks that
+    # follow it, so the literal goes on. A scanner that stopped the literal at that break makes
+    # the continued text code, and a name written inside it -- `count' below -- then enters the
+    # index. The fixture is built with escapes because `\" <& chr(92)' at statement level is the
+    # trap this branch already hit: the escape eats the closing quote and the file will not parse.
+    contText := "x := \"abc \\\n  count\";\n";
+    oc := occurrencesOf(contText, "count");
+    check("a name inside a continued string literal is not an occurrence",
+          str(length(oc)), "0");
+    oc := occurrencesOf("x := count;\n", "count");
+    check("the control, the same name with no literal around it", at(oc, 1), "0:5:5");
+    # What the two records above cannot say, this one does: the literal is ONE token that ends at
+    # the quote on the LATER line, so the code after that quote is indexed, and its column is
+    # counted from the start of the continued line -- measured 1:10:5, and wrong in the line if the
+    # continuation is honoured without moving the cursor over the break. Mutating the string arm of
+    # `nextToken' to end at the backslash reddens the first check; dropping the scanLineBreak call
+    # inside `skipContinuation' reddens this one.
+    contText := "x := \"abc \\\n  count\"; count := 1;\n";
+    oc := occurrencesOf(contText, "count");
+    check("one name survives the continuation, and it is the one after the closing quote",
+          str(length(oc)) <& " " <& at(oc, 1), "1 1:10:5");
+
+    # The second is `lib/chartype.s7i:45' -- `{'"'}', a char literal whose element IS the double
+    # quote. Read as a string introducer it opens a literal that runs to the end of its line, and
+    # every name after it on that line silently leaves the index. The NEXT-line form below is the
+    # one spec 9 measured, and it is stated as measured (one occurrence) -- but it is a REDUNDANCY
+    # OF THE CHAR ARM, not a proof: it survived every mutation of that arm ("read no element", "read
+    # no escape element"), because a string opened at that quote stops at its own line break, so the
+    # literal never reaches the line below and a name there is code either way. The claim is scoped
+    # to that arm on purpose: this check DOES pin the following token's LINE, so it would go red only
+    # on the CONJUNCTION -- a string arm that lets a literal cross a break AND a char arm that fails
+    # to read the quote as its element. The string arm alone cannot redden it, because the literal it
+    # opens here never reaches the next line. Unqualified, "cannot fail" is too strong. The
+    # same-line form is the check that can fail on the arm: the quote arm failing to read one element
+    # and its closing quote turns its expected column into "none".
+    quoteText := "const set of char: q is {'\"'};\ncount := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("what follows a quote char literal on the next line is still code",
+          at(oc, 1), "1:0:5");
+    quoteText := "const set of char: q is {'\"'}; count := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("and what follows it on ITS OWN line is still code", at(oc, 1), "0:31:5");
+    # The same character written numerically, the fallback spec 9 names. It takes the ESCAPE arm of
+    # the char literal -- the branch that runs `pastEscape' and then counts what it swallowed -- which
+    # the quote spelling above never reaches (a quote is an ordinary element, so the plain branch reads
+    # it) -- yet NO deletion of that arm reddens it: the leftovers re-tokenise as a two-character char
+    # literal, a number, an operator, and a second char literal whose ELEMENT is the closing brace, so
+    # nothing survives as a bracket and nothing reports TK_ILLEGAL. Measured on the mutated scanner:
+    # `'\' 2, `34' 2, `;' 1, `'}' 2, `;' 1 against the shipped `'\34;' 6 + `}' 1 + `;' 1 -- an
+    # unchanged total column advance, so `count' still arrives at 0:34:5. Deleting the branch left all
+    # 94 checks of this suite green while scan_test.sd7 went red four times. What this check DOES
+    # depend on is the escape arm's width statement (`units +:= j - before'): fixing that count at 1
+    # makes the token 3 wide instead of 6, moves `count' to 0:31:5, and reddens THIS check alone -- the
+    # quote spellings are 3 wide either way, so they stay green, and the plain branch's
+    # `units +:= utf16CharLength(text[j])' cannot be separated from a fixed 1 by any ASCII element.
+    # The same regression is already pinned in tests/scan_test.sd7 by "the five char spellings and
+    # their widths" and "the name after a numeric-escape char literal is still code", so this is a
+    # duplicate seen from the occurrence index, not a new proof -- and not the decorative class
+    # either, because a width mutant does kill it.
+    quoteText := "const set of char: q is {'\\34;'}; count := 1;\n";
+    oc := occurrencesOf(quoteText, "count");
+    check("the numeric spelling of the same element is hidden the same way",
+          str(length(oc)) <& " " <& at(oc, 1), "1 0:34:5");
 
     report("occurrences");
   end func;

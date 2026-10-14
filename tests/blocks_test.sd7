@@ -149,36 +149,20 @@ const func string: closersOf (in string: text) is func
   end func;
 
 # "start..end" of the routine body that pairs with the 1-based declaration line, or "none" --
-# the answer Task 6 reads as unresolved.
+# the answer Task 6 reads as unresolved. This is the pairing resolveBinding actually performs
+# (blocks.routineRegionFor over a blockRegions scan); the one-line wrapper M5 shipped for it had
+# no production caller and was deleted, so the suite calls the surviving pair directly.
 const func string: regionOfDeclaration (in string: text, in integer: declLine1) is func
   result
     var string: out is "none";
   local
     var blockRef: r is blockRef.value;
   begin
-    r := declarationRegion(text, pred(linesIn(text)), declLine1);
+    r := routineRegionFor(blockRegions(text, pred(linesIn(text))), declLine1);
     out := "none";
     if r.closer <> "" then
       out := str(r.startLine) & ".." & str(r.endLine);
     end if;
-  end func;
-
-# The routine bodies enclosing line0, "start-end" innermost first.
-const func string: declarationsOf (in string: text, in integer: line0) is func
-  result
-    var string: out is "";
-  local
-    var array blockRef: rs is 0 times blockRef.value;
-    var integer: i is 0;
-  begin
-    rs := enclosingDeclarations(text, line0, pred(linesIn(text)));
-    out := "";
-    for i range 1 to length(rs) do
-      if out <> "" then
-        out := out & " ";
-      end if;
-      out := out & str(rs[i].startLine) & "-" & str(rs[i].endLine);
-    end for;
   end func;
 
 # "start/end/kind/closer" of one region, so the no-match answer is pinned as a record, not as
@@ -304,27 +288,21 @@ const proc: main is func
     # The no-match answer, pinned as a record. startLine 0 alone cannot mean "nothing": a real
     # region may start at line 0 (fixture 1 is exactly that), so `closer' is the discriminator.
     check("an unpaired declaration answers the empty region",
-          regionPin(declarationRegion(demo(), pred(linesIn(demo())), 26)), "0/0//");
+          regionPin(routineRegionFor(blockRegions(demo(), pred(linesIn(demo()))), 26)), "0/0//");
     check("a routine on the first line still pairs",
-          regionPin(declarationRegion("const proc: a is func\nbegin\n  noop;\nend func;\n",
-                                      3, 1)),
+          regionPin(routineRegionFor(blockRegions("const proc: a is func\nbegin\n  noop;\nend func;\n", 3), 1)),
           "0/3//func");
     # An unset declaration line is the default of symRec.line1, not line 0 of the document.
     # Without the guard pred(0) = -1 matches every region, so this answers the file's FIRST
     # routine body -- a wrong pair, not a missing one.
     check("an unknown declaration line pairs with nothing, not with the first routine",
-          regionPin(declarationRegion(demo(), pred(linesIn(demo())), 0)), "0/0//");
+          regionPin(routineRegionFor(blockRegions(demo(), pred(linesIn(demo()))), 0)), "0/0//");
 
-    # enclosingDeclarations: routine bodies only, innermost first.
-    check("enclosingDeclarations is innermost first", declarationsOf(demo(), 10), "8-11 6-14");
-    check("only the enclosing routine is reported", declarationsOf(demo(), 13), "6-14");
-    # line0 0 is the imports region 0-1, whose closer is "": the chain is NON-empty and the
-    # filter rejects it. Inverting `closer <> ""' answers "0-1", which is why this line is 0
-    # and not 25 -- at 25 the chain is empty and no filter mutation can be seen.
-    check("a non-routine region in the chain is not a declaration", declarationsOf(demo(), 0), "");
-    # Task 6 calls this while the user types, and the last version of a document being typed is
-    # usually truncated: the open routine comes from the final closeFrom, closer intact.
-    check("a truncated buffer still reports its open routine",
-          declarationsOf("const proc: a is func\nbegin\n  if TRUE then\n", 2), "0-3");
+    # The four checks that used to call blocks.enclosingDeclarations are gone with the function,
+    # and one assertion among them is NOT lost: "a non-routine region in the chain is not a
+    # declaration" -- the closer <> "" filter -- is pinned where that filter actually runs, at
+    # occurrences_test.sd7 ("a carrier with no region at all is not handed the phantom
+    # region at line 0"), which is production code with a real caller. The other three tested a
+    # convenience wrapper no production path ever called.
     report("blocks");
   end func;

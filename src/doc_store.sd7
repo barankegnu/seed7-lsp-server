@@ -76,10 +76,15 @@ const func integer: lineWidth (in string: text, in integer: start) is func
 # The same walk in UTF-16 units. lspRangeUnits needs the line's unit width to clamp to, and
 # doing it here is the difference between O(line) and O(document): `utf16Before' counts from
 # the START of the text, so the width that used to be `utf16Before(start + lineWidth) -
-# utf16Before(start)' cost one pass over every character ahead of the line. Measured on the
-# capped references answer -- one range per occurrence, 2 000 of them in a 22 000-character
-# document -- the old form spent 7.9 s building the ranges alone. No other feature asks for
-# more than two ranges per response, which is why it was never felt before this one.
+# utf16Before(start)' cost one pass over every character ahead of the line. Measured on a probe of
+# exactly that shape -- the capped references answer's range count and document size, 2 001 line
+# starts in a 22 000-character ASCII body, `s7c -p -O2 -l src': 1 791 629 µs for the old form's two
+# `utf16Before' calls (4 002 calls), against 17 586 µs for 40 020 `lineUnits' calls over those same
+# starts twenty times over. Both rows are observed; any quotient between them is arithmetic, not a
+# measurement -- and it is the document over the line that is the real ratio here, which IS the
+# O(document)-vs-O(line) claim. The 7.9 s that used to sit here is deleted: no honest run of that
+# shape reproduces it, and a number no command produces is worse than none. No other feature asks
+# for more than two ranges per response, which is why it was never felt before this one.
 const func integer: lineUnits (in string: text, in integer: start) is func
   result
     var integer: units is 0;
@@ -93,8 +98,10 @@ const func integer: lineUnits (in string: text, in integer: start) is func
     end while;
   end func;
 
-# ponytail: mask rebuilt on every didChange (measured ~130 ms on the stdlib's largest file);
-# upgrade path is a version stamp and a lazy fill if a change burst ever shows it.
+# ponytail: the mask is rebuilt on every didChange, and the rebuild cost is NOT measured here --
+# the figure this note carried had no command and no longer survives it. Upgrade path is a version
+# stamp plus a lazy fill, and the first person to need that number should take it with
+# `s7c -p -O2 -l src` over a stdlib-sized file, per AGENTS.md, and write it here with its command.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
   begin
     doc.text := text;

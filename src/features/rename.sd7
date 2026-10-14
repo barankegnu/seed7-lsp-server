@@ -85,31 +85,6 @@ const func string: newNameProblem (in string: nm) is func
     end if;
   end func;
 
-# The routine record that DECLARES the bound local, found by the declaration it names (name plus
-# line) rather than by walking regions again: scope stays in occurrences.sd7 (spec 4), and a local
-# always arrives with a declLine1 that came from exactly one such record. 0 is a degradation, not
-# a raise: it means the collision test has nothing to test against.
-const func integer: localOwner (in array symRec: syms, in string: docPath,
-                                in string: nm, in integer: declLine1) is func
-  result
-    var integer: out is 0;
-  local
-    var integer: i is 0;
-    var integer: j is 0;
-  begin
-    for i range 1 to length(syms) do
-      if out = 0 and isBufferFile(syms[i].file, docPath) then
-        for j range 1 to length(syms[i].locals) do
-          if out = 0 and syms[i].locals[j].name = nm then
-            if syms[i].locals[j].line1 = declLine1 then
-              out := i;
-            end if;
-          end if;
-        end for;
-      end if;
-    end for;
-  end func;
-
 # A Seed7 routine name and a data name live in different overload spaces. Measured on 5.4.10:
 # `var integer: other' written beside `const proc: other' analyses CLEAN, while two
 # `var integer: other' raise REDECLARATION and so does `var integer: Widget' beside
@@ -141,23 +116,29 @@ const func boolean: bufferHasDataNamed (in array symRec: syms, in string: docPat
 # collides with its routine's scope entries and with its routine's own name: Seed7 accepts the
 # second (measured clean on 5.4.10) and spec 6 refuses it anyway, because the local would hide the
 # routine inside its own body and turn a recursive call into a variable read without a word of
-# warning. Library records are out of both sets by isBufferFile, or nothing could be renamed to
+# warning. Library records are out of the global set by isBufferFile and of the local set
+# because row 1 only ever binds a record of this buffer, so nothing could be renamed to
 # `writeln'. The comparison is by NAME, never by signature: an overload sibling is one symbol to
 # this feature (spec 2), and a rename that produces a REDECLARATION is what the caller sees next
 # from the diagnostic publisher either way.
+# The local's owner is `b.ownerSym', the record row 1 found while deciding whose local this is, and
+# the only `syms' index this function reads. The `<> 0' test is the guard `binding.ownerSym' demands,
+# not decoration: 0 is a real value of that field, and indexing with it would put an INDEX_ERROR onto
+# the protocol channel. What the guard costs instead is the degrade -- a 0 owner means no collision
+# test runs. Unreachable today, because row 1 assigns `owner' and `ownerSym' in the same block, so no
+# local binding arrives without an owner; kept so a binding row added later cannot hand one without.
 const func boolean: collides (in string: nm, in binding: b, in array symRec: syms,
                               in string: docPath) is func
   result
     var boolean: out is FALSE;
-  local
-    var integer: owner is 0;
   begin
     if b.owner = "local" then
-      owner := localOwner(syms, docPath, b.name, b.declLine1);
-      if owner <> 0 then
-        out := scopeIndexOf(syms[owner].locals, nm) <> 0 or syms[owner].name = nm;
+      if b.ownerSym <> 0 then
+        out := scopeIndexOf(syms[b.ownerSym].locals, nm) <> 0 or syms[b.ownerSym].name = nm;
       end if;
     elsif b.owner = "global" then
+      # A global collides with ANY non-routine declaration in the buffer, so no single owner
+      # index can answer it; row 2 deliberately leaves `ownerSym' at 0.
       out := bufferHasDataNamed(syms, docPath, nm);
     end if;
   end func;

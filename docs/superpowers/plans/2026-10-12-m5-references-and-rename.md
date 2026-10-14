@@ -214,7 +214,7 @@ git commit -m "scope records: the analyzer's own params, locals and result vars"
 
 **Interfaces:**
 - Consumes: `pushBlock`'s existing `closer` argument (it already receives `func`/`proc`/`type`/control words), `blockRegions`, the sort in `enclosingRegions`.
-- Produces: `blockRef` gains `string closer` (`"func"`, `"proc"`, `""` for anything not a routine body); `enclosingDeclarations (in string: text, in integer: line0, in integer: lastLine) → array blockRef`, innermost-first, routine bodies only; `declarationRegion (in string: text, in integer: lastLine, in integer: declLine1) → blockRef`, whose `startLine` is 0 when nothing matches.
+- Produces: `blockRef` gains `string closer` (`"func"`, `"proc"`, `""` for anything not a routine body); `enclosingDeclarations (in string: text, in integer: line0, in integer: lastLine) → array blockRef`, innermost-first, routine bodies only; `declarationRegion (in string: text, in integer: lastLine, in integer: declLine1) → blockRef`, whose `startLine` is 0 when nothing matches. **Post-merge correction (design §11.15): both wrappers were deleted unused — Task 6 grew its own pairing on `blockRegions` + `routineRegionFor` + `regionOwner`, which needed the region list anyway. The `closer` field and its checks stay.**
 
 - [ ] **Step 1: Write the failing checks** in `tests/blocks_test.sd7`, on a fixture whose second routine has a multi-line header:
 
@@ -389,7 +389,7 @@ The four rows of spec §4, with shadowing subtraction, and the only place that s
 - Modify: `tests/occurrences_test.sd7`
 
 **Interfaces:**
-- Consumes: `occurrencesOf`, `symRec` (with `locals` from Task 2), `enclosingDeclarations`/`declarationRegion` (Task 3), `isKeyword` (Task 5).
+- Consumes: `occurrencesOf`, `symRec` (with `locals` from Task 2), ~~`enclosingDeclarations`/`declarationRegion`~~ (Task 3) — **not consumed: Task 6 calls `blockRegions` once and pairs with `routineRegionFor`/`regionOwner` instead, and the two wrappers were deleted post-merge (design §11.15)**, `isKeyword` (Task 5).
 - Produces: `binding {string name, string owner, integer scopeStart, integer scopeStop, boolean resolved, boolean keyword, boolean capped}` where `owner` is `"local"`, `"global"`, `"library"`, `"field"` or `""`; `keyword` separates "this is a word of the language" from "this is a name we cannot bind", which is the difference between refusing a rename and over-including one; `scopeStart`/`scopeStop` are 0-based line bounds, `0`/`lastLine` for a global; `capped` says `MAX_OCCURRENCES` was hit. `resolveBinding (in string: text, in array symRec: syms, in string: name, in integer: line0, in integer: lastLine, in string: docPath) → binding`.
 
 - [ ] **Step 1: Write the failing checks** in `tests/occurrences_test.sd7`. The fixture is one file with a global `count`, two routines each with a local `count`, and a `Widget`-typed field use:

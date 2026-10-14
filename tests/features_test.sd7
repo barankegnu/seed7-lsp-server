@@ -179,14 +179,169 @@ const func string: ambigText is func
            "  end func;\n";
   end func;
 
+# The second cause of the same refusal, with NO routine and NO parameter in the file: two
+# records of `x' on the line that declares it, because a second statement shares the line.
+# Spec 11.12 measured this exact text on `/tmp/r9probe.sd7' and found the refusal sentence false
+# for it -- it claimed "the shape a parameter takes when it is named after its routine". Pinned
+# at diags 0; every column below was read from a probe, not derived.
+const func string: sameLineText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "const integer: x is 1; const integer: y is x;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  begin\n" <&
+           "    writeln(x);\n" <&
+           "  end func;\n";
+  end func;
+
+# The field-clash fixture: `counter' is BOTH a routine's local and a struct's field, and the
+# routine reads `box.counter'. This is spec 12.2's case -- `w.pix is pervasive in real Seed7' --
+# and the shape the write path must refuse: the local's scope window holds the field ACCESS but
+# not the field's declaration, so an edit list built from the spelling alone rewrites two
+# different symbols. Pinned at diags 0, so every column in the expectations below is a line of
+# this text.
+const func string: fieldClashText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "const type: Widget is new struct\n" <&
+           "    var integer: counter is 0;\n" <&
+           "    var integer: total is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "var integer: total is 0;\n" <&
+           "\n" <&
+           "const proc: show (in Widget: box) is func\n" <&
+           "  local\n" <&
+           "    var integer: counter is 0;\n" <&
+           "  begin\n" <&
+           "    counter := box.counter + 1;\n" <&
+           "    counter := counter + box.counter;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: tally (in integer: n) is func\n" <&
+           "  local\n" <&
+           "    var integer: counter is 0;\n" <&
+           "  begin\n" <&
+           "    counter := n + 1;\n" <&
+           "    counter := counter + n;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var Widget: b is Widget.value;\n" <&
+           "  begin\n" <&
+           "    b.counter := 1;\n" <&
+           "    b.total := total;\n" <&
+           "    show(b);\n" <&
+           "    tally(b.counter);\n" <&
+           "  end func;\n";
+  end func;
+
+# The two-struct fixture spec 9 asked for and never had: `pix' is a field of TWO structs in one
+# file, the global `pix' is one of four symbols of the same spelling, and one routine declares `pix'
+# as its own local. This is spec 12.2's permanent row-4 case -- `field names repeat across structs,
+# and w.pix is pervasive in real Seed7' -- and there is no machine here that separates the two
+# fields, so both spellings stay one symbol. The bodies only assign: analysis runs what it reads.
+const func string: twoStructText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "const type: Alpha is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "const type: Beta is new struct\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  end struct;\n" <&
+           "\n" <&
+           "var integer: pix is 0;\n" <&
+           "\n" <&
+           "const proc: show (in Alpha: a, in Beta: b) is func\n" <&
+           "  local\n" <&
+           "    var integer: pix is 0;\n" <&
+           "  begin\n" <&
+           "    pix := a.pix + b.pix;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var Alpha: x is Alpha.value;\n" <&
+           "    var Beta: y is Beta.value;\n" <&
+           "  begin\n" <&
+           "    x.pix := 1;\n" <&
+           "    y.pix := 2;\n" <&
+           "    pix := 3;\n" <&
+           "    show(x, y);\n" <&
+           "  end func;\n";
+  end func;
+
+# The operator-declaring fixture: a buffer that declares its OWN operator, the shape §6's
+# refusal had no witness for. Seed7 will not parse a new operator symbol until a syntax rule
+# gives it a priority -- measured: without the `$ syntax' line the analyzer answers
+# "is" expected found "<+" at that token, so the file opens with the rule, which is also the
+# third occurrence of the spelling. The bodies only assign: analysis is not a dry parse here, it
+# runs what it reads, so a fixture keeps its output silent.
+const func string: opDeclText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "$ syntax expr: .(). <+ .() is -> 7;\n" <&
+           "\n" <&
+           "const func integer: (in integer: x) <+ (in integer: y) is func\n" <&
+           "  result\n" <&
+           "    var integer: doubled is 0;\n" <&
+           "  begin\n" <&
+           "    doubled := x + y;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var integer: total is 0;\n" <&
+           "  begin\n" <&
+           "    total := 2 <+ 3;\n" <&
+           "  end func;\n";
+  end func;
+
+# The uncertain-scope fixture: the text occurrences_test.sd7 pins as `oneLine', at the binding
+# level, copied here so the READ can be pinned at the same shape. A global `count' and a routine
+# whose whole body sits on one line: blocks.sd7 emits no region for a body that opens and closes
+# on the same line, so `tiny' pairs with nothing, cannot be subtracted from the global's scope, and
+# the binding answers `scopeUncertain' TRUE. `main' calls `tiny' and nothing writes to an output
+# stream, because analyzeAll runs the text it reads.
+const func string: uncertainText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "const proc: tiny (inout integer: count) is func begin count := 1; end func;\n" <&
+           "var integer: count is 0;\n" <&
+           "const proc: main is func begin tiny(count); end func;\n";
+  end func;
+
+# The field refusal's tail, spelled once for the same reason as DECL_AMBIG_TAIL: the two rename
+# methods prefix their own method name and nothing else differs.
+const string: FIELD_TAIL is
+    " appears after a `.' inside its own scope, so the edit list would rewrite a record field of"
+    <& " the same name as well as the symbol the cursor named, and the field's declaration is not"
+    <& " in that list";
+
 # The refusal sentence's tail, spelled once because the word under the cursor is the only part
 # that differs: prepareRename prefixes one method name, rename the other, and each of the three
 # measured reaches names its own symbol.
 const string: DECL_AMBIG_TAIL is
-    " shares its declaration line with another occurrence of it, the shape a parameter takes" <&
-    " when it is named after its routine, and a declaration found by line cannot choose between" <&
-    " the two, so a rename could rewrite the routine or the parameter when the cursor named the" <&
-    " other one";
+    " shares its declaration line with another record of the same name, and a declaration found"
+    <& " by line cannot choose between them, so a rename could rewrite a record the cursor did"
+    <& " not name";
 
 # A buffer declaration named `count', with no scope entries. Enough for resolveBinding's global
 # row, and the only way to reach the occurrence cap with a BINDING -- 2 000 lines of
@@ -363,6 +518,34 @@ const proc: main is func
     var wordRef: aword is wordRef.value;
     var string: ambigPath is "/tmp/tt_ambig.sd7";
     var string: ambigUri is "file:///tmp/tt_ambig.sd7";
+    var lsDoc: fdoc is lsDoc.value;
+    var array symRec: fsyms is 0 times symRec.value;
+    var docAnalysis: fd is docAnalysis.value;
+    var string: fPath is "/tmp/tt_field.sd7";
+    var string: fUri is "file:///tmp/tt_field.sd7";
+    var lsDoc: sdoc is lsDoc.value;
+    var array symRec: ssyms is 0 times symRec.value;
+    var docAnalysis: sd is docAnalysis.value;
+    var string: sPath is "/tmp/tt_same.sd7";
+    var string: sUri is "file:///tmp/tt_same.sd7";
+    var lsDoc: opDoc is lsDoc.value;
+    var array symRec: opSyms is 0 times symRec.value;
+    var docAnalysis: opAn is docAnalysis.value;
+    var string: opPath is "/tmp/tt_opdecl.sd7";
+    var string: opUri is "file:///tmp/tt_opdecl.sd7";
+    var wordRef: opWord is wordRef.value;
+    var lsDoc: pdoc is lsDoc.value;
+    var array symRec: psyms is 0 times symRec.value;
+    var docAnalysis: pd is docAnalysis.value;
+    var string: pPath is "/tmp/tt_two.sd7";
+    var string: pUri is "file:///tmp/tt_two.sd7";
+    var wordRef: pixWord is wordRef.value;
+    var lsDoc: udoc is lsDoc.value;
+    var array symRec: usyms is 0 times symRec.value;
+    var docAnalysis: ud is docAnalysis.value;
+    var string: uPath is "/tmp/tt_uncertain.sd7";
+    var string: uUri is "file:///tmp/tt_uncertain.sd7";
+    var renameCheck: dec is renameCheck.value;
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -726,12 +909,12 @@ const proc: main is func
     # that measured the text instead of its parameter would report a truncated document as
     # complete. That is the exact partial result spec 2 refuses, and these two checks are what
     # a caller swapping in a filtered or recomputed list would have to survive.
-    rb := resolveBinding(capText, rsyms, ocOne, "count", 0, MAX_OCCURRENCES, refPath);
+    rb := resolveBinding(capText, rsyms, ocOne, "count", 0, MAX_OCCURRENCES, refPath, 0);
     check("capped follows the array handed in, not the text", str(rb.capped), "FALSE");
     for k range 1 to MAX_OCCURRENCES + 1 do
       ocWide &:= occurrence.value;
     end for;
-    rb := resolveBinding("count := 1;\n", rsyms, ocWide, "count", 0, 0, refPath);
+    rb := resolveBinding("count := 1;\n", rsyms, ocWide, "count", 0, 0, refPath, 0);
     check("and a long array caps even when the text is short", str(rb.capped), "TRUE");
     # ---- R47: the cap must refuse a WRITE whose cursor IS in the truncated list ----------
     # capDoc now holds MAX_OCCURRENCES + 1 statements and the cursor is on the FIRST of them, so
@@ -854,6 +1037,187 @@ const proc: main is func
           <& "{\"range\":{\"start\":{\"line\":11,\"character\":20},\"end\":{\"line\":11,"
           <& "\"character\":25}},\"newText\":\"amount\"}]}}");
 
+    # ---- the refusal sentence must describe the line, not a parameter (spec 11.12) ----------
+    # The R51 arm's trigger is `more than one record of the name on the declaration line'. The
+    # sentence it ships claimed the parameter shape, which spec 11.12 measured FALSE for this
+    # input -- a file with no routine sharing a name with a parameter -- and left as one of "two
+    # consequences still owed", batched for a whole-branch review that never ran. Measured here
+    # before this block existed: refused=TRUE (so the REFUSAL checks below are green on sight --
+    # they exist so that narrowing the arm back to parameters reddens them), and why was
+    # "x shares its declaration line with another occurrence of it, the shape a parameter takes
+    # when it is named after its routine, ...". Only the sentence is red until the arm speaks.
+    setVersion(sdoc, sameLineText(), 1);
+    sd := analyzeAll(sdoc.text, noDirs, sPath);
+    ssyms := sd.syms;
+    check("the same-line fixture analyses clean", str(length(sd.parsed.diags)), "0");
+    check("the cursor is on the use in main, not on either record on the declaration line",
+          wordAt(sdoc, 5, 13).word <& ":" <& str(wordAt(sdoc, 5, 13).character1), "x:12");
+    pc := prepareRenameAnswer(sdoc, ssyms, wordAt(sdoc, 5, 13), sUri, TRUE);
+    check("the second statement on the declaration line still refuses prepareRename",
+          str(pc.refused), "TRUE");
+    # The two assertions that make this a test rather than a transcription. A check that compared
+    # `why' against a constant spelled in this same file would have passed for the wrong reason --
+    # it would have moved with production and never asked whether the words are TRUE of this
+    # input. What is askable here is absence: this file contains no routine and no parameter, so
+    # a refusal sentence that names one is describing something it did not see. Both are red
+    # against the shipped sentence, which reads "...the shape a parameter takes when it is named
+    # after its routine...".
+    checkTrue("the refusal names no parameter, because this file has none",
+              pos(pc.why, "parameter") = 0);
+    checkTrue("and no routine, for the same reason", pos(pc.why, "routine") = 0);
+    check("so it states only what the arm counted: two records of the name on one line",
+          pc.why, "prepareRename: x" <& DECL_AMBIG_TAIL);
+    rn := renameResult(sdoc, ssyms, wordAt(sdoc, 5, 13), sUri, "amount", TRUE);
+    check("rename refuses the same cursor with the same words",
+          str(rn.error = "") <& " " <& rn.why, "TRUE rename: x" <& DECL_AMBIG_TAIL);
+
+    # ---- a field access inside the symbol's own scope (spec 12.2) --------------------------
+    # Measured on this fixture BEFORE the refusal arm existed (the run is in this branch's first
+    # commit message): prepareRename accepted the cursor and rename answered SIX edits -- line 11
+    # character 17 (the local's own declaration), line 13 characters 4 and 19, line 14 characters
+    # 4, 15 and 29 -- of which line 13 character 19 and line 14 character 29 are `box.counter'.
+    # The field's declaration is at line 3, OUTSIDE the window (10..15), so applying those edits
+    # renames the field's USES and leaves the field: analysing the renamed text raises
+    # `Match for {box . amount }' and `Declaration of "show (ref Widget: box)" failed'. A write
+    # refuses rather than guessing. The target is `amount', not `total' -- `total' is a global in
+    # this file, and a rename onto a declared name is the collision arm, not this one.
+    setVersion(fdoc, fieldClashText(), 1);
+    fd := analyzeAll(fdoc.text, noDirs, fPath);
+    fsyms := fd.syms;
+    check("the field-clash fixture analyses clean", str(length(fd.parsed.diags)), "0");
+    check("the cursor is on show's local, not on the field access beside it",
+          wordAt(fdoc, 13, 6).word <& ":" <& str(wordAt(fdoc, 13, 6).character1), "counter:4");
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, TRUE);
+    check("a field access inside the scope refuses prepareRename", str(pc.refused), "TRUE");
+    check("and names the field as the reason", pc.why, "prepareRename: counter" <& FIELD_TAIL);
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, "amount", TRUE);
+    check("rename refuses the identical cursor rather than rewriting the field",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    check("with the predicate's own sentence under this method's name", rn.why,
+          "rename: counter" <& FIELD_TAIL);
+    # The read keeps spec 12.2's over-inclusive list, and that is the decision -- but the list was
+    # SILENT. Measured before the disclosure: the same cursor answered its six locations with
+    # unresolved FALSE and no log line, and a resolved answer is what a client reads as "these are
+    # the symbol's uses". So what is new here is the disclosure, not the width.
+    ra := referencesAnswer(fdoc, fsyms, wordAt(fdoc, 13, 6), fUri, FALSE);
+    check("references still lists every token of this spelling", str(uriCount(ra.json)), "6");
+    check("but says the list also holds a name written after a dot", str(ra.unresolved), "TRUE");
+    check("in its own sentence", ra.why,
+          "references: counter is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
+    # The positive control, same document, same spelling, no field access in ITS scope: tally's
+    # local still renames all four records. True today and true after the arm, and that is what
+    # makes it a control -- what it would catch is an arm keyed on the document or on the type
+    # instead of on scope, which is why it is one of the two checks the no-scope mutant reddens.
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, TRUE);
+    check("a local with no field access in its scope is still renamable",
+          str(pc.refused), "FALSE");
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, "amount", TRUE);
+    check("and all four of its records are edited", str(editCount(rn.json)), "4");
+    ra := referencesAnswer(fdoc, fsyms, wordAt(fdoc, 21, 6), fUri, FALSE);
+    check("and its references stay silent, because there is nothing to disclose",
+          str(ra.unresolved) <& " " <& str(uriCount(ra.json)), "FALSE 4");
+    # The scope cost, measured rather than inferred. A global's window is the whole document, so
+    # the same arm refuses the GLOBAL `total' for `b.total' at line 31 -- the refusal is correct
+    # (renaming `total' would rewrite a field whose declaration the window also holds, at line 4,
+    # under a name the struct never had) but it is an over-refusal for the case where the field
+    # and the global are separable by column, which this index has no column for. Spec 12.2's
+    # listed cost, stated plainly: the fix is the token-level index over `const type ... end
+    # struct', not a narrower test here.
+    # `character1' is the 0-based UTF-16 column -- the same unit occurrence.col16 carries, which
+    # is why occurrenceAt can compare them directly. `column1' beside it is 1-based.
+    check("the cursor is on the global's own declaration",
+          wordAt(fdoc, 7, 15).word <& ":" <& str(wordAt(fdoc, 7, 15).character1), "total:13");
+    pc := prepareRenameAnswer(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, TRUE);
+    check("a global refuses on a field access anywhere in its window", str(pc.refused), "TRUE");
+    check("naming the same reason", pc.why, "prepareRename: total" <& FIELD_TAIL);
+    rn := renameResult(fdoc, fsyms, wordAt(fdoc, 7, 15), fUri, "amount", TRUE);
+    check("and rename will not half-rewrite it", str(rn.error = "") <& " " <& rn.json,
+          "TRUE null");
+
+    # ---- `pix' in TWO structs (spec 9, answered by spec 12.2) -------------------------------
+    # The cursor is on `x.pix' -- a field access -- in a file where `pix' is also Alpha's field, a
+    # global and another routine's local. Expected BEFORE running it, from 12.2's answer: the read
+    # over-includes and says so; the write refuses. Measured, and the two structs' field
+    # DECLARATIONS are in the list (lines 4 and 8, 1-based), which is the whole point -- nothing in
+    # this machine knows which struct a field belongs to, so a cursor on Alpha's field answers a
+    # list that also holds Beta's. The global row binds the spelling first, so `resolveBinding'
+    # never reaches its field row for this cursor and the answer is `resolved' with the field
+    # disclosure rather than the unresolved one the single-struct field gets.
+    setVersion(pdoc, twoStructText(), 1);
+    pd := analyzeAll(pdoc.text, noDirs, pPath);
+    psyms := pd.syms;
+    check("the two-struct fixture analyses clean", str(length(pd.parsed.diags)), "0");
+    pixWord := wordAt(pdoc, 24, 7);
+    check("the cursor is on main's field access, at the column wordAt answers",
+          pixWord.word <& ":" <& str(pixWord.line1) <& ":" <& str(pixWord.character1),
+          "pix:25:6");
+    ra := referencesAnswer(pdoc, psyms, pixWord, pUri, FALSE);
+    check("references over-includes across both structs, and lists them in document order",
+          ra.json,
+          "[{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":3,\"character\":17},\"end\":{\"line\":3,\"character\":20}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":7,\"character\":17},\"end\":{\"line\":7,\"character\":20}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":10,\"character\":13},\"end\":{\"line\":10,\"character\":16}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":24,\"character\":6},\"end\":{\"line\":24,\"character\":9}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":25,\"character\":6},\"end\":{\"line\":25,\"character\":9}}}," <&
+          "{\"uri\":\"file:///tmp/tt_two.sd7\",\"range\":" <&
+          "{\"start\":{\"line\":26,\"character\":4},\"end\":{\"line\":26,\"character\":7}}}]");
+    check("and it says the list holds both structs' fields", str(ra.unresolved), "TRUE");
+    check("in the field sentence, not the unresolved one", ra.why,
+          "references: pix is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
+    pc := prepareRenameAnswer(pdoc, psyms, pixWord, pUri, TRUE);
+    check("prepareRename refuses a field access inside the symbol's window", str(pc.refused),
+          "TRUE");
+    rn := renameResult(pdoc, psyms, pixWord, pUri, "amount", TRUE);
+    check("and rename answers null with no error, refusing to half-rewrite two structs",
+          str(rn.error = "") <& " " <& rn.json, "TRUE null");
+    # The same spelling under the routine that declares it as its OWN local: the window is show's
+    # region, and it holds both `a.pix' and `b.pix' -- two different symbols' fields, one per
+    # struct -- so the read is over-inclusive inside the window and the write refuses for the same
+    # reason. Measured as four records: the local's declaration line and the three names on the
+    # assignment line.
+    ra := referencesAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, FALSE);
+    check("the field access inside a local of the same name answers its own window only",
+          str(uriCount(ra.json)) <& " " <& str(endCount(ra.json)), "4 4");
+    # The disclosure fires for this cursor too -- references.sd7 asks `scopeHasFieldAccess' of the
+    # binding, and show's window holds one field of EACH struct -- so it is asserted here rather
+    # than left inferred from the count above, which would pass silently if the sentence vanished.
+    check("and it says so, with the field sentence for its own window",
+          str(ra.unresolved) <& " " <& ra.why,
+          "TRUE references: pix is bound, but the list also holds a name written after a" <&
+          " `.', which may be a record field of the same name");
+    pc := prepareRenameAnswer(pdoc, psyms, wordAt(pdoc, 16, 15), pUri, TRUE);
+    check("and it is refused too, because both fields sit in that window",
+          str(pc.refused) <& " " <& pc.why, "TRUE prepareRename: pix" <& FIELD_TAIL);
+
+    # ---- spec 12.2's OTHER over-inclusive read: `scopeUncertain' ---------------------------
+    # The field arm above is only one of the two widths §12.2 knows about. Here the same
+    # over-inclusion comes from scope rather than from a dot: `tiny' shadows `count' in its own
+    # scope and pairs with NO region, so nothing subtracts that body from the global's window, and
+    # two of the four published locations are the parameter's declaration and the use inside
+    # `tiny'. Measured on this cursor before the arm existed: `unresolved' FALSE, an empty `why',
+    # no log frame -- while occurrences_test.sd7 already pinned the same binding from below, as
+    # `count|global|TRUE|FALSE|FALSE|3' with `excluded' empty and a separate check that
+    # `b.scopeUncertain' is TRUE. The write refuses it (`renameDecision's scopeUncertain arm);
+    # the read cannot refuse, so this is the disclosure.
+    setVersion(udoc, uncertainText(), 1);
+    ud := analyzeAll(udoc.text, noDirs, uPath);
+    usyms := ud.syms;
+    check("the uncertain-scope fixture analyses clean", str(length(ud.parsed.diags)), "0");
+    ra := referencesAnswer(udoc, usyms, atLine("count", 3), uUri, FALSE);
+    check("an uncertain scope publishes the shadowing routine's lines as the global's own",
+          str(uriCount(ra.json)) <& " " <& str(endCount(ra.json)), "4 4");
+    check("and says the scope may be shorter than the list", str(ra.unresolved), "TRUE");
+    check("naming the shadowing scope as the reason", ra.why,
+          "references: count is bound, but a shadowing declaration of it sits in a scope this"
+          <& " server cannot see, so the list may also hold that symbol's uses");
+
     # R47 through rename: capDoc holds MAX_OCCURRENCES + 1 statements and the cursor is on the
     # FIRST of them, so the record the range would take IS in the truncated list -- the gap that
     # made prepareRename accept a document rename can only half-edit.
@@ -871,6 +1235,77 @@ const proc: main is func
           str(editCount(rn.json)), "2000");
     check("and at exactly the cap nothing is refused",
           str(rn.error = "" and rn.json <> "null"), "TRUE");
+    # ---- an operator is referenceable, and not renameable in either direction ----------------
+    # The pass indexes TK_OP, so the `+' on refsText line 14 IS published by references (pinned
+    # above, with its range) and its binding DOES resolve, through the library row -- owner
+    # "library", resolved TRUE, declLine1 0, measured here -- yet occurrenceAt requires TK_NAME,
+    # so the cursor leaves `slot' at 0 and renameDecision answers from the slot-0 arm.
+    # lsp_server_test.sd7 already refuses `:=' on that same arm; what was unwitnessed here is the
+    # refusal on an operator references has just published and resolved, which is the shape a
+    # comment in occurrences_test.sd7 used to call renameable, and the other direction -- an
+    # operator handed in as `newName', rejected by newNameProblem before any document is read.
+    pc := prepareRenameAnswer(rdoc, rsyms, wordAt(rdoc, 14, 20), refUri, TRUE);
+    check("an operator cursor is refused by prepareRename, and a refusal is null not an error",
+          str(pc.refused) <& " " <& pc.json, "TRUE null");
+    check("and the reason is the not-a-name arm, which speaks truly now",
+          pc.why, "prepareRename: + is not a name");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "<+>", TRUE);
+    check("an operator NEW name is a rejection, not a refusal", rn.error, "invalid");
+    # The sibling pin, because `error' alone says nothing about WHICH rejection: `<' fails
+    # `startsName' and `+' / `>' fail `allNameChars', and the two arms emit the identical sentence
+    # -- measured, `"1bad"' answers the same words -- so the sentence is the strongest statement
+    # this input can make, and it is the one §6 quotes.
+    check("and the rejection names the identifier rule beside the spelling", rn.why,
+          "rename: <+> is not a Seed7 identifier");
+    # A BUFFER-DECLARED operator is the other half of the claim, and the half no check reached:
+    # row 2 of resolveBinding matches `syms[i].name = name' for ANY spelling, so `<+' declared in
+    # the buffer gets a declaration record. Measured on this fixture before these checks existed:
+    # reflection carries `const func integer: <+ (integer: x, integer: y)' at line1 5, the binding
+    # answers owner "global", resolved TRUE, declLine1 5, scopeUncertain FALSE, the list holds 3
+    # records -- the arms that speak for a bound name are all silent for it -- and
+    # `slot' is STILL 0, because occurrenceAt gates on the token kind. So the refusal here comes
+    # from the kind gate and nowhere else, which is the fact §6 has to state. The mutant that
+    # proves it: drop `kind = TK_NAME' in occurrences.sd7's occurrenceAt and the refusal does not
+    # move to another arm, it DISAPPEARS -- `slot' becomes 3, prepareRename answers a range for
+    # `<+', and rename answers three edits, one of them inside the `$ syntax' rule. It used to
+    # land one arm later, on `scopeHasFieldAccess' (the `$ syntax' rule writes `.(). <+ .()', so
+    # record 1 is dot-preceded), and that arm is closed to an operator now that the predicate
+    # counts NAMES only. Re-measured after that conjunction: the three expectations below are
+    # reddened -- the slot pin by the new number, the two method pins by an ACCEPT -- which is the
+    # stronger proof of the gate, because nothing else refuses an operator cursor. The library `+'
+    # cursor, under the same mutant, is refused one arm later, by the library arm.
+    setVersion(opDoc, opDeclText(), 1);
+    opAn := analyzeAll(opDoc.text, noDirs, opPath);
+    opSyms := opAn.syms;
+    check("the operator-declaring fixture analyses clean", str(length(opAn.parsed.diags)), "0");
+    opWord := wordAt(opDoc, 15, 15);
+    check("the cursor is on the declared operator, not on the number beside it",
+          opWord.word <& ":" <& str(opWord.character1), "<+:15");
+    dec := renameDecision(opDoc, opSyms, opWord, opUri, TRUE);
+    check("row 2 does bind it, so the refusal is the kind gate: slot 0 beside a real declaration",
+          str(dec.slot) <& " " <& dec.b.owner <& " " <& str(dec.b.declLine1), "0 global 5");
+    pc := prepareRenameAnswer(opDoc, opSyms, opWord, opUri, TRUE);
+    check("a buffer-declared operator is refused, null, on the not-a-name arm",
+          str(pc.refused) <& " " <& pc.json <& " " <& pc.why,
+          "TRUE null prepareRename: <+ is not a name");
+    rn := renameResult(opDoc, opSyms, opWord, opUri, "amount", TRUE);
+    check("and rename refuses the identical cursor with the identical sentence",
+          str(rn.error = "") <& " " <& rn.json <& " " <& rn.why,
+          "TRUE null rename: <+ is not a name");
+    # The READ on the same spelling, and here the refusal arms cannot speak, because references
+    # publishes the list rather than declining it. What a `$ syntax' rule costs: Seed7 will not
+    # parse a new operator symbol without one, and the rule is written `.(). <+ .()', so the token
+    # immediately before the `<+' ON THAT LINE is a `.'. Measured: of the three `<+' records the
+    # pass finds -- line 3 (the rule), line 5 (the header), line 16 (the use) -- only record 1
+    # carries dotPrev, and all three are TK_OP. So scopeHasFieldAccess, which asked only whether a
+    # record was dot-preceded and inside the window, answered TRUE for an operator, and an operator
+    # is never a record field: the §12.2 disclosure claimed a possible field for a spelling that
+    # cannot be one. Measured on this cursor before the kind test existed: three locations,
+    # unresolved TRUE, and the field sentence. The `|' separates the two segments so an empty `why'
+    # is visible as empty.
+    ra := referencesAnswer(opDoc, opSyms, opWord, opUri, FALSE);
+    check("the field disclosure speaks of names, so a declared operator discloses nothing",
+          str(ra.unresolved) <& "|" <& ra.why, "FALSE|");
     # The rejections. `error' = "invalid" is what the dispatcher sends as -32602 InvalidParams,
     # and json stays "null" because no result goes out beside an error frame.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "", TRUE);
