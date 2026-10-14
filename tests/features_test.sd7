@@ -243,6 +243,35 @@ const func string: fieldClashText is func
            "  end func;\n";
   end func;
 
+# The operator-declaring fixture: a buffer that declares its OWN operator, the shape §6's
+# refusal had no witness for. Seed7 will not parse a new operator symbol until a syntax rule
+# gives it a priority -- measured: without the `$ syntax' line the analyzer answers
+# "is" expected found "<+" at that token, so the file opens with the rule, which is also the
+# third occurrence of the spelling. The bodies only assign: analysis is not a dry parse here, it
+# runs what it reads, so a fixture keeps its output silent.
+const func string: opDeclText is func
+  result
+    var string: out is "";
+  begin
+    out := "$ include \"seed7_05.s7i\";\n" <&
+           "\n" <&
+           "$ syntax expr: .(). <+ .() is -> 7;\n" <&
+           "\n" <&
+           "const func integer: (in integer: x) <+ (in integer: y) is func\n" <&
+           "  result\n" <&
+           "    var integer: doubled is 0;\n" <&
+           "  begin\n" <&
+           "    doubled := x + y;\n" <&
+           "  end func;\n" <&
+           "\n" <&
+           "const proc: main is func\n" <&
+           "  local\n" <&
+           "    var integer: total is 0;\n" <&
+           "  begin\n" <&
+           "    total := 2 <+ 3;\n" <&
+           "  end func;\n";
+  end func;
+
 # The field refusal's tail, spelled once for the same reason as DECL_AMBIG_TAIL: the two rename
 # methods prefix their own method name and nothing else differs.
 const string: FIELD_TAIL is
@@ -443,6 +472,13 @@ const proc: main is func
     var docAnalysis: sd is docAnalysis.value;
     var string: sPath is "/tmp/tt_same.sd7";
     var string: sUri is "file:///tmp/tt_same.sd7";
+    var lsDoc: opDoc is lsDoc.value;
+    var array symRec: opSyms is 0 times symRec.value;
+    var docAnalysis: opAn is docAnalysis.value;
+    var string: opPath is "/tmp/tt_opdecl.sd7";
+    var string: opUri is "file:///tmp/tt_opdecl.sd7";
+    var wordRef: opWord is wordRef.value;
+    var renameCheck: dec is renameCheck.value;
   begin
     one.name := "Widget"; one.cat := "TYPEOBJECT"; one.ty := "type";
     one.file := "/p/a.sd7"; one.line1 := 4; one.sign := "const type: Widget";
@@ -1051,19 +1087,55 @@ const proc: main is func
           str(rn.error = "" and rn.json <> "null"), "TRUE");
     # ---- an operator is referenceable, and not renameable in either direction ----------------
     # The pass indexes TK_OP, so the `+' on refsText line 14 IS published by references (pinned
-    # above, with its range) and its binding DOES resolve, through the library row -- yet
-    # occurrenceAt requires TK_NAME, so the cursor leaves `slot' at 0 and renameDecision answers
-    # from the slot-0 arm. lsp_server_test.sd7 already refuses `:=' on that same arm; what is
-    # new here is the refusal on an operator references has just published and resolved, which is
-    # the shape a comment in occurrences_test.sd7 used to call renameable, and the other direction
-    # -- an operator handed in as `newName', rejected by newNameProblem before any document is
-    # read. The pair says the two halves agree in one direction only.
+    # above, with its range) and its binding DOES resolve, through the library row -- owner
+    # "library", resolved TRUE, declLine1 0, measured here -- yet occurrenceAt requires TK_NAME,
+    # so the cursor leaves `slot' at 0 and renameDecision answers from the slot-0 arm.
+    # lsp_server_test.sd7 already refuses `:=' on that same arm; what was unwitnessed here is the
+    # refusal on an operator references has just published and resolved, which is the shape a
+    # comment in occurrences_test.sd7 used to call renameable, and the other direction -- an
+    # operator handed in as `newName', rejected by newNameProblem before any document is read.
     pc := prepareRenameAnswer(rdoc, rsyms, wordAt(rdoc, 14, 20), refUri, TRUE);
-    check("an operator cursor is refused by prepareRename", str(pc.refused), "TRUE");
+    check("an operator cursor is refused by prepareRename, and a refusal is null not an error",
+          str(pc.refused) <& " " <& pc.json, "TRUE null");
     check("and the reason is the not-a-name arm, which speaks truly now",
           pc.why, "prepareRename: + is not a name");
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "<+>", TRUE);
     check("an operator NEW name is a rejection, not a refusal", rn.error, "invalid");
+    # The sibling pin, because `error' alone says nothing about WHICH rejection: `<' fails
+    # `startsName' and `+' / `>' fail `allNameChars', and the two arms emit the identical sentence
+    # -- measured, `"1bad"' answers the same words -- so the sentence is the strongest statement
+    # this input can make, and it is the one §6 quotes.
+    check("and the rejection names the identifier rule beside the spelling", rn.why,
+          "rename: <+> is not a Seed7 identifier");
+    # A BUFFER-DECLARED operator is the other half of the claim, and the half no check reached:
+    # row 2 of resolveBinding matches `syms[i].name = name' for ANY spelling, so `<+' declared in
+    # the buffer gets a declaration record. Measured on this fixture before these checks existed:
+    # reflection carries `const func integer: <+ (integer: x, integer: y)' at line1 5, the binding
+    # answers owner "global", resolved TRUE, declLine1 5, scopeUncertain FALSE, the list holds 3
+    # records -- the arms that speak for a bound name are all silent for it -- and
+    # `slot' is STILL 0, because occurrenceAt gates on the token kind. So the refusal here comes
+    # from the kind gate and nowhere else, which is the fact §6 has to state. The mutant that
+    # proves it: drop `kind = TK_NAME' in occurrences.sd7's occurrenceAt and this cursor moves to
+    # `scopeHasFieldAccess' (the `$ syntax' rule writes `.(). <+ .()', so record 1 is dot-preceded),
+    # which reddens the three expectations below by naming a different arm.
+    setVersion(opDoc, opDeclText(), 1);
+    opAn := analyzeAll(opDoc.text, noDirs, opPath);
+    opSyms := opAn.syms;
+    check("the operator-declaring fixture analyses clean", str(length(opAn.parsed.diags)), "0");
+    opWord := wordAt(opDoc, 15, 15);
+    check("the cursor is on the declared operator, not on the number beside it",
+          opWord.word <& ":" <& str(opWord.character1), "<+:15");
+    dec := renameDecision(opDoc, opSyms, opWord, opUri, TRUE);
+    check("row 2 does bind it, so the refusal is the kind gate: slot 0 beside a real declaration",
+          str(dec.slot) <& " " <& dec.b.owner <& " " <& str(dec.b.declLine1), "0 global 5");
+    pc := prepareRenameAnswer(opDoc, opSyms, opWord, opUri, TRUE);
+    check("a buffer-declared operator is refused, null, on the not-a-name arm",
+          str(pc.refused) <& " " <& pc.json <& " " <& pc.why,
+          "TRUE null prepareRename: <+ is not a name");
+    rn := renameResult(opDoc, opSyms, opWord, opUri, "amount", TRUE);
+    check("and rename refuses the identical cursor with the identical sentence",
+          str(rn.error = "") <& " " <& rn.json <& " " <& rn.why,
+          "TRUE null rename: <+ is not a name");
     # The rejections. `error' = "invalid" is what the dispatcher sends as -32602 InvalidParams,
     # and json stays "null" because no result goes out beside an error frame.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "", TRUE);

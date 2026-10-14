@@ -211,16 +211,28 @@ a keyword or a `$ syntax` operator (none of `if`, `then`, `do`, `:=`, `&` is ren
 edits. Refusal is `null`, not an error, which is what makes an editor grey out the menu item
 instead of showing a failure.
 
-Operators are refused by the "not a name at all" clause, not by the keyword arm, and the two
-halves of the decision agree in exactly one direction: `occurrenceAt` requires `TK_NAME`, so a
-cursor on `+` leaves `slot` at 0 and the reason is `prepareRename: + is not a name` — measured in
-`tests/features_test.sd7`, whose `+` in `counter := left + right;` publishes one real location
-(§5) to `references` and that sentence to `prepareRename` — while an operator handed in as
-`newName` is a `-32602` rejection, not a refusal, because `scan.nameStart` rejects `<` before any
-document is consulted. The asymmetry is not an oversight to close: `references` may publish the
-locations of a symbol whose spelling is punctuation, because a list needs only the tokens, and
-`rename` may not rewrite one, because a write needs the declaration identity the index does not
-carry for it. M5 renames names.
+Operators are refused by the "not a name at all" clause, not by the keyword arm, and what refuses
+them is the token's KIND, not the symbol's provenance: `occurrenceAt` takes a record only when
+`kind = TK_NAME`, so an operator cursor leaves `slot` at 0 whatever the index otherwise knows.
+Two shapes reach that gate and `tests/features_test.sd7` pins both. A library operator — the `+`
+in `counter := left + right;` — binds through the library row to `owner = "library"` with
+`declLine1 = 0`, publishes one real location (§5) to `references`, and answers
+`prepareRename: + is not a name`. An operator this buffer DECLARES is the case the kind gate alone
+decides, because row 2 matches `syms[i].name` for any spelling: `<+`, declared as
+`const func integer: (in integer: x) <+ (in integer: y)`, measures `owner = "global"`, resolved,
+`declLine1 = 5`, `scopeUncertain = FALSE` — the arms that speak for a bound name are silent for
+it — and `slot` is still 0, with all three of its records `TK_OP`, so the answer is the
+same sentence, `prepareRename: <+ is not a name`, and `rename` answers it with its own name in
+front. Take the kind gate away and this cursor is refused one arm later, by the `.` that the
+`$ syntax` rule writes immediately before the operator token — measured — so it is the sentence,
+not the refusal, that proves the gate fired. (Seed7 needs a `$ syntax expr:` rule before a new
+operator symbol parses; measured, without one the analyzer answers "is" expected found "<+".) An operator handed in as `newName` is the
+other half of the asymmetry and a `-32602` rejection rather than a refusal, because `scan.nameStart`
+rejects `<` before any document is consulted; the two identifier rejections emit the identical
+sentence, so the pin is on the words `rename: <+> is not a Seed7 identifier`, not on which arm
+spoke them. `references` may publish the locations of a symbol whose spelling is punctuation,
+because a list needs only the tokens, and `rename` may not rewrite one, because the cursor rule of
+the write path admits `TK_NAME` and nothing else. M5 renames names.
 
 **`rename`** re-runs resolution — `prepareRename` is not trusted to have happened, and the spec
 does not require it — and answers `WorkspaceEdit { changes: { <uri>: [TextEdit] } }` with one
