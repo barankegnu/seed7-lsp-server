@@ -1049,6 +1049,21 @@ const proc: main is func
           str(editCount(rn.json)), "2000");
     check("and at exactly the cap nothing is refused",
           str(rn.error = "" and rn.json <> "null"), "TRUE");
+    # ---- an operator is referenceable, and not renameable in either direction ----------------
+    # The pass indexes TK_OP, so the `+' on refsText line 14 IS published by references (pinned
+    # above, with its range) and its binding DOES resolve, through the library row -- yet
+    # occurrenceAt requires TK_NAME, so the cursor leaves `slot' at 0 and renameDecision answers
+    # from the slot-0 arm. lsp_server_test.sd7 already refuses `:=' on that same arm; what is
+    # new here is the refusal on an operator references has just published and resolved, which is
+    # the shape a comment in occurrences_test.sd7 used to call renameable, and the other direction
+    # -- an operator handed in as `newName', rejected by newNameProblem before any document is
+    # read. The pair says the two halves agree in one direction only.
+    pc := prepareRenameAnswer(rdoc, rsyms, wordAt(rdoc, 14, 20), refUri, TRUE);
+    check("an operator cursor is refused by prepareRename", str(pc.refused), "TRUE");
+    check("and the reason is the not-a-name arm, which speaks truly now",
+          pc.why, "prepareRename: + is not a name");
+    rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "<+>", TRUE);
+    check("an operator NEW name is a rejection, not a refusal", rn.error, "invalid");
     # The rejections. `error' = "invalid" is what the dispatcher sends as -32602 InvalidParams,
     # and json stays "null" because no result goes out beside an error frame.
     rn := renameResult(rdoc, rsyms, wordAt(rdoc, 14, 10), refUri, "", TRUE);

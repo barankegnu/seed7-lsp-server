@@ -72,6 +72,9 @@ the mask", which this keeps. One request costs one pass over one document; `didC
 invalidates nothing because nothing was cached, so the M4 one-analysis-per-version cache is
 untouched.
 
+Carrying `TK_OP` makes an operator *referenceable*, and it does not make it renameable — §6 owns
+that refusal and states why a read can list what a write cannot rewrite.
+
 **Why not `codeText`, corrected:** the first draft of this section claimed columns measured on
 the mask "transfer to the real document unchanged". They do not. `scan.maskOf` replaces a hidden
 token with one space **per character** (`src/scan.sd7:503-509`), and an astral character is one
@@ -207,6 +210,17 @@ a keyword or a `$ syntax` operator (none of `if`, `then`, `do`, `:=`, `&` is ren
 `seed7_05.s7i` declares them); the token's name is not a name at all; or the client cannot apply
 edits. Refusal is `null`, not an error, which is what makes an editor grey out the menu item
 instead of showing a failure.
+
+Operators are refused by the "not a name at all" clause, not by the keyword arm, and the two
+halves of the decision agree in exactly one direction: `occurrenceAt` requires `TK_NAME`, so a
+cursor on `+` leaves `slot` at 0 and the reason is `prepareRename: + is not a name` — measured in
+`tests/features_test.sd7`, whose `+` in `counter := left + right;` publishes one real location
+(§5) to `references` and that sentence to `prepareRename` — while an operator handed in as
+`newName` is a `-32602` rejection, not a refusal, because `scan.nameStart` rejects `<` before any
+document is consulted. The asymmetry is not an oversight to close: `references` may publish the
+locations of a symbol whose spelling is punctuation, because a list needs only the tokens, and
+`rename` may not rewrite one, because a write needs the declaration identity the index does not
+carry for it. M5 renames names.
 
 **`rename`** re-runs resolution — `prepareRename` is not trusted to have happened, and the spec
 does not require it — and answers `WorkspaceEdit { changes: { <uri>: [TextEdit] } }` with one

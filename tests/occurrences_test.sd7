@@ -626,7 +626,7 @@ const proc: main is func
     oc := occurrencesOf("x := \"\128512;\128512;\"; count := 1;\n", "count");
     check("the column counts the astral characters in the literal before it",
           at(oc, 1), "0:13:5");
-    # an operator run is indexable, so rename can reach a user-declared operator name
+    # an operator run is indexable, so references finds it; rename refuses it (Task 4)
     oc := occurrencesOf("a := b <+ c;\nd := b <+ c;\n", "<+");
     check("an operator token is an occurrence", str(length(oc)), "2");
     # These two are what reach the kind filter. A comment token's text is "# count" and a
