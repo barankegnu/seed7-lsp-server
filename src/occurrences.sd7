@@ -153,7 +153,8 @@ const type: binding is new struct
     # WHOSE local this is, so a caller reads it here instead of re-walking the records-and-entries
     # cross product and drifting from that answer. It is the FIRST row-1 match (the loop body is
     # gated on `out.owner = ""'), not the first record CARRYING the name. 0 unless `owner' is
-    # "local", and 0 is a degradation: a caller must test it before indexing `syms[ownerSym]'.
+    # "local", and 0 is a degradation: a caller must test it before indexing `syms[ownerSym]',
+    # of the `syms' array this binding was resolved from; meaningless against any other.
     var integer: ownerSym is 0;
     # The regions a shadowing scope takes out of a global's scope. Kept as regions rather than
     # as a pre-filtered occurrence array because rename needs the declaration line as well, and

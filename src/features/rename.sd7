@@ -116,12 +116,15 @@ const func boolean: bufferHasDataNamed (in array symRec: syms, in string: docPat
 # collides with its routine's scope entries and with its routine's own name: Seed7 accepts the
 # second (measured clean on 5.4.10) and spec 6 refuses it anyway, because the local would hide the
 # routine inside its own body and turn a recursive call into a variable read without a word of
-# warning. Library records are out of both sets by isBufferFile, or nothing could be renamed to
+# warning. Library records are out of the global set by isBufferFile and of the local set
+# because row 1 only ever binds a record of this buffer, so nothing could be renamed to
 # `writeln'. The comparison is by NAME, never by signature: an overload sibling is one symbol to
 # this feature (spec 2), and a rename that produces a REDECLARATION is what the caller sees next
 # from the diagnostic publisher either way.
 # The local's owner is `b.ownerSym', the record row 1 found while deciding whose local this is, so
-# an unset ownerSym degrades to "no collision test" rather than raising on `syms[0]'.
+# Unreachable today -- row 1 sets `owner' and `ownerSym' together (occurrences.sd7:348/353);
+# kept so that a binding row added later cannot hand `syms[0]' an INDEX_ERROR onto
+# the protocol channel.
 const func boolean: collides (in string: nm, in binding: b, in array symRec: syms,
                               in string: docPath) is func
   result
@@ -132,6 +135,8 @@ const func boolean: collides (in string: nm, in binding: b, in array symRec: sym
         out := scopeIndexOf(syms[b.ownerSym].locals, nm) <> 0 or syms[b.ownerSym].name = nm;
       end if;
     elsif b.owner = "global" then
+      # A global collides with ANY non-routine declaration in the buffer, so no single owner
+      # index can answer it; row 2 deliberately leaves `ownerSym' at 0.
       out := bufferHasDataNamed(syms, docPath, nm);
     end if;
   end func;
