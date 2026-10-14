@@ -98,8 +98,10 @@ const func integer: lineUnits (in string: text, in integer: start) is func
     end while;
   end func;
 
-# ponytail: mask rebuilt on every didChange (measured ~130 ms on the stdlib's largest file);
-# upgrade path is a version stamp and a lazy fill if a change burst ever shows it.
+# ponytail: the mask is rebuilt on every didChange, and the rebuild cost is NOT measured here --
+# the figure this note carried had no command and no longer survives it. Upgrade path is a version
+# stamp plus a lazy fill, and the first person to need that number should take it with
+# `s7c -p -O2 -l src` over a stdlib-sized file, per AGENTS.md, and write it here with its command.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
   begin
     doc.text := text;

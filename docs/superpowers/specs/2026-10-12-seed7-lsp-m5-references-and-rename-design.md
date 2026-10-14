@@ -225,6 +225,12 @@ Request `ReferenceParams { textDocument, position, context { includeDeclaration 
   `documentSymbol` and `hover` already list; gating on the word first would answer `null` for it.
 - A name bound to nothing yields every occurrence plus the log line (§2, §4). For a rename the
   same state is a refusal (§12.1, answered: `null` with the reason logged, never an error).
+  The read discloses four states in total, each with its own sentence and each composable with the
+  others: the binding resolved nowhere, the list truncated at `MAX_OCCURRENCES`, a name written
+  after a `.' inside the scope (a possible record field, §12.2), and a scope that may be SHORTER
+  than the truth (`scopeUncertain` — a nested routine's locals, or a one-line routine with no
+  region). All four are the same honesty rule: a resolved answer is what a client reads as "these
+  are the symbol's uses", so an answer known to be wide says so.
 - No capability key is needed: `referencesProvider` is a boolean.
 
 ## 6. `prepareRename` and `rename`
@@ -253,8 +259,12 @@ ruling (R47, R51: a fact about the SYMBOL speaks before a fact about the documen
    the token's KIND, not by where the symbol came from. This is where a `$ syntax` operator, an
    operator run like `:=` or `&`, a bracket, a number and a cursor with no token to its left all
    die. Ruled by the operator paragraph below. The arm speaks TWO sentences: the plain "is not a
-   name", and, when the list is truncated at `MAX_OCCURRENCES` and the cursor fell past the end of
-   it, the sentence the cap paragraph below owns.
+   name", and, when the list is truncated at `MAX_OCCURRENCES`, the sentence the cap paragraph
+   below owns. The second sentence is NOT restricted to a cursor that fell past the cut: it fires
+   whenever the list is capped and `slot` is 0, which includes an operator cursor whose own token IS
+   in the kept list and was rejected on KIND. That is why the sentence says the list omits "names"
+   rather than "ones" — measured on the 2 002-statement fixture, where `:=` is record 6 of the 2 001
+   kept.
 5. **the symbol is declared outside this buffer** — `owner = "library"`. §4's row 3 and §2's
    file-local decision; the read still answers the whole document, the write refuses.
 6. **the name is a keyword** — `binding.keyword`, answered by `keywords.isKeyword`: the 63 words
@@ -706,7 +716,8 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
     figures `rpc.sd7` quotes beside those rows — ≈4 526 µs and ≈478 µs — are arithmetic on them, and
     the 4 529 this item carried was neither a row nor that arithmetic. A guard whose two paths are the
     same function — no input separates them, so no check can redden it and it is labelled as such; the
-    pair-fold check at `rpc_test.sd7:76-77` is what would catch a guard that skipped too eagerly.
+    pair-fold check "strAt joins the pair a client escaped" is what would catch a guard that skipped
+    too eagerly.
 
 ## 12. Open questions put to the partner
 
