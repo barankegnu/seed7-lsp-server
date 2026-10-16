@@ -52,8 +52,13 @@ are reproducible, and from `docs/superpowers/specs/2026-09-10-seed7-lsp-server-d
   which is the true state (`src/lsp_server.sd7:86-128` advertises no `save`, no `resolveProvider`).
 - LSP 3.18 `metaModel.json` (`https://microsoft.github.io/language-server-protocol/`
   `specifications/lsp/3.18/metaModel/metaModel.json`, 435 010 bytes) has 69 requests and
-  26 notifications; **75** distinct methods are `clientToServer` or `both` — 4 008 bytes as a
-  3-column TSV. Today's server answers 21 methods.
+  26 notifications. In THIS release `serverCapability` is a **string** (`"implementationProvider"`),
+  not a dict with a `name`, and **9 notifications carry it too** — e.g.
+  `workspace/didChangeWorkspaceFolders` → `workspace.workspaceFolders.changeNotifications`.
+  Reading it as a dict, or over requests only, yields 3 phantom gaps on a correct tree (verified
+  against the fetched file); **75** distinct methods are `clientToServer` or `both` — 4 008 bytes as a
+  3-column TSV (the shipped one is 4 155 bytes; my 4 008 came from a spike with shorter
+  capability strings). Today's server answers 21 methods.
 - `src/lsp_server.sd7:125` already emits `"positionEncoding":"utf-16"`, so README's open-items
   entry "utf-8 position negotiation" means *declining* utf-8, not silence — the wording needs
   fixing, the code does not.
@@ -395,8 +400,9 @@ shared `/tmp` is the day they bite) — put a `shortcut:` line naming that.
 - Produces: `tools/lsp_methods.tsv` — tab-separated, no header, sorted by method:
   `method \t kind \t serverCapability` where `kind` is `request` or `notification` and
   `serverCapability` is the dotted path from `metaModel.json` or `-`.
-  Graph rows: `'%s%s %-38s %s'` → `A`(answered) `C`(capability path advertised), method,
-  capability path. Reconciliation section lists `advertised without an answer: <m> (<cap>)` and
+  Graph rows: `printf '%s %s %-38s %s\n'` → `A`/`-` answered, `C`/`-` capability path
+  advertised, method, capability path. (An earlier `'%s%s …'` prose contradicted the anchors every
+  check in this section greps; the anchors are the contract.) Reconciliation section lists `advertised without an answer: <m> (<cap>)` and
   `answered without capability: <m> (<cap>)`, or the single line `clean`.
 
 - [ ] **Step 1: Write the failing checks**
