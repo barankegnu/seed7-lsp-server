@@ -503,6 +503,8 @@ check "every Makefile suite name has a row, and no row lacks one" \
           | grep -c .) -eq 0'
 check "graph is under the ceiling" \
       '$(wc -c < docs/PROJECT_GRAPH.md) -le $MAX_GRAPH_BYTES'
+check "a failed make graph leaves no leftover tmp file" \
+      '$(make graph >/dev/null 2>&1; [ -f docs/PROJECT_GRAPH.md.tmp ] && echo stale; true | grep -c stale) -eq 0'
 check "suites with no src module are labelled, not hidden" \
       '$(grep -c "no src module" docs/PROJECT_GRAPH.md) -eq 3'
 ```
@@ -512,6 +514,30 @@ the spike's count of suites that test behaviour without naming one module (`feat
 `lsp_server`, `transcript`) — verify it against the tree in Step 3 before committing it.
 
 - [ ] **Step 2: Run to verify failure** — Expected: FAIL, the section and the ceiling are absent.
+
+- [ ] **Step 2b: Close the two hazards Task 3's re-review left open (they live in files Task 4 owns)**
+
+  (a) `Makefile` — a failed `make graph` leaves `docs/PROJECT_GRAPH.md.tmp` behind. `.gitignore`
+  has no `*.tmp` pattern (verified by reading it: only `.tmp_versions/`), so the leftover is
+  untracked-and-visible and breaks this repo's `git status --porcelain -uall` empty rule; a broad
+  `git add -A` would commit a stale half-artifact. One recipe line, and the `exit 1` is load-bearing
+  because `|| rm -f …` alone would make the recipe SUCCEED on a failed generator and undo atomicity:
+
+  ```make
+  graph:
+  	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md.tmp && mv docs/PROJECT_GRAPH.md.tmp docs/PROJECT_GRAPH.md || { rm -f docs/PROJECT_GRAPH.md.tmp; exit 1; }
+  ```
+
+  Prove it both ways: with the generator's `src/` guard tripped (run it from a directory where the
+  path does not resolve) `make graph` must exit non-zero, leave `docs/PROJECT_GRAPH.md` md5-unchanged
+  AND leave no `.tmp`; then a successful run must reproduce the committed bytes exactly.
+
+  (b) `tools/project_graph.sh` — its `Usage:` comment still tells a maintainer to run
+  `sh tools/project_graph.sh > docs/PROJECT_GRAPH.md`, the exact non-atomic form Task 3 abandoned.
+  Anyone following it truncates the protected artifact on the first failure. Point Usage at
+  `make graph` only.
+
+  Record both in the commit message as corrections to review notes, not as new scope.
 
 - [ ] **Step 3: Implement the section, then pin the ceiling from the artifact**
 
@@ -538,7 +564,7 @@ not more.
 - [ ] **Step 5: Verify everything**
 
 Run: `make test`
-Expected: 21 suites (19 + `agents` + `graph`), 0 failed, `graph: 18 checks, 0 failed`, `agents: N checks, 0 failed`.
+Expected: 21 suites (19 + `agents` + `graph`), 0 failed, `graph: 19 checks, 0 failed`, `agents: N checks, 0 failed`.
 Ceiling mutation: bump `MAX_GRAPH_BYTES` down by 100 and require the size check to FAIL, then revert.
 
 - [ ] **Step 6: Commit**
@@ -720,7 +746,8 @@ not contain the old citation at all, say so in the report instead of inventing t
   (Tasks 1, 5), "ask that same Qwen to shrink it as a test" (Task 6), the defects I reported
   (Task 7). No protocol behaviour is scheduled, which is deliberate: the M6-vs-small-features
   fork from the earlier conversation is still unanswered and is not this plan's to make.
-- Check arithmetic after R11: Task 2 ships 8 checks, Task 3 adds 7 (15), Task 4 adds 3 (18). Any
+- Check arithmetic: Task 2 ships 8, Task 3 adds 7 (15), Task 4 adds 4 (19 — 3 from this
+  plan's original list plus R15's leftover-file check). Any
   later edit that adds or removes a check must update all three numbers and the two Expected lines,
   because the plan pins them and an implementer reads them as acceptance.
 - Step scan: each step is one action with a command to run and an expected output; the two places
