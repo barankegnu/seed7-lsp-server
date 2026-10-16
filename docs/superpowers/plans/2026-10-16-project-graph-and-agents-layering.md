@@ -609,7 +609,15 @@ then bound different prose, and the moved text lives in a file the rule never re
 list is **appended to, never re-extracted wholesale** — and any extension must happen before the
 first deletion.
 
-The re-review of Task 1 measured per-block coverage of the six units Step 1 cuts as **2 of 6**:
+**R20: no literal line numbers in this task.** Task 4 inserted 3 lines at `AGENTS.md:9-10` and
+shifted every range this plan hardcodes, and the shift is not cosmetic: at the stale span the bullets'
+block ends three lines early and `s7c -t` silently leaves the net — 15 tokens where the tree yields
+16. Locate the material by content each time — `grep -n` for the bullet's opening words and derive
+the span. Measured at HEAD 5612f07 so you can check your own derivation: profiling paragraph 53-61
+(863 bytes), five CLI bullets 100-139 (3 687 bytes), 4 550 bytes total, 16 unique-to-moved tokens.
+
+The re-review of Task 1 measured per-block coverage of the units Step 1 cuts as **2 of 6** (the six
+units below are named by their STALE pre-R20 numbers; derive the spans, keep the six groupings):
 `108-114` and `115-119` own no required token, because class 5's `{6,}` length floor rejects
 `-ocn` (4 chars) and `-flto` (5), and space-bearing literals are unreachable by a spaceless class.
 So Step 4 could drop four of six blocks and print `0 failed`. Two more classes, measured on
@@ -643,6 +651,14 @@ are never `time`-ed off the interpreter" paragraph (944). **4 627 bytes out.** P
 `docs/seed7-cli.md` unchanged (no rewording, no summary — the wording is the asset) under
 headings that keep the old section names, so a grep for the old phrase still lands somewhere.
 
+- [ ] **Step 1b: Reconcile the sentence Task 4 made contradictory (deferred Minor, now authorized)**
+
+`AGENTS.md:4` still opens with "The layout is `ls src`", three lines above the pointer Task 4 added
+("read `docs/PROJECT_GRAPH.md` before grepping"). Rewrite that clause to point at the generated graph
+instead. It is not a frozen token (`ls src` appears in `tools/agents_required.txt` nowhere), so the
+gate will not object " verify that rather than trusting this sentence, and if the gate does object,
+stop and report instead of editing the list.
+
 - [ ] **Step 2: Keep the code-writing traps, replace the moved ones with one pointer line**
 
 In *Seed7 traps*, one bullet: `For s7/s7c options, profiling and optimizer knobs:
@@ -659,8 +675,11 @@ this task as a token win, the commit message is wrong, not the code.
 
 - [ ] **Step 4: Prove the gate catches a loss — one mutation per cut unit**
 
-For EACH of the six units (`50-59`, `97-107`, `108-114`, `115-119`, `120-127`, `128-136`): delete
-it from `docs/seed7-cli.md` alone, run the gate, and record the `MISSING` count and the exit code.
+For EACH of the six cut units (R20: derive the spans by content anchor, do not paste these numbers "
+they were true before Task 4's pointer lines landed): the profiling paragraph, and the five bullets
+*Profile with `s7c -p`*, *Three optimizer knobs*, *`s7c` IS the analyze phase*, *Never build a probe
+with `-s`*, *`s7` takes options before the file name*, whose tail carries `s7c -t`): delete
+that unit from `docs/seed7-cli.md` alone, run the gate, and record the `MISSING` count and the exit code.
 `108-114` and `120-127` must redden on class-6/7 tokens (`-ocn`, `-flto`, `-g-debug_c`, `s7c -s x`);
 `50-59` on `usecs / calls / place / name` and `profile_out`. `115-119` is expected GREEN — that is
 the gap Step 0 declared and measured, so record it as green with the outside counts that make it
