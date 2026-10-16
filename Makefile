@@ -11,9 +11,9 @@ TESTS   := jsonw uris utf8bytes scan occurrences keywords blocks folding selecti
 # Suites that are a shell script rather than an s7 program. There is ONE test-% rule below: with
 # two same-stem pattern rules, which one matches depends on file order and on what already exists,
 # so a suite can silently stop running while `make test` prints green lines (ledger R1).
-TESTS_SH := agents
+TESTS_SH := agents graph
 
-.PHONY: test server $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
+.PHONY: test graph server $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
 
 test: $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
 
@@ -27,6 +27,11 @@ $(addprefix test-,$(TESTS) $(TESTS_SH)): test-%:
 
 transcript:
 	@python3 tests/transcript.py
+
+# The artifact is generated, committed, and compared against a fresh run by tests/graph_test.sh,
+# so editing src/ without running this turns `make test` red.
+graph:
+	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md
 
 server:
 	@$(S7) -q -l $(SRC) $(SRC)/main.sd7
