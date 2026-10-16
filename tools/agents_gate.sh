@@ -7,9 +7,15 @@
 # "rewrote it elsewhere" from "deleted it" is a list of what today's file asserts, kept as a
 # committed artifact so a later edit is compared against a frozen past, not against itself.
 #
-# HOW. tools/agents_required.txt was extracted from AGENTS.md with four `grep -oE` rules --
-# section headers, file:line citations, measured counts, invariant owners -- sorted and committed
-# verbatim. Each token in it is one check: `grep -qF` over the union of AGENTS.md and
+# HOW. tools/agents_required.txt was extracted from AGENTS.md by mechanical `grep -oE` rules alone:
+# section headers, file:line citations, measured counts, the invariant owners
+# (`^[0-9]+\. Only [^ ]+[^ ,;.]*` -- pins each invariant to the FILE that owns it), every invariant
+# by number (`^[0-9]+\. [^ ]+[^ ,;.]*` -- catches the owners that name no file), and the code-shaped
+# backticked literals of the regions Task 5 moves (`AGENTS.md:50-59` and `:97-136` at this
+# extraction; re-verify the ranges before trusting them), kept only when they occur nowhere else --
+# a token that survives elsewhere is a check that cannot fail. Both invariant rules are kept on
+# purpose: the number form alone would drop the owner paths, the owner form alone covers 4 of 7.
+# Each token in the list is one check: `grep -qF` over the union of AGENTS.md and
 # docs/seed7-cli.md, in that order, whichever of them exist. A file named in the list that does not
 # exist yet counts as empty, not fatal. One check per token, so N is the list length and M counts
 # the tokens no existing file holds.
