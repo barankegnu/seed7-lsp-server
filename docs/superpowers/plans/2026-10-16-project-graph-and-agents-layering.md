@@ -137,7 +137,8 @@ Four mechanical extractors, no judgement calls, union sorted:
   grep -oE '^## .*' AGENTS.md                                          # every section header
   grep -oE '[A-Za-z0-9_/.]+\.(sd7|s7i|c|h):[0-9]+(-[0-9]+)?' AGENTS.md  # every citation
   grep -oE '[0-9]+ (checks|entries|identifiers|lines|bytes|ms|kB|characters)' AGENTS.md
-  grep -oE '^[0-9]+\. [^ ]+[^ ,;.]*' AGENTS.md                          # every invariant, by number
+  grep -oE '^[0-9]+\. [^ ]+[^ ,;.]*' AGENTS.md                           # every invariant, by number
+  grep -oE '^[0-9]+\. Only [^ ]+[^ ,;.]*' AGENTS.md                      # AND the owner path of those that have one
   # R8: the material Task 5 MOVES. Code-shaped backticked literals from the two moved regions,
   # kept only if they occur nowhere else in AGENTS.md — a token that also survives elsewhere is
   # a check that cannot fail. Lines are 50-59 (the profiling paragraph) and 97-136 (the five CLI
@@ -152,13 +153,20 @@ Four mechanical extractors, no judgement calls, union sorted:
 wc -l tools/agents_required.txt
 ```
 
-The last class is the one that makes the net bite. Measured on today's file it yields
-`profile_out`, `s7c -p`, `s7c -p -O2 -l src <file>`, `collectSyms`, `-l DIR`,
-`src/analysis.sd7:333`, `tests/occurrences_test.sd7`, `analyzeAll`, `analysisOf`, `-g-debug_c`,
-`INDEX_ERROR`, `rpc.sd7` — and of those, `profile_out`, `s7c -p`, `collectSyms` and `-l DIR`
-occur **nowhere outside** the moved regions, which is exactly the property a regression token
-needs. Do not add bare flags (`-p`, `-O`, `-s`): as `-F` substrings they are satisfied by
-unrelated text elsewhere, so the check could never fail.
+The last class is the one that makes the net bite, and the char class admits **no space**, so
+it can only reach single-token literals. Measured on today's file the whole class yields
+exactly 8: `analysisOf`, `analyzeAll`, `collectSyms`, `-g-debug_c`, `profile_out`,
+`src/analysis.sd7:333`, `tests/occurrences_test`, `tests/occurrences_test.sd7` — and all 8
+occur **nowhere outside** the moved regions, which is the property a regression token needs.
+Space-bearing literals in the moved text (`s7c -p -O2 -l src <file>`, `usecs / calls / place /
+name`) are unreachable by this class; catching them needs its own extractor rule, not a wider
+char class. Do not add bare flags (`-p`, `-O`, `-s`) either: as `-F` substrings they are
+satisfied by unrelated text elsewhere, so the check could never fail.
+
+The two invariant rules are a deliberate union: `^[0-9]+\. [^ ]+…` catches owners with no file
+path (5 `Capabilities`, 6 `renameDecision`, 7 `Outbound`) and `^[0-9]+\. Only …` keeps the
+owner PATH of 1-4, which is what tells a reader which module a violation lives in. Keep both,
+with a comment saying why — dropping the narrow one ships a weaker net than the round-0 list.
 
 
 Commit the file verbatim, with its line count in the message. If an extractor yields 0 lines the
