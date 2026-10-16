@@ -43,7 +43,7 @@ are reproducible, and from `docs/superpowers/specs/2026-09-10-seed7-lsp-server-d
   **4 627 bytes out of `AGENTS.md`**.
 - Spike artifact (all four sections of Task 2-4, produced today by throwaway python):
   **8 205 bytes / 143 lines**, reconciliation **clean**, and it answers the question the graph
-  exists to answer without a single `read`: 30 modules and who includes `progs.s7i`.
+  exists to answer without a single `read`: **28** modules (16 in `src/`, 12 in `src/features/`) and who includes `progs.s7i`.
 - A naive include extraction (`grep 'include "'`) reads prose inside comments: `src/blocks.sd7`
   line 217 contains ``bare `include "x";` `` and the spike printed `x x` for that module.
 - Capability reconciliation by name prefix invents invariant-5 violations: the crude match
