@@ -8,14 +8,20 @@
 # HOW. Includes come from one anchored `grep -oE`: the pattern must start at the line head (after
 # optional indentation and an optional `$`), which is what keeps COMMENT prose out of the graph --
 # src/blocks.sd7:217 writes the phrase include "x" inside a sentence about both include forms, and
-# with the anchor deleted that row reads `scan.sd7 x x` (measured by mutation, and tests/graph_test.sh
-# requires it not to). Rows are `name lines includes`, src/ modules first
-# then src/features/ (feature rows keep the `features/` prefix), each alphabetically under LC_ALL=C,
-# so the artifact is byte-stable across runs and `cmp` against the committed copy is meaningful.
+# with the anchor deleted that row gains the false edge `x` (measured by mutation;
+# tests/graph_test.sh requires the row to be `scan.sd7` and nothing else). Rows are
+# `name lines includes`, src/ modules first then src/features/ (feature rows keep the `features/`
+# prefix), each alphabetically under LC_ALL=C, so the artifact is byte-stable across runs and `cmp`
+# against the committed copy is meaningful.
 #
 # shortcut: the modules slice only -- no reverse edges, no method or suite sections. Task 3 and 4
 #           append them to generate(); until then the graph answers only "what does this module
 #           include".
+# shortcut: `for x in $(find ...)` word-splits, so a module path with a space would become two
+#           rows. Upgrade to a `while IFS= read -r` loop (tools/agents_gate.sh) the day one exists.
+# shortcut: the guard checks src/ only, so a tree without src/features still exits 0 and writes a
+#           16-row artifact (measured: 0 feature rows, 63 stderr bytes). tests/graph_test.sh reddens
+#           that on the stderr check and on the feature-row count.
 #
 # Usage:  sh tools/project_graph.sh > docs/PROJECT_GRAPH.md    # also `make graph`;
 #         wired into `make test` as TESTS_SH := graph via tests/graph_test.sh, and it stays fast
@@ -31,10 +37,11 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 INCLUDE_RE='^[[:space:]]*(\$[[:space:]]*)?include[[:space:]]+"[^"]+"'
 
 row() { # $1 = name to print, $2 = file to read
+  lines=$(wc -l < "$2")
   includes=''
   stdlib=''
-  # -o, not just -E: a line holding two includes is two edges.
-  for inc in $(grep -oE "$INCLUDE_RE" "$2" | sed -E 's/.*include[[:space:]]+"([^"]+)".*/\1/' | sort); do
+  # -o, not just -E: a line holding two includes is two edges; sort -u folds one spelling once.
+  for inc in $(grep -oE "$INCLUDE_RE" "$2" | sed -E 's/.*include[[:space:]]+"([^"]+)".*/\1/' | sort -u); do
     case $inc in
       seed7_05.s7i) ;;
       *.s7i) stdlib="$stdlib $inc" ;;
@@ -45,7 +52,15 @@ row() { # $1 = name to print, $2 = file to read
   if [ -n "$stdlib" ]; then
     rest="$rest +stdlib:$stdlib"
   fi
-  printf '%-28s %4d  %s\n' "$1" "$(wc -l < "$2")" "${rest# }"
+  rest="${rest# }"
+  # Two fields when there is nothing to list, so a row never ends in the format's spaces -- and no
+  # trim pipeline is needed, which would have turned a fatal in generate() (an unreadable module,
+  # say) into exit 0 and a truncated artifact: POSIX sh has no pipefail.
+  if [ -n "$rest" ]; then
+    printf '%-28s %4d  %s\n' "$1" "$lines" "$rest"
+  else
+    printf '%-28s %4d\n' "$1" "$lines"
+  fi
 }
 
 generate() {
@@ -62,5 +77,4 @@ generate() {
   done
 }
 
-# A row whose include column is empty would otherwise end in the format's two spaces.
-generate | sed 's/[[:space:]]*$//'
+generate
