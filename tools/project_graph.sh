@@ -194,6 +194,11 @@ method_inventory() {
 # name added there and this section follows it; tests/graph_test.sh reads the same two extractions
 # and goes red if the artifact and the Makefile disagree in either direction. Rows are alphabetical
 # like the module rows, so the bytes do not depend on the order names are typed in TESTS.
+# shortcut: if the Makefile ever states its lists in a shape these seds do not match (`TESTS +=', a
+#           continuation, `$(strip …)'), this section silently shrinks to the bare rows and the
+#           Makefile-based check shrinks with it -- measured, 0 names against 0 rows is a green
+#           comparison. tests/graph_test.sh's floor check compares the rows against suite files on
+#           disk, so a quietly-empty map is red, not green.
 # shortcut: no per-suite check count -- that would need an interpreter run, and `make test' already
 #           prints the totals.
 prefixed_suites() {
