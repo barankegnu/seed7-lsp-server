@@ -317,7 +317,7 @@ Exit non-zero if `src/` is missing so a bad cwd cannot write an empty artifact.
 - [ ] **Step 4: Generate, verify the suite passes**
 
 Run: `sh tools/project_graph.sh > docs/PROJECT_GRAPH.md && sh tests/graph_test.sh`
-Expected: `graph: 6 checks, 0 failed`.
+Expected: `graph: 8 checks, 0 failed` (R11 raised it from 6).
 Then prove the freshness check can fail: touch a line in `docs/PROJECT_GRAPH.md` by hand, run
 the suite, see `committed artifact is fresh` go FAIL, regenerate, see it pass. Record that in
 the commit message.
@@ -354,11 +354,18 @@ arithmetic (Task 3 = 15, Task 4 = 18).
 2. **New check: the `seed7_05.s7i` exclusion is a content property, not a freshness property.**
    All 28 modules include `seed7_05.s7i` on line 1, so deleting that `case` arm adds a universal
    edge to every row and the ONLY red is `committed artifact is fresh` — which `make graph` then
-   erases. `test $(sh tools/project_graph.sh | grep -c "seed7_\.s7i") -eq 0`.
+   erases. `test $(sh tools/project_graph.sh | grep -c "seed7_05\.s7i") -eq 0—**grep the
+   generator's stdout, never the committed artifact**, or re-blessing erases the evidence. Hazard
+   for Task 3/4, which append sections to the same stream: keep the literal `seed7_05.s7i` out of
+   any later section, or scope this check to the modules section when they land.
 
 3. **New check: the feature rows.** `^[a-z0-9_]+\.sd7 +[0-9]` cannot match a `features/...` row
    (`/` is outside the class), so all 12 feature rows could vanish with only freshness noticing:
-   `test $(sh tools/project_graph.sh | grep -c "^features/[a-z0-9_]+\.sd7 +[0-9]") -eq $(find src/features -maxdepth 1 -name '*.sd7' | wc -l)`.
+   `test $(sh tools/project_graph.sh | grep -cE "^features/[a-z0-9_]+\.sd7 +[0-9]") -eq $(find src/features -maxdepth 1 -name '*.sd7' | wc -l)`
+   " `-E`, per R12. Known limit measured in round 1: in a tree with no `src/features` the right-hand
+   `find` collapses to 0 too, so this check passes `0 -eq 0` and cannot see that case; the stderr
+   check carries it. The generator's `shortcut:` comment must say exactly that, not claim this
+   check reddens.
 
 4. **Delete the trailing `| sed 's/[[:space:]]*$//'`.** POSIX sh has no `pipefail`, so a fatal
    inside `generate()` still exits 0 through the pipe and `make graph` happily writes a truncated
