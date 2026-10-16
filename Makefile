@@ -29,9 +29,11 @@ transcript:
 	@python3 tests/transcript.py
 
 # The artifact is generated, committed, and compared against a fresh run by tests/graph_test.sh,
-# so editing src/ without running this turns `make test` red.
+# so editing src/ without running this turns `make test` red. The run goes to a .tmp first: the
+# generator writes the whole artifact on stdout and dies on a missing input, so a plain redirect
+# would truncate docs/PROJECT_GRAPH.md before the failure and leave a half artifact behind.
 graph:
-	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md
+	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md.tmp && mv docs/PROJECT_GRAPH.md.tmp docs/PROJECT_GRAPH.md
 
 server:
 	@$(S7) -q -l $(SRC) $(SRC)/main.sd7

@@ -44,6 +44,10 @@ METHODS="$ROOT/tools/lsp_methods.tsv"
 # would bless it: tests/graph_test.sh's "every tsv method appears exactly once" reads the same tsv, so
 # it cannot see the file it is missing.
 [ -r "$METHODS" ] || { printf 'project_graph: no tools/lsp_methods.tsv -- run: sh tools/lsp_methods_regen.sh > tools/lsp_methods.tsv\n' >&2; exit 1; }
+# SERVER is read twice -- the dispatcher's method list and the capabilitiesJson tree -- and both reads
+# sit in a command substitution whose status `tr' masks, so an unreadable SERVER would give an empty
+# `answered', an empty `paths', a full 75-row all-`-' artifact and a reconciliation that says `clean`.
+[ -r "$SERVER" ] || { printf 'project_graph: no src/lsp_server.sd7\n' >&2; exit 1; }
 
 INCLUDE_RE='^[[:space:]]*(\$[[:space:]]*)?include[[:space:]]+"[^"]+"'
 METHOD_RE='msg\.method = "[^"]+"'
@@ -125,6 +129,7 @@ method_inventory() {
   tab=$(printf '\t')
   answered=$(grep -oE "$METHOD_RE" "$SERVER" | sed -E 's/.*"([^"]+)".*/\1/' | sort -u | tr '\n' ' ')
   paths=$(cap_paths | tr '\n' ' ')
+  matched=''
   gaps_advertised=''
   gaps_answered=''
   printf '\n## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised)\n'
@@ -133,7 +138,7 @@ method_inventory() {
   # by tests/graph_test.sh's anchors, which start at the two flags and name no kind.
   while IFS=$tab read -r method kind capability; do
     answered_flag='-'
-    case " $answered " in *" $method "*) answered_flag='A' ;; esac
+    case " $answered " in *" $method "*) answered_flag='A'; matched="$matched $method" ;; esac
     advertised_flag='-'
     if [ "$capability" != '-' ]; then
       case " $paths " in *" $capability "*) advertised_flag='C' ;; esac
@@ -151,6 +156,14 @@ method_inventory() {
       fi
     fi
   done < "$METHODS"
+  # An answered method the frozen inventory does not list gets its own row, flagged A with no
+  # capability: without it a method outside the 75 would score no row, no gap and no red, and the
+  # count check titled "answered rows equal the dispatcher's method list" would stay green while
+  # counting something else.
+  for name in $answered; do
+    case " $matched " in *" $name "*) continue ;; esac
+    printf '%s %s %-38s %s\n' A - "$name" -
+  done
   printf '\n## reconciliation (capability advertised with no answer, answer with no capability)\n'
   printf '\n'
   if [ -z "$gaps_advertised$gaps_answered" ]; then

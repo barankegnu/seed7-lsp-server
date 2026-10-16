@@ -13,10 +13,11 @@
 # dict form ({"name": ...}) is folded to its name so a shape change in the file does not silently
 # empty the third column.
 #
-# shortcut: frozen at 3.18, and needs the network, so it is never run by `make test` --
-#           tools/lsp_methods.tsv is the committed copy that tools/project_graph.sh reads. Re-run
-#           this by hand when the target spec version changes, and review the diff: a new method is
-#           a row in the graph, not a bug.
+# Not wired into `make test`, and it must not be: it fetches over the network. The committed
+# tools/lsp_methods.tsv is the copy tools/project_graph.sh reads, and tests/graph_test.sh pins it.
+#
+# shortcut: frozen at 3.18 -- re-run this by hand when the target spec version changes, and review
+#           the diff: a new method is a row in the graph, not a bug.
 #
 # Usage:  sh tools/lsp_methods_regen.sh > tools/lsp_methods.tsv
 
@@ -43,6 +44,9 @@ for kind in ("request", "notification"):
         if isinstance(capability, dict):
             capability = capability.get("name")
         rows.append((entry["method"], kind, capability or "-"))
+
+if not rows:
+    sys.exit("metaModel shape changed: no entry matched messageDirection")
 
 for method, kind, capability in sorted(rows):
     print("%s\t%s\t%s" % (method, kind, capability))

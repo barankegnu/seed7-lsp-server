@@ -83,11 +83,13 @@ check "committed artifact is fresh" \
 # with no method rows `grep -c` answers 0 and an absence check passes unread. It is also what makes
 # "reconciliation is clean" mean something -- `clean` over an empty inventory is a check that prints
 # the expected answer whatever the code does.
-# "answered rows equal the dispatcher's method list" is an equality claim carried by two checks: this
-# one counts the `A ` rows, and "committed artifact is fresh" pins that the generator wrote them, and
-# the generator derives `A` from `msg.method = "..."` in src/lsp_server.sd7. The count is today's 21;
-# a feature task that answers a new method regenerates the artifact and updates this number in the
-# same commit.
+# "answered rows equal the dispatcher's method list" is an equality, not a count of the tsv's own
+# rows: the generator derives `A' from `msg.method = "..."' in src/lsp_server.sd7 and also emits an
+# `A - <method> -' row for any answered method the frozen inventory does not list, so a dispatcher
+# method outside the 75 raises this count instead of hiding (proved by mutation: appending
+# `zz/fakeAnswered' to the extracted list reddens exactly this check, 1 failed of 15). The count is
+# today's 21; a feature task that answers a new method regenerates the artifact and updates this
+# number in the same commit.
 check "spec inventory is 75 client->server|both" \
       'test $(wc -l < tools/lsp_methods.tsv) -eq 75'
 check "answered rows equal the dispatcher's method list" \
