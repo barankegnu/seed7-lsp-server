@@ -113,7 +113,8 @@ gets its test in the task named.
 **Files:**
 - Create: `tools/agents_gate.sh`
 - Create: `tools/agents_required.txt`
-- Modify: `Makefile` (add `TESTS_SH := agents`, a `test-%` rule for shell suites, `agents` in `test`)
+- Modify: `Makefile` (add `TESTS_SH := agents graph`, replace the `test-%` rule with the
+  dispatching one, add the two targets to `.PHONY` and `test:`)
 - Test: this task's own deliverable is the suite.
 
 **Interfaces:**
@@ -169,17 +170,38 @@ cp /tmp/AGENTS.keep AGENTS.md && git diff --stat --exit-code AGENTS.md
 Expected: exit 1 with the invariant token in `MISSING`, and then a clean `git diff` proving the
 revert. If the gate stays green, the token list or the grep is broken — fix before committing.
 
-- [ ] **Step 5: Wire the Makefile and run the whole suite**
+- [ ] **Step 5: Wire the Makefile — ONE `test-%` rule that dispatches on which file exists**
 
-Add `TESTS_SH := agents` and a rule mirroring the existing one:
+Do not add a second `test-%` pattern rule. Attempted in pre-flight: with two same-stem rules — a
+shell rule and the house `.sd7` rule — `make test-graph` ran the **s7** recipe and died with
+"tests/graph_test.sd7: No such file or directory", and `make test-jsonw` ran the shell recipe and
+died on a variable make had emptied. Which rule wins depends on file order and on what already
+exists, so the failure mode is a suite that silently stops running while `make test` prints green
+lines — this repo's named defect (ledger R1).
+
+Replace the existing rule with one that resolves the suite file by convention, and widen its
+target list:
 
 ```make
-test-%: tests/…  # keep the .sd7 rule as-is; add a second rule for $*_gate.sh suites
+TESTS_SH := agents graph
+
+$(addprefix test-,$(TESTS) $(TESTS_SH)): test-%:
+	@f=tests/$*_test.sd7; [ -f "$$f" ] || f=tests/$*_test.sh; [ -f "$$f" ] || f=tools/$*_gate.sh; \
+	 case "$$f" in *.sd7) out=$$($(S7) -q -l $(SRC) $$f 2>&1);; *) out=$$(sh $$f 2>&1);; esac; \
+	 printf '%s\n' "$$out"; \
+	 printf '%s\n' "$$out" | $(G) -q $(S7TOTAL)
 ```
 
-The shell-suite rule grades the same `S7TOTAL` regex from the suite's stdout.
+`TESTS_SH` is a target list, not a variable table — the three filename conventions are the whole
+lookup (`tests/<name>_test.sd7`, then `tests/<name>_test.sh`, then `tools/<name>_gate.sh`). Add
+`$(addprefix test-,$(TESTS_SH))` to `.PHONY` and to `test:`'s prerequisites. Task 2 then only
+appends `graph` to `TESTS_SH` and adds the `graph` target — it touches no rule.
 Run: `make test`
-Expected: 20 suites (the existing 19 plus `agents: N checks, 0 failed`), 0 failed, still seconds.
+Expected: the 19 `.sd7` totals unchanged (936 checks today) plus
+`agents: N checks, 0 failed` — 20 totals, 0 failed, still seconds.
+Then prove the wiring is not decorative: `make test-agents` alone prints the same total line, and
+`make test-nothing` FAILS (no file resolves, so nothing grades). A rule that matches anything is
+the silent-green hazard R1 exists to avoid.
 
 - [ ] **Step 6: Commit**
 
@@ -195,7 +217,7 @@ Expected: 20 suites (the existing 19 plus `agents: N checks, 0 failed`), 0 faile
 - Create: `tools/project_graph.sh`
 - Create: `docs/PROJECT_GRAPH.md` (generated)
 - Create: `tests/graph_test.sh`
-- Modify: `Makefile` (`graph` target; `TESTS_SH := agents graph`)
+- Modify: `Makefile` (`graph` target, and `graph` already in `TESTS_SH` from Task 1 — no rule change)
 
 **Interfaces:**
 - Consumes: `src/*.sd7`, `src/features/*.sd7` (sorted, `find -maxdepth 1`), nothing else.
@@ -521,6 +543,7 @@ candidate that failed the gate, and do not open a new file to report it.
 **Files:**
 - Modify: `AGENTS.md` (exception citation line)
 - Modify: `README.md:133-134` and the "utf-8 position negotiation" phrase
+- Modify: `tools/agents_required.txt` (the frozen token for that citation must be substituted)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -539,10 +562,19 @@ Delete the duplicated "completion of local variables," line; reword "utf-8 posit
 to state the measured fact: the server announces `"utf-16"` (`src/lsp_server.sd7:125`) and does
 not honour a client's utf-8/utf-32 preference.
 
-- [ ] **Step 3: Add both corrected tokens to the required list, run everything, commit**
+- [ ] **Step 3: Amend the required list by substitution, run everything, commit**
 
-Append the new phrasings' tokens to `tools/agents_required.txt`, then `make test` (all green) and
-`git status --porcelain -uall` (empty).
+`tools/agents_required.txt` froze today's file, so it demands the token it is about to lose
+(ledger R2): substitute, do not merely append.
+
+```sh
+grep -c 'seed7_05.s7i:277-291' tools/agents_required.txt   # 1 line before, 0 after
+sed -i 's|seed7_05.s7i:277-291|seed7_05.s7i:280-294|' tools/agents_required.txt
+```
+
+Then append any new token the corrected sentences introduce that the gate does not already
+cover, run `make test` (all green) and `git status --porcelain -uall` (empty). If the list does
+not contain the old citation at all, say so in the report instead of inventing the substitution.
 
 ---
 
