@@ -1,0 +1,18 @@
+10 ms
+1. Only `src/analysis.sd7`
+2. Only `src/doc_store.sd7`
+3. Only `src/utf8bytes.sd7`
+4. Only `src/*.sd7`
+63 entries
+67 identifiers
+691 lines
+## Do not "fix" these
+## Every change
+## Invariants — a violation is a defect, not a style preference
+## Milestones
+## Protocol decisions that are easy to undo by accident
+scan.sd7:95
+seed7_05.s7i:277-291
+## Seed7 traps
+src/analysis.sd7:333
+utf8.s7i:132
