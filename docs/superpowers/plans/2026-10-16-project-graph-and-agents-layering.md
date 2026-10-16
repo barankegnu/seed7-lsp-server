@@ -614,7 +614,8 @@ shifted every range this plan hardcodes, and the shift is not cosmetic: at the s
 block ends three lines early and `s7c -t` silently leaves the net — 15 tokens where the tree yields
 16. Locate the material by content each time — `grep -n` for the bullet's opening words and derive
 the span. Measured at HEAD 5612f07 so you can check your own derivation: profiling paragraph 53-61
-(863 bytes), five CLI bullets 100-139 (3 687 bytes), 4 550 bytes total, 16 unique-to-moved tokens.
+(863 bytes), five CLI bullets 100-139 (3 687 bytes), 4 550 bytes total, 16 unique-to-moved tokens
+(8 already frozen, so Step 0 appends 9 and the list becomes 41).
 
 The re-review of Task 1 measured per-block coverage of the units Step 1 cuts as **2 of 6** (the six
 units below are named by their STALE pre-R20 numbers; derive the spans, keep the six groupings):
@@ -627,13 +628,26 @@ today's file through the same outside-must-be-zero filter:
 # class 6: same char class, floor at 4  —  adds -flto, -ocn, -ocN (all outside=0)
 sed -n '50,59p;97,136p' AGENTS.md | grep -oE '`[A-Za-z0-9_.,/+:-]{4,}`' | tr -d '`' | sort -u
 
-# class 7: command-shaped literals, prefix-anchored so prose cannot match  —  adds s7 -a, s7c -p,
-#   s7c -p -O2 -l src <file>, s7c -p -O2 -l src tests/occurrences_test.sd7, s7c -s x, s7c -t,
-#   s7 -p FILE, s7 [options] sourcefile [parameters], usecs / calls / place / name. Bare `s7`
-#   (outside=14) and bare `s7c` (outside=1) are rejected by the same filter: that is R8's bare-flag
-#   rule working, not an exception to it.
-sed -n '50,59p;97,136p' AGENTS.md | grep -oE '`(s7|s7c|usecs)[^`]*`' | tr -d '`' | sort -u
+# class 7: command-shaped literals, prefix-anchored so prose cannot match
+sed -n '<derived paragraph range>;<derived bullets range>' AGENTS.md | grep -oE '`(s7|s7c|usecs)[^`]*`' | tr -d '`'
 ```
+
+**The outside filter is the whole point, and it must be applied with the gate's own semantics: `grep -F`
+substring, per token, over everything OUTSIDE the moved ranges.** Measured at HEAD `407812f` with the
+derived ranges, class 6 + class 7 surface 24 candidates, of which only **16** survive the filter, and
+8 of those 16 are already in the frozen list, so Step 0 appends **9** (list 32 " 41):
+
+```
+-flto  -ocN  -ocn  s7 [options] sourcefile [parameters]  s7c -p
+s7c -p -O2 -l src <file>  s7c -p -O2 -l src tests/occurrences_test.sd7  s7c -t
+usecs / calls / place / name
+```
+
+The 8 rejected candidates are the reason this step exists as a measurement rather than a paste: `.sd7`
+(outside 37), `main` (11), `RANGE_ERROR` (3), `time` (3), `locals` (3), `INDEX_ERROR` (1), `rpc.sd7`
+(1) also occur in text nobody is moving, so each would be a check that can never fail " and an
+earlier draft of this very plan listed `s7 -a`, `s7c -s x` and `s7 -p FILE` as survivors when the
+filter rejects them too. A token's job is to go missing exactly when the moved text goes missing.
 
 Append the survivors to `tools/agents_required.txt` (`LC_ALL=C` sorted) and record BOTH numbers in
 the commit: total tokens, and how many of the six cut units now own at least one. The bar is
