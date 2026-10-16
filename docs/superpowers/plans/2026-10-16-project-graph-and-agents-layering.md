@@ -79,6 +79,11 @@ are reproducible, and from `docs/superpowers/specs/2026-09-10-seed7-lsp-server-d
   asserts the committed copy equals a fresh run, so staleness fails the build.
 - No invented numbers: size ceilings and counts are pinned from the artifact a task just
   produced, in that task.
+- A suite grep that relies on an ERE metacharacter (`+`, `?`, `|`, `()`) runs under `grep -E`, and
+  every check pattern must be tried against the mutant it is meant to catch before it is kept.
+  Measured in Task 2 round 1: my `seed7_\.s7i` scored 0 on the clean tree *and* 0 on the mutant,
+  and a BRE `grep -c` with `+` scored 0 where `-E` scored 12. A pattern that cannot match the
+  mutant is not a check, however correct it looks. (R12)
 - Clean up after probes: no binaries, no `profile_out`, and `git status --porcelain -uall`
   empty at the end of every task.
 - The method inventory is LSP **3.18** only, and only `clientToServer` + `both`.
