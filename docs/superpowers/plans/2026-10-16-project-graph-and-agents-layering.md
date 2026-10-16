@@ -137,10 +137,29 @@ Four mechanical extractors, no judgement calls, union sorted:
   grep -oE '^## .*' AGENTS.md                                          # every section header
   grep -oE '[A-Za-z0-9_/.]+\.(sd7|s7i|c|h):[0-9]+(-[0-9]+)?' AGENTS.md  # every citation
   grep -oE '[0-9]+ (checks|entries|identifiers|lines|bytes|ms|kB|characters)' AGENTS.md
-  grep -oE '^[0-9]+\. Only [^ ]+[^ ,;.]*' AGENTS.md                     # each invariant's owner
+  grep -oE '^[0-9]+\. [^ ]+[^ ,;.]*' AGENTS.md                          # every invariant, by number
+  # R8: the material Task 5 MOVES. Code-shaped backticked literals from the two moved regions,
+  # kept only if they occur nowhere else in AGENTS.md — a token that also survives elsewhere is
+  # a check that cannot fail. Lines are 50-59 (the profiling paragraph) and 97-136 (the five CLI
+  # bullets); verify the ranges still bound that material before using them.
+  sed -n '50,59p;97,136p' AGENTS.md | grep -oE '`[A-Za-z0-9_.,/+:-]{6,}`' | tr -d '`' | sort -u |
+    while read -r tk; do
+      if [ "$(sed -n '1,49p;60,96p;137,$p' AGENTS.md | grep -cF -- "$tk")" -eq 0 ]; then
+        printf '%s\n' "$tk"
+      fi
+    done
 } | sed 's/ *$//' | sort -u > tools/agents_required.txt
 wc -l tools/agents_required.txt
 ```
+
+The last class is the one that makes the net bite. Measured on today's file it yields
+`profile_out`, `s7c -p`, `s7c -p -O2 -l src <file>`, `collectSyms`, `-l DIR`,
+`src/analysis.sd7:333`, `tests/occurrences_test.sd7`, `analyzeAll`, `analysisOf`, `-g-debug_c`,
+`INDEX_ERROR`, `rpc.sd7` — and of those, `profile_out`, `s7c -p`, `collectSyms` and `-l DIR`
+occur **nowhere outside** the moved regions, which is exactly the property a regression token
+needs. Do not add bare flags (`-p`, `-O`, `-s`): as `-F` substrings they are satisfied by
+unrelated text elsewhere, so the check could never fail.
+
 
 Commit the file verbatim, with its line count in the message. If an extractor yields 0 lines the
 rule is wrong for this file — fix the rule before committing, because a silently empty class is
@@ -160,6 +179,13 @@ never in `AGENTS.md` — the list is a regression net, not a specification), and
 Run: `sh tools/agents_gate.sh; echo $?`
 Expected: `agents: <N> checks, 0 failed`, exit 0. Passing on sight proves nothing about whether
 it can fail — that is Step 4.
+
+- [ ] **Step 3b: Confirm the list is a net, not a mirror**
+
+Before the mutation, answer one question with numbers: how many required tokens occur **only**
+inside the regions Task 5 moves (lines 50-59 and 97-136)? It must be at least 3. If it is 0 or 1,
+the gate cannot see the split at all — fix the extractor here, in Task 1, rather than meeting the
+surprise in Task 5. Record the count in the commit message.
 
 - [ ] **Step 4: Prove the gate can fail (mutation, not a fixture)**
 
