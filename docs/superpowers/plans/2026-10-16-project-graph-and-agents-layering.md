@@ -330,6 +330,43 @@ Expected after wiring: `make test` = 21 suites, 0 failed.
 
 `git commit -m "graph: generated module graph, freshness pinned by mutation"`
 
+### Task 2 addendum (R11, from its review: 8 checks, not 6)
+
+The review confirmed the artifact but found the net weaker than the plan's own words. These four
+changes are part of Task 2's acceptance; the check count becomes **8**, which renumbers the later
+arithmetic (Task 3 = 15, Task 4 = 18).
+
+1. **Replace check 2.** It grepped the literal `" x "`, so any other false edge from a comment
+   (say `include "rpc.sd7"` inside prose) passed, and on empty output `grep -c` prints 0 so the
+   condition passed vacuously. It must be a whole-row equality, which is non-vacuous and subsumes
+   "and nothing else":
+
+   ```sh
+   check "blocks.sd7 row is scan.sd7 and nothing else" \
+         'test $(sh tools/project_graph.sh | grep -cE "^blocks\.sd7 +[0-9]+ +scan\.sd7$") -eq 1'
+   ```
+
+2. **New check: the `seed7_05.s7i` exclusion is a content property, not a freshness property.**
+   All 28 modules include `seed7_05.s7i` on line 1, so deleting that `case` arm adds a universal
+   edge to every row and the ONLY red is `committed artifact is fresh` — which `make graph` then
+   erases. `test $(sh tools/project_graph.sh | grep -c "seed7_\.s7i") -eq 0`.
+
+3. **New check: the feature rows.** `^[a-z0-9_]+\.sd7 +[0-9]` cannot match a `features/...` row
+   (`/` is outside the class), so all 12 feature rows could vanish with only freshness noticing:
+   `test $(sh tools/project_graph.sh | grep -c "^features/[a-z0-9_]+\.sd7 +[0-9]") -eq $(find src/features -maxdepth 1 -name '*.sd7' | wc -l)`.
+
+4. **Delete the trailing `| sed 's/[[:space:]]*$//'`.** POSIX sh has no `pipefail`, so a fatal
+   inside `generate()` still exits 0 through the pipe and `make graph` happily writes a truncated
+   artifact. Choose the format per row instead (two-field form when a row has no includes), which
+   removes the pipeline, the comment above it, and one process. Also `sort` — `sort -u` on the
+   include lists, and rename check 1 to `generator writes nothing to stderr` (it proves the stderr
+   half; check 8's freshness proves the stdout half).
+
+Accepted as a documented limit rather than code: `for x in $(find ...)` word-splits paths and the
+suite uses fixed `/tmp/g1`, `/tmp/g2` (both are the brief's shape, and a future `make -j test` or a
+shared `/tmp` is the day they bite) — put a `shortcut:` line naming that.
+
+
 ---
 
 ## Task 3: LSP method inventory + capability reconciliation
@@ -410,7 +447,7 @@ Then `C` iff the tsv's capability path (or its first segment, when it is a bare
 
 - [ ] **Step 5: Run the suite, then prove the path rule by mutation**
 
-Expected: `graph: 13 checks, 0 failed` (6 from Task 2 + the 7 above).
+Expected: `graph: 15 checks, 0 failed` (8 from Task 2 after R11 + the 7 above).
 Mutation: change the comparison to `cap.split('.')[0] in paths` only (name-prefix matching),
 run the suite, and require the `no heuristic gap for completionItem/resolve` check to go FAIL —
 this is the check's whole reason to exist. Revert the mutation per file
@@ -483,7 +520,7 @@ not more.
 - [ ] **Step 5: Verify everything**
 
 Run: `make test`
-Expected: 21 suites (19 + `agents` + `graph`), 0 failed, `graph: 16 checks, 0 failed`, `agents: N checks, 0 failed`.
+Expected: 21 suites (19 + `agents` + `graph`), 0 failed, `graph: 18 checks, 0 failed`, `agents: N checks, 0 failed`.
 Ceiling mutation: bump `MAX_GRAPH_BYTES` down by 100 and require the size check to FAIL, then revert.
 
 - [ ] **Step 6: Commit**
@@ -665,6 +702,9 @@ not contain the old citation at all, say so in the report instead of inventing t
   (Tasks 1, 5), "ask that same Qwen to shrink it as a test" (Task 6), the defects I reported
   (Task 7). No protocol behaviour is scheduled, which is deliberate: the M6-vs-small-features
   fork from the earlier conversation is still unanswered and is not this plan's to make.
+- Check arithmetic after R11: Task 2 ships 8 checks, Task 3 adds 7 (15), Task 4 adds 3 (18). Any
+  later edit that adds or removes a check must update all three numbers and the two Expected lines,
+  because the plan pins them and an implementer reads them as acceptance.
 - Step scan: each step is one action with a command to run and an expected output; the two places
   that could have read as vague ("hand-prune", "Decide and record") became either four named
   extractors (Task 1 Step 1) or a three-condition keep/restore rule (Task 6 Step 3).
