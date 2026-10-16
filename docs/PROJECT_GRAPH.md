@@ -31,3 +31,85 @@ features/rename.sd7           254  analysis.sd7 doc_store.sd7 features/kinds.sd7
 features/selection_range.sd7  126  blocks.sd7 doc_store.sd7 rpc.sd7 +stdlib: json.s7i
 features/semantic_tokens.sd7  150  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 scan.sd7
 features/signature_help.sd7   114  analysis.sd7 doc_store.sd7 jsonw.sd7
+
+## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised)
+
+A - $/cancelRequest                        -
+- - $/progress                             -
+A - $/setTrace                             -
+- - callHierarchy/incomingCalls            callHierarchyProvider
+- - callHierarchy/outgoingCalls            callHierarchyProvider
+- - codeAction/resolve                     codeActionProvider.resolveProvider
+- - codeLens/resolve                       codeLensProvider.resolveProvider
+- - completionItem/resolve                 completionProvider.resolveProvider
+- - documentLink/resolve                   documentLinkProvider.resolveProvider
+A - exit                                   -
+A - initialize                             -
+A - initialized                            -
+- - inlayHint/resolve                      inlayHintProvider.resolveProvider
+- - notebookDocument/didChange             -
+- - notebookDocument/didClose              -
+- - notebookDocument/didOpen               -
+- - notebookDocument/didSave               -
+A - shutdown                               -
+- - textDocument/codeAction                codeActionProvider
+- - textDocument/codeLens                  codeLensProvider
+- - textDocument/colorPresentation         colorProvider
+A C textDocument/completion                completionProvider
+- - textDocument/declaration               declarationProvider
+A C textDocument/definition                definitionProvider
+- - textDocument/diagnostic                diagnosticProvider
+A C textDocument/didChange                 textDocumentSync
+A C textDocument/didClose                  textDocumentSync.openClose
+A C textDocument/didOpen                   textDocumentSync.openClose
+- - textDocument/didSave                   textDocumentSync.save
+- - textDocument/documentColor             colorProvider
+- - textDocument/documentHighlight         documentHighlightProvider
+- - textDocument/documentLink              documentLinkProvider
+A C textDocument/documentSymbol            documentSymbolProvider
+A C textDocument/foldingRange              foldingRangeProvider
+- - textDocument/formatting                documentFormattingProvider
+A C textDocument/hover                     hoverProvider
+- - textDocument/implementation            implementationProvider
+- - textDocument/inlayHint                 inlayHintProvider
+- - textDocument/inlineCompletion          inlineCompletionProvider
+- - textDocument/inlineValue               inlineValueProvider
+- - textDocument/linkedEditingRange        linkedEditingRangeProvider
+- - textDocument/moniker                   monikerProvider
+- - textDocument/onTypeFormatting          documentOnTypeFormattingProvider
+- - textDocument/prepareCallHierarchy      callHierarchyProvider
+A C textDocument/prepareRename             renameProvider.prepareProvider
+- - textDocument/prepareTypeHierarchy      typeHierarchyProvider
+- - textDocument/rangeFormatting           documentRangeFormattingProvider
+- - textDocument/rangesFormatting          documentRangeFormattingProvider.rangesSupport
+A C textDocument/references                referencesProvider
+A C textDocument/rename                    renameProvider
+A C textDocument/selectionRange            selectionRangeProvider
+A C textDocument/semanticTokens/full       semanticTokensProvider
+- - textDocument/semanticTokens/full/delta semanticTokensProvider.full.delta
+A C textDocument/semanticTokens/range      semanticTokensProvider.range
+A C textDocument/signatureHelp             signatureHelpProvider
+- - textDocument/typeDefinition            typeDefinitionProvider
+- - textDocument/willSave                  textDocumentSync.willSave
+- - textDocument/willSaveWaitUntil         textDocumentSync.willSaveWaitUntil
+- - typeHierarchy/subtypes                 -
+- - typeHierarchy/supertypes               -
+- - window/workDoneProgress/cancel         -
+- - workspace/diagnostic                   diagnosticProvider.workspaceDiagnostics
+- - workspace/didChangeConfiguration       -
+- - workspace/didChangeWatchedFiles        -
+- - workspace/didChangeWorkspaceFolders    workspace.workspaceFolders.changeNotifications
+- - workspace/didCreateFiles               workspace.fileOperations.didCreate
+- - workspace/didDeleteFiles               workspace.fileOperations.didDelete
+- - workspace/didRenameFiles               workspace.fileOperations.didRename
+- - workspace/executeCommand               executeCommandProvider
+- - workspace/symbol                       workspaceSymbolProvider
+- - workspace/textDocumentContent          workspace.textDocumentContent
+- - workspace/willCreateFiles              workspace.fileOperations.willCreate
+- - workspace/willDeleteFiles              workspace.fileOperations.willDelete
+- - workspace/willRenameFiles              workspace.fileOperations.willRename
+- - workspaceSymbol/resolve                workspaceSymbolProvider.resolveProvider
+
+## reconciliation (capability advertised with no answer, answer with no capability)
+
+  clean

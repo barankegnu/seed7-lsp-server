@@ -75,4 +75,41 @@ check "every features module is a row" \
 check "committed artifact is fresh" \
       'cmp -s /tmp/g1 docs/PROJECT_GRAPH.md'
 
+# ---- method inventory and reconciliation (Task 3) ----
+# The `A`/`C` anchors below are the generator's row format `'%s %s %-38s %s'`, so a row reads
+# `A C textDocument/hover                 hoverProvider`. "every tsv method appears exactly once" is
+# the existence control for the two assertions of absence here ("completionItem/resolve is NOT marked
+# advertised", and the `- -` half of "codeAction is neither answered nor advertised"): on an artifact
+# with no method rows `grep -c` answers 0 and an absence check passes unread. It is also what makes
+# "reconciliation is clean" mean something -- `clean` over an empty inventory is a check that prints
+# the expected answer whatever the code does.
+# "answered rows equal the dispatcher's method list" is an equality claim carried by two checks: this
+# one counts the `A ` rows, and "committed artifact is fresh" pins that the generator wrote them, and
+# the generator derives `A` from `msg.method = "..."` in src/lsp_server.sd7. The count is today's 21;
+# a feature task that answers a new method regenerates the artifact and updates this number in the
+# same commit.
+check "spec inventory is 75 client->server|both" \
+      'test $(wc -l < tools/lsp_methods.tsv) -eq 75'
+check "answered rows equal the dispatcher's method list" \
+      'test $(grep -c "^A " docs/PROJECT_GRAPH.md) -eq 21'
+check "completionItem/resolve is NOT marked advertised" \
+      'test $(grep -c "^- C completionItem/resolve" docs/PROJECT_GRAPH.md) -eq 0'
+check "semanticTokens/range IS marked advertised" \
+      'test $(grep -c "^A C textDocument/semanticTokens/range" docs/PROJECT_GRAPH.md) -eq 1'
+check "codeAction is neither answered nor advertised" \
+      'test $(grep -c "^- - textDocument/codeAction" docs/PROJECT_GRAPH.md) -eq 1'
+# The end address `^\`\`\`` is how the brief scopes the range to the section; today no artifact line
+# starts with a fence, so sed prints to EOF and `^  clean` is still counted once. Verified against the
+# mutant: with name-prefix matching the section prints five gaps and this check goes FAIL.
+# "every tsv method appears exactly once" reads each method name out of the tsv and greps it as a
+# BRE: GNU grep takes a `$` mid-pattern as a literal, which the three `$/...` methods need (verified:
+# each scores exactly 1), and the trailing space in the pattern is what keeps
+# `textDocument/semanticTokens/full` from matching inside `.../full/delta`.
+check "reconciliation is clean on today's tree" \
+      'test $(sed -n "/^## reconciliation/,/^\`\`\`/p" docs/PROJECT_GRAPH.md | grep -c "^  clean") -eq 1'
+check "every tsv method appears exactly once" \
+      'test $(while IFS= read -r line; do m=$(printf %s "$line" | cut -f1); \
+           grep -c "[-AC] [-AC] $m " docs/PROJECT_GRAPH.md | grep -qx 1 || echo bad; \
+         done < tools/lsp_methods.tsv | grep -c bad) -eq 0'
+
 report
