@@ -29,15 +29,18 @@ are reproducible, and from `docs/superpowers/specs/2026-09-10-seed7-lsp-server-d
 ## Background — the measured facts this plan argues from
 
 - Baseline in this worktree: `make test` → **19 suites, 936 checks, 0 failed, 7.7 s**.
-- `AGENTS.md` is 26 417 bytes ≈ 6.6k tokens: 13 % of a 49 046-token first call and 3.4 % of
+- `AGENTS.md` is **26 551 bytes** by `wc -c` (the 26 417 I first wrote was `len()` of a
+  decoded string — characters, not bytes, in a file full of em dashes and the micro sign) ≈
+  6.6k tokens: 13 % of a 49 046-token first call and 3.4 % of
   the 195 489-token peak observed in this session. Tool results were 328 815 of 868 643
   session bytes (38 %) — raw reads are the cost driver, which is what the graph attacks.
-- `AGENTS.md` sections by bytes: Seed7 traps 10 633 (40 %), Protocol decisions 5 314,
-  Every change 3 974, Invariants 2 273, Milestones 2 247, Do-not-fix 1 383.
+- `AGENTS.md` sections, measured in BYTES on the sliced text: Seed7 traps 10 802 (40 %),
+  Protocol decisions 5 386, Every change 4 014, Invariants 2 289, Milestones 2 261, Do-not-fix 1 397.
 - The five tooling bullets inside *Seed7 traps* — profiling/`-p`, optimizer knobs, `s7c` is
-  the analyze phase, never `-s`, `s7` option placement — total **3 660 bytes**; the
-  "Performance numbers are never `time`-ed off the interpreter" paragraph in *Every change* is
-  **938** more. Both move in Task 5: **4 598 bytes out of `AGENTS.md`**.
+  the analyze phase, never `-s`, `s7` option placement — total **3 683 bytes**
+  (1 035 + 620 + 472 + 707 + 849); the "Performance numbers are never `time`-ed off the
+  interpreter" paragraph in *Every change* is **944** more. Both move in Task 5:
+  **4 627 bytes out of `AGENTS.md`**.
 - Spike artifact (all four sections of Task 2-4, produced today by throwaway python):
   **8 205 bytes / 143 lines**, reconciliation **clean**, and it answers the question the graph
   exists to answer without a single `read`: 30 modules and who includes `progs.s7i`.
@@ -113,8 +116,8 @@ gets its test in the task named.
 **Files:**
 - Create: `tools/agents_gate.sh`
 - Create: `tools/agents_required.txt`
-- Modify: `Makefile` (add `TESTS_SH := agents graph`, replace the `test-%` rule with the
-  dispatching one, add the two targets to `.PHONY` and `test:`)
+- Modify: `Makefile` (add `TESTS_SH := agents`, replace the `test-%` rule with the
+  dispatching one, add the target to `.PHONY` and `test:`)
 - Test: this task's own deliverable is the suite.
 
 **Interfaces:**
@@ -183,7 +186,8 @@ Replace the existing rule with one that resolves the suite file by convention, a
 target list:
 
 ```make
-TESTS_SH := agents graph
+TESTS_SH := agents      # Task 2 appends `graph`. Shipping it here would point `test-graph` at
+                        # a suite that does not exist yet and break `make test` in this task.
 
 $(addprefix test-,$(TESTS) $(TESTS_SH)): test-%:
 	@f=tests/$*_test.sd7; [ -f "$$f" ] || f=tests/$*_test.sh; [ -f "$$f" ] || f=tools/$*_gate.sh; \
@@ -217,7 +221,8 @@ the silent-green hazard R1 exists to avoid.
 - Create: `tools/project_graph.sh`
 - Create: `docs/PROJECT_GRAPH.md` (generated)
 - Create: `tests/graph_test.sh`
-- Modify: `Makefile` (`graph` target, and `graph` already in `TESTS_SH` from Task 1 — no rule change)
+- Modify: `Makefile` (`graph` target, and `graph` **appended** to `TESTS_SH`, which Task 1
+  created with `agents` only — no rule change)
 
 **Interfaces:**
 - Consumes: `src/*.sd7`, `src/features/*.sd7` (sorted, `find -maxdepth 1`), nothing else.
@@ -466,10 +471,10 @@ Ceiling mutation: bump `MAX_GRAPH_BYTES` down by 100 and require the size check 
 
 - [ ] **Step 1: Move the five bullets (3 660 bytes) and the profiling paragraph verbatim**
 
-Cut from `AGENTS.md`: *Profile with `s7c -p`…* (1 026), *Three optimizer knobs…* (614), *`s7c`
-IS the interpreter's analyze phase…* (472), *Never build a probe with `-s`…* (705), *`s7` takes
-options before the file name…* (843) — 3 660 — plus from *Every change* the "Performance numbers
-are never `time`-ed off the interpreter" paragraph (938). **4 598 bytes out.** Paste into
+Cut from `AGENTS.md`: *Profile with `s7c -p`…* (1 035), *Three optimizer knobs…* (620), *`s7c`
+IS the interpreter's analyze phase…* (472), *Never build a probe with `-s`…* (707), *`s7` takes
+options before the file name…* (849) — 3 683 — plus from *Every change* the "Performance numbers
+are never `time`-ed off the interpreter" paragraph (944). **4 627 bytes out.** Paste into
 `docs/seed7-cli.md` unchanged (no rewording, no summary — the wording is the asset) under
 headings that keep the old section names, so a grep for the old phrase still lands somewhere.
 
@@ -481,7 +486,7 @@ docs/seed7-cli.md — never guess a flag.` Do not touch the other 27 bullets.
 - [ ] **Step 3: Gate, then measure**
 
 Run: `make test-agents && wc -c AGENTS.md`
-Expected: gate green, and `AGENTS.md` at 26 417 − 4 598 + the pointer line ≈ **21.9 KB**. Report
+Expected: gate green, and `AGENTS.md` at 26 551 − 4 627 + the pointer line ≈ **22.0 KB**. Report
 the measured number, not the estimate. The honest size verdict for the commit: about **1.1 k
 tokens saved per call, ~0.6 % of a 195 k peak prompt** — the point of layering is that rules stop
 drowning in reference material, not that it makes a run measurably faster. If a reviewer reads
