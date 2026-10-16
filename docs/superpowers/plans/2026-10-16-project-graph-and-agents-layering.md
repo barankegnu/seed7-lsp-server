@@ -575,7 +575,8 @@ not more.
 - [ ] **Step 5: Verify everything**
 
 Run: `make test`
-Expected: 21 totals, `graph: 19 checks, 0 failed`, `agents: N checks, 0 failed`.
+Expected: 21 totals, `graph: 20 checks, 0 failed` (19 + R18's existence floor, which also
+absorbs the column-2-exists assertion rather than adding a sixth), `agents: N checks, 0 failed`.
 Ceiling mutation: set `MAX_GRAPH_BYTES` **below the artifact's measured byte count** and require the
 size check to FAIL, then revert. Do NOT write "cut it by 100": the ceiling is the artifact rounded
 UP to the next 512, so a 100-byte cut usually still sits above the file and the check cannot trip.
@@ -761,10 +762,12 @@ not contain the old citation at all, say so in the report instead of inventing t
   (Tasks 1, 5), "ask that same Qwen to shrink it as a test" (Task 6), the defects I reported
   (Task 7). No protocol behaviour is scheduled, which is deliberate: the M6-vs-small-features
   fork from the earlier conversation is still unanswered and is not this plan's to make.
-- Check arithmetic: Task 2 ships 8, Task 3 adds 7 (15), Task 4 adds 4 (19 — 3 from this
-  plan's original list plus R15's leftover-file check). Any
-  later edit that adds or removes a check must update all three numbers and the two Expected lines,
-  because the plan pins them and an implementer reads them as acceptance.
+- Check arithmetic AS SHIPPED: Task 2 8, Task 3 +7 (15), Task 4 +5 (20 — 3 from this plan's
+  original list, R15's leftover-file check, and R18's existence floor, which absorbed the
+  column-2-exists assertion into one `comm` instead of adding a sixth check). A task that adds a
+  section moves three things together: the artifact's measured bytes, `MAX_GRAPH_BYTES`, and the
+  `graph: N` expectation. Two of my own numbers in this plan have already gone stale silently
+  (R17's inert mutation, R19's 19-vs-20), so the coupling is stated where it can be seen.
 - Step scan: each step is one action with a command to run and an expected output; the two places
   that could have read as vague ("hand-prune", "Decide and record") became either four named
   extractors (Task 1 Step 1) or a three-condition keep/restore rule (Task 6 Step 3).
