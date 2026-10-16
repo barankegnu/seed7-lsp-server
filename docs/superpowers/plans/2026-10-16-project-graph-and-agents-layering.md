@@ -725,7 +725,48 @@ trusting this task.
 
 `make test` → all green. Commit message names the measured byte delta and the mutation.
 
+### Task 5 addendum (R26, from its review: close the hole the move itself opened)
+
+Keeping the old section names in `docs/seed7-cli.md` was R10's instruction, so an agent searching for
+`## Seed7 traps` still lands. Its cost is that two frozen header tokens are now satisfied by the wrong
+file: measured today, `## Every change` and `## Seed7 traps` each appear in `AGENTS.md` **and** in
+`docs/seed7-cli.md`, so deleting either heading from `AGENTS.md` leaves the union check green. The
+other four headers live in `AGENTS.md` only and are unaffected.
+
+That is not acceptable to carry into Task 6, which hands this exact gate to a fresh model and asks it
+to cut `AGENTS.md` down. Four changes, all inside files this task already owns.
+
+1. **Per-file attribution for header tokens.** A token beginning `## ` must be found in `AGENTS.md`
+   specifically, not in the union; every other token keeps union semantics, because a moved rule
+   legitimately lives in either file. Prove it both ways: delete `## Seed7 traps` from `AGENTS.md`
+   alone and the gate must go RED naming it; delete the heading inside `docs/seed7-cli.md` alone and
+   the gate must stay GREEN, because the rules file still has its own.
+
+2. **Fix `docs/seed7-cli.md:3-6`.** Its intro claims `AGENTS.md` keeps the rules that make the
+   reference mandatory and names four, of which two (never `time`-ed off the interpreter, never `-s`
+   for a probe) are exactly what moved into this file. Either drop the two false clauses and say they
+   moved, or restore a one-line rule for each in `AGENTS.md`. Choose one, say which in the commit, and
+   do not leave a file describing a split that did not happen.
+
+3. **Fix the mechanism claim at `tools/agents_gate.sh:24-26`.** It says the three late tokens were
+   missed because they sit inside longer spans. They do not: each is a standalone backticked literal
+   (`docs/seed7-cli.md:26`, `:42`, `:49`). Run class 6 and class 7 over `git show d300662:AGENTS.md`
+   and report whether they surface. If they do, the honest cause is the ruling I made from a broken
+   count, not the extractor's shape; if they do not, name the real defect. If you cannot pin it, write
+   that the cause is unidentified: a confidently wrong explanation in a durable comment is worse than
+   an honest gap, because nobody re-tests it.
+
+4. **Give the post-cut append a real admission test.** "Prefer to append BEFORE the cut" is too soft,
+   since any measurement can be replayed against a parent blob after the fact. The rule: an append
+   commit names the parent blob whose `AGENTS.md` it replayed the recipe against, and shows the tokens
+   absent from the rest of that blob.
+
+Leave alone, record instead: `s7c -p` is implied by the two longer `s7c -p -O2 ...` tokens, so it can
+only go MISSING when all three go, and `s7 -a` is also stated in `README.md` and the design spec. Both
+stay in the list; note in the report that `agents: 44 checks` is not 44 independent risks.
+
 ---
+
 
 ## Task 6: the delegation experiment — a fresh agent drafts the split, the gate grades it
 
