@@ -113,3 +113,27 @@ A C textDocument/signatureHelp             signatureHelpProvider
 ## reconciliation (capability advertised with no answer, answer with no capability)
 
   clean
+
+## test suites (make target -> test file -> the src module it is named after)
+
+  make test-agents           tools/agents_gate.sh             no src module
+  make test-analysis         tests/analysis_test.sd7          analysis.sd7
+  make test-blocks           tests/blocks_test.sd7            blocks.sd7
+  make test-diagnostics      tests/diagnostics_test.sd7       diagnostics.sd7
+  make test-doc_index        tests/doc_index_test.sd7         doc_index.sd7
+  make test-doc_store        tests/doc_store_test.sd7         doc_store.sd7
+  make test-features         tests/features_test.sd7          no src module
+  make test-folding          tests/folding_test.sd7           no src module
+  make test-graph            tests/graph_test.sh              no src module
+  make test-jsonw            tests/jsonw_test.sd7             jsonw.sd7
+  make test-keywords         tests/keywords_test.sd7          keywords.sd7
+  make test-lsp_server       tests/lsp_server_test.sd7        lsp_server.sd7
+  make test-occurrences      tests/occurrences_test.sd7       occurrences.sd7
+  make test-rpc              tests/rpc_test.sd7               rpc.sd7
+  make test-scan             tests/scan_test.sd7              scan.sd7
+  make test-selection_range  tests/selection_range_test.sd7   features/selection_range.sd7
+  make test-semantic_tokens  tests/semantic_tokens_test.sd7   features/semantic_tokens.sd7
+  make test-transport        tests/transport_test.sd7         transport.sd7
+  make test-uris             tests/uris_test.sd7              uris.sd7
+  make test-utf8bytes        tests/utf8bytes_test.sd7         utf8bytes.sd7
+  make transcript            tests/transcript.py              no src module

@@ -31,9 +31,14 @@ transcript:
 # The artifact is generated, committed, and compared against a fresh run by tests/graph_test.sh,
 # so editing src/ without running this turns `make test` red. The run goes to a .tmp first: the
 # generator writes the whole artifact on stdout and dies on a missing input, so a plain redirect
-# would truncate docs/PROJECT_GRAPH.md before the failure and leave a half artifact behind.
+# would truncate docs/PROJECT_GRAPH.md before the failure and leave a half artifact behind. The
+# `rm -f' is there because .gitignore holds no `*.tmp' pattern (only .tmp_versions/), so a leftover
+# is an untracked file a broad `git add -A' would commit. The `exit 1' is load-bearing: `|| rm -f ...'
+# alone swallows the generator's failure and makes the recipe SUCCEED, which un-does the atomicity.
+# tests/graph_test.sh's leftover-tmp check trips the generator in a sandbox and requires all three:
+# non-zero exit, no .tmp left, artifact byte-identical.
 graph:
-	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md.tmp && mv docs/PROJECT_GRAPH.md.tmp docs/PROJECT_GRAPH.md
+	@sh tools/project_graph.sh > docs/PROJECT_GRAPH.md.tmp && mv docs/PROJECT_GRAPH.md.tmp docs/PROJECT_GRAPH.md || { rm -f docs/PROJECT_GRAPH.md.tmp; exit 1; }
 
 server:
 	@$(S7) -q -l $(SRC) $(SRC)/main.sd7

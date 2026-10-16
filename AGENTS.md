@@ -6,6 +6,9 @@ commands are in the `Makefile`, and the design authority is
 `docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md` — read it before
 changing behaviour, since the plan argues from it and conflicts resolve in its favour.
 
+The module/method/suite shape is generated at `docs/PROJECT_GRAPH.md` — read it before walking
+`src/`, and regenerate it with `make graph` when `src/` changes.
+
 ## Every change
 
 Red first. Write the check, run it, confirm it fails for the reason you claim, then

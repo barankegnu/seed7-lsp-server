@@ -13,8 +13,9 @@
 # two assertions of absence (2, 6): on an artifact with no rows, `grep -c` prints 0 and an absence
 # check would pass unread.
 #
-# shortcut: /tmp/g1 and /tmp/g2 are fixed paths, as the brief writes them. Serial `make test` is
-#           fine; the day it runs with -j, or on a host with a shared /tmp, they become mktemp -d.
+# shortcut: /tmp/g1 and /tmp/g2 (the brief's paths) and /tmp/s1, /tmp/s2 are fixed paths. Serial
+#           `make test' is fine; the day it runs with -j, or on a host with a shared /tmp, they
+#           become mktemp -d.
 #
 # Wired into `make test` (as TESTS_SH := graph): it runs the generator a handful of times over
 # the repo's own src/, which is milliseconds.
@@ -113,5 +114,59 @@ check "every tsv method appears exactly once" \
       'test $(while IFS= read -r line; do m=$(printf %s "$line" | cut -f1); \
            grep -c "[-AC] [-AC] $m " docs/PROJECT_GRAPH.md | grep -qx 1 || echo bad; \
          done < tools/lsp_methods.tsv | grep -c bad) -eq 0'
+
+# ---- test-suite map, size ceiling, atomic regeneration (Task 4) ----
+# Both coverage checks COMPUTE their expected number from the tree instead of pinning it. The plan's
+# prose claimed three suites name no src module and offered `lsp_server' as one of them;
+# src/lsp_server.sd7 exists, and the tree answers five -- folding, features, agents, graph,
+# transcript. A literal would go stale the day a module is renamed, so nothing here hardcodes a
+# count or a name.
+#
+# The Makefile is the only list of suites, so the checks read it: TESTS and TESTS_SH name the
+# `test-<name>' targets, `test:' lists any bare target (today only transcript). Temp files rather
+# than `<(...)' because `make test' runs this suite with `sh', and process substitution is a
+# bash-ism. The two seds are re-spelled here instead of sharing the generator's functions on purpose:
+# a coverage check that calls the code it measures compares that code with itself and cannot fail.
+suite_names() {
+  sed -n 's/^TESTS\(_SH\)\?[[:space:]]*: *=//p' Makefile | tr ' ' '\n' | grep -vE '^$'
+}
+
+bare_names() {
+  sed -n 's/^test: //p' Makefile | tr ' ' '\n' | grep -vE '\$\(|\)'
+}
+
+# All three halves of the atomicity fix, at once: a failed `make graph' must exit non-zero (an
+# `|| rm -f ...' arm without the `exit 1' makes the recipe SUCCEED on a dead generator), must leave
+# the previous artifact byte-for-byte (a plain `>' redirect truncates it before the generator runs),
+# and must leave no .tmp behind -- .gitignore has no `*.tmp' pattern, so a leftover is an untracked
+# file that `git status --porcelain -uall' shows and a broad `git add -A' commits.
+# The guard is tripped in a sandbox: the generator's only reachable failure is `no src/ under
+# $ROOT', and moving the repo's src/ is not this suite's to do. mktemp -d, not a fixed path -- a
+# stale .tmp from an earlier run is exactly what the check looks for. The .tmp path is read out of
+# the Makefile recipe so a renamed temp file cannot hide from it.
+failed_graph_is_clean() {
+  box=$(mktemp -d)
+  mkdir -p "$box/docs" "$box/tools"
+  cp Makefile "$box/Makefile"
+  cp tools/project_graph.sh "$box/tools/project_graph.sh"
+  cp docs/PROJECT_GRAPH.md "$box/docs/PROJECT_GRAPH.md"
+  tmp=$(sed -n 's/.*> \([^ ]*\.tmp\).*/\1/p' Makefile)
+  if make -C "$box" graph >/dev/null 2>&1; then status=0; else status=1; fi
+  # an empty extraction means the recipe stopped writing through a .tmp at all, which is the
+  # non-atomic form this check exists to refuse -- so it counts as a leftover, not as "clean".
+  if [ -z "$tmp" ] || [ -e "$box/$tmp" ]; then leftover=1; else leftover=0; fi
+  if cmp -s "$box/docs/PROJECT_GRAPH.md" docs/PROJECT_GRAPH.md; then kept=1; else kept=0; fi
+  rm -rf "$box"
+  test "$status" -ne 0 -a "$leftover" -eq 0 -a "$kept" -eq 1
+}
+
+check "every Makefile suite name has a row, and no row lacks one" \
+      'suite_names | sort -u >/tmp/s1; grep -oE "^  make test-[a-z0-9_]+" docs/PROJECT_GRAPH.md | sed "s/^  make test-//" | sort -u >/tmp/s2; test $(comm -3 /tmp/s1 /tmp/s2 | grep -c .) -eq 0'
+check "graph is under the ceiling" \
+      'test $(wc -c < docs/PROJECT_GRAPH.md) -le $(sed -n "s/^MAX_GRAPH_BYTES=//p" tools/project_graph.sh)'
+check "a failed make graph leaves no leftover tmp file" \
+      'failed_graph_is_clean'
+check "suites with no src module are labelled, not hidden" \
+      'test $(grep -c "no src module" docs/PROJECT_GRAPH.md) -eq $(for n in $(suite_names) $(bare_names); do { [ -f "src/$n.sd7" ] || [ -f "src/features/$n.sd7" ]; } || echo x; done | grep -c x)'
 
 report
