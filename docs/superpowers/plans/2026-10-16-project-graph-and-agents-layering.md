@@ -407,6 +407,17 @@ shared `/tmp` is the day they bite) — put a `shortcut:` line naming that.
 
 - [ ] **Step 1: Write the failing checks**
 
+  Three commands in this step were broken as originally written and Task 4 had to repair them
+  (R17). The shapes that work are in the shipped `tests/graph_test.sh`; the rules they teach:
+  (i) `sed -n "s/^TESTS(_SH)? *: *//p"` is BRE, where `?` and `(...)` are literals, so it matched
+  nothing and a derived count came out 1 instead of 5 — use `grep -E` or a POSIX character
+  class, and assert the count is plausible before trusting it;
+  (ii) a condition of the form `$(… | grep -c x)` inside a check that also runs `true` counts the
+  output of `true`, so the check can pass on the shape of a string rather than on the tree;
+  (iii) `comm <(…) <(…)` is process substitution, a bash-ism, and this repo runs suites with `sh`.
+  Rewrite with temp files or a loop. A suite that only runs under bash is a suite that silently
+  stops running.
+
 Append to `tests/graph_test.sh`:
 
 ```sh
@@ -564,8 +575,12 @@ not more.
 - [ ] **Step 5: Verify everything**
 
 Run: `make test`
-Expected: 21 suites (19 + `agents` + `graph`), 0 failed, `graph: 19 checks, 0 failed`, `agents: N checks, 0 failed`.
-Ceiling mutation: bump `MAX_GRAPH_BYTES` down by 100 and require the size check to FAIL, then revert.
+Expected: 21 totals, `graph: 19 checks, 0 failed`, `agents: N checks, 0 failed`.
+Ceiling mutation: set `MAX_GRAPH_BYTES` **below the artifact's measured byte count** and require the
+size check to FAIL, then revert. Do NOT write "cut it by 100": the ceiling is the artifact rounded
+UP to the next 512, so a 100-byte cut usually still sits above the file and the check cannot trip.
+Measured in Task 4: artifact 9 238 bytes, ceiling 9 728, so 9 628 (my "minus 100") passes and only
+9 138 reddens it. That is R17, and it is the difference between a mutation and a mutation-proof.
 
 - [ ] **Step 6: Commit**
 
