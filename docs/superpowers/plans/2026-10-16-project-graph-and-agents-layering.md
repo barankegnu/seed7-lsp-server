@@ -614,8 +614,11 @@ shifted every range this plan hardcodes, and the shift is not cosmetic: at the s
 block ends three lines early and `s7c -t` silently leaves the net — 15 tokens where the tree yields
 16. Locate the material by content each time — `grep -n` for the bullet's opening words and derive
 the span. Measured at HEAD 5612f07 so you can check your own derivation: profiling paragraph 53-61
-(863 bytes), five CLI bullets 100-139 (3 687 bytes), 4 550 bytes total, 16 unique-to-moved tokens
-(8 already frozen, so Step 0 appends 9 and the list becomes 41).
+(943 bytes), five CLI bullets 100-139 (3 687 bytes), 4 630 bytes total, 17 unique-to-moved tokens
+of which 8 are already frozen, so Step 0 appends 9 and the list becomes 41). R22: an earlier draft of
+this correction said 53-61 / 863 / 4 550 / 16 — it cut the paragraph one line early, dropping its
+final wrapped line, which is the same class of mistake R20 was about. Verify a boundary by printing
+the line just past it, not by counting from its first line.
 
 The re-review of Task 1 measured per-block coverage of the units Step 1 cuts as **2 of 6** (the six
 units below are named by their STALE pre-R20 numbers; derive the spans, keep the six groupings):
