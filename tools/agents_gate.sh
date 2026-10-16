@@ -18,14 +18,20 @@
 #
 # AFTER THE SPLIT (Task 5). AGENTS.md:53-62 and :100-139 now live in docs/seed7-cli.md, so the
 # line-range recipe above is spent: those ranges bound different prose today, and re-extracting the
-# list wholesale would drop the moved tokens from it. Append only, never re-extract -- and append
-# BEFORE the cut you are protecting, because after it the extractor cannot see the text. Task 5
-# appended the 9 literals unique to the moved material (32 -> 41) and proved the net by deleting
-# each of the six cut units from docs/seed7-cli.md alone: 2, 4, 3, none, 1, 2 MISSING. The
-# `s7c` IS-the-analyze-phase bullet is a declared permanent gap, not an oversight: its only
-# literals, `s7c` (1 occurrence outside the moved text) and https://seed7.net/faq.htm#compile
-# (1 outside), already pass on text nobody moved; a prose fragment as a token is a check that
-# cannot fail.
+# list wholesale would drop the moved tokens from it. Append only, never re-extract, and prefer to
+# append BEFORE the cut you are protecting -- after it, the extractor cannot see the text. Task 5
+# appended the 12 literals unique to the moved material (32 -> 44): nine before the cut, three
+# after (R23), because the pre-cut pass only recognised a STANDALONE backticked literal and so
+# missed `s7 -p FILE`, `s7 -a` and `s7c -s x`, which sit inside longer spans. The three late ones
+# are still measured against the un-moved file (`git show d300662:AGENTS.md`: outside-count 0),
+# which is the only reason a post-cut append is admissible at all. Proved by deleting each of the
+# six cut units from docs/seed7-cli.md alone -- 2, 5, 4, none, 2, 2 MISSING -- and by deleting the
+# single host line of each late token: lines 26 and 49 were GREEN under the 41-token list and are
+# RED under the 44, so those two tokens reach clauses the unit-level tokens never could; line 42
+# already reddened on -ocN, so `s7 -a` is redundancy there, nothing more. The `s7c`
+# IS-the-analyze-phase bullet stays a declared permanent gap, not an oversight: its only literals,
+# `s7c` (1 occurrence outside the moved text) and https://seed7.net/faq.htm#compile (1 outside),
+# already pass on text nobody moved, and a prose fragment as a token is a check that cannot fail.
 # Each token in the list is one check: `grep -qF` over the union of AGENTS.md and
 # docs/seed7-cli.md, in that order, whichever of them exist. A file named in the list that does not
 # exist yet counts as empty, not fatal. One check per token, so N is the list length and M counts
