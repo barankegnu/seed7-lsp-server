@@ -506,7 +506,7 @@ check "graph is under the ceiling" \
 check "a failed make graph leaves no leftover tmp file" \
       '$(make graph >/dev/null 2>&1; [ -f docs/PROJECT_GRAPH.md.tmp ] && echo stale; true | grep -c stale) -eq 0'
 check "suites with no src module are labelled, not hidden" \
-      '$(grep -c "no src module" docs/PROJECT_GRAPH.md) -eq 3'
+      '$(grep -c "no src module" docs/PROJECT_GRAPH.md) -eq $(for n in $(sed -n "s/^TESTS(_SH)? *: *=? *//p" Makefile | tr " " "\\n" | grep -vE "^$|^=") transcript; do { [ -f "src/$n.sd7" ] || [ -f "src/features/$n.sd7" ]; } || echo x; done | grep -c x)'
 ```
 
 `MAX_GRAPH_BYTES` is defined by Step 3 from a measurement, not written here in advance. `3` is
