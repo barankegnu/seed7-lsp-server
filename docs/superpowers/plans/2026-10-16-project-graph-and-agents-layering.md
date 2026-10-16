@@ -654,14 +654,18 @@ The **7** rejected candidates are the reason this step exists as a measurement r
 `locals` (3), `INDEX_ERROR` (1), `rpc.sd7` (1) also occur in text nobody is moving, so each would be a
 check that can never fail. A token's job is to go missing exactly when the moved text goes missing.
 
-**R25: the other three of the twelve are `s7 -a`, `s7c -s x`, `s7 -p FILE`, and an earlier draft of
+**R25/R27: the other three of the twelve are `s7 -a`, `s7c -s x`, `s7 -p FILE`, and an earlier draft of
 this plan told the reader they were filter-rejected. That was false**, and self-contradictory: Step 4
 of this same task demands the never-`-s` block go MISSING on `s7c -s x`. Each of the three occurs
-exactly once, inside the moved text, and nowhere else in `AGENTS.md`. They were missed not by a filter
-judgment but by the candidate extractor's shape: it demanded a standalone backticked literal equal to
-the token, so it could not see literals embedded mid-sentence, while the gate's own `grep -qF` substring
-matcher sees them trivially. Generalise it: **filter candidates with the same matcher the checker will
-use**, or the measurement describes your tooling. Nine shipped pre-cut because I ruled from the broken
+exactly once, inside the moved text, and nowhere else in `AGENTS.md`. "They were missed at the Step 0 ruling's survivor list, and the mechanism inside that ruling is "
+"**UNIDENTIFIED**, written that way on purpose. R25's explanation " + D + " that my candidate extractor demanded a
+standalone backticked literal, so it could not see literals embedded mid-sentence " + D + " was tested and is false:
+replaying class 6 and class 7 over `git show d300662:AGENTS.md` surfaces all three (they sit on lines
+100, 116 and 123 of the un-moved file). A cause was asserted twice in this plan's history and refuted
+once by an implementer's replay and once by the controller's own; the durable text now records what is
+known (they were cut at the survivor filter, counts 24 -> 20 unique-to-moved, 12 new) and marks the
+rest unknown. "
+ Nine shipped pre-cut because I ruled from the broken
 count; commit `57a058d` added the three, measured against `git show d300662:AGENTS.md`. Add them to the nine above:
 
 ```
