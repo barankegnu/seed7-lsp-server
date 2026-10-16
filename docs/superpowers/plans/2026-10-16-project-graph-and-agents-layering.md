@@ -130,7 +130,8 @@ gets its test in the task named.
 
 - [ ] **Step 1: Freeze the required tokens from today's file**
 
-Four mechanical extractors, no judgement calls, union sorted:
+Six mechanical extractor classes, no judgement calls, union sorted (was four before R8 added
+the moved-region class and R9 split the invariant rule in two):
 
 ```sh
 {
