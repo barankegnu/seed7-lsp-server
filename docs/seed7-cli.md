@@ -1,9 +1,9 @@
 # Seed7 interpreter CLI
 
-The `s7` / `s7c` command line, the two `-p` flags, the optimizer knobs, how to read
-`profile_out` and the measured profiling rows. Moved verbatim out of `AGENTS.md`, which
-keeps the rules that make them mandatory (red first, `make test` before and after, never
-`time`-ed off the interpreter, never `-s` for a probe).
+The `s7` / `s7c` command line, the two `-p` flags, the optimizer knobs and the measured profiling
+rows. Moved verbatim out of `AGENTS.md` -- and two rules came with this text: never take a
+performance number off the interpreter, never build a probe with its runtime checks suppressed.
+`AGENTS.md` keeps red first, `make test` before and after, and the pointer that says read this.
 
 The headings keep the old section names, so a grep for the old phrase lands here — including the
 "*Seed7 traps* below" cross-reference inside the profiling paragraph, which names the next section.
