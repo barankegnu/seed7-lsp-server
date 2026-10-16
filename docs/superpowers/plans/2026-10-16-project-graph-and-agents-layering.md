@@ -69,7 +69,10 @@ are reproducible, and from `docs/superpowers/specs/2026-09-10-seed7-lsp-server-d
 ## Global Constraints
 
 - Nothing in `src/` changes. No capability is added, removed or renamed. Invariants 1–7 stay
-  satisfied by construction; the graph only *reports* them.
+  satisfied by construction; the graph only *reports* them. **Carve-out (R24):** Task 7 Step 0 may
+  edit COMMENT lines in `src/` that point at text this plan relocated " comments only, so the
+  behaviour, signatures and asserted strings of every module stay exactly as they are, and `make
+  test` is the proof.
 - Red first: every assertion is written, run, seen to fail for the named reason, then made
   green. Both new suites are written after the artifact they check — say so in the commit and
   name the mutation that reddens each one.
@@ -755,13 +758,33 @@ candidate that failed the gate, and do not open a new file to report it.
 ## Task 7: the citation and wording defects found while measuring
 
 **Files:**
+- Modify: `src/doc_store.sd7:104`, `src/rpc.sd7:81`, `tools/agents_gate.sh:14` (comment-only pointers, Step 0)
 - Modify: `AGENTS.md` (exception citation line)
 - Modify: `README.md:133-134` and the "utf-8 position negotiation" phrase
 - Modify: `tools/agents_required.txt` (the frozen token for that citation must be substituted)
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: three corrected lines. No code.
+- Produces: six corrected lines — comments and docs only, no behaviour, no check counts.
+
+- [ ] **Step 0: Fix the pointers this plan's own split made stale (comment-only, carve-out of the
+  no-`src/` rule)**
+
+Task 5 moved the s7/s7c CLI reference out of `AGENTS.md`, so three comments now aim at text that is
+one hop away. Each is a comment line: no behaviour, no string any suite asserts, no signature.
+
+- `src/doc_store.sd7:104` " "per AGENTS.md" for the `s7c -p -O2 -l src` profiling recipe: point at
+  `docs/seed7-cli.md`.
+- `src/rpc.sd7:81` " "taken the way AGENTS.md requires: profiled AND optimised build, table read
+  off `profile_out`": the recipe now lives in `docs/seed7-cli.md`; keep the sentence's substance and
+  correct its target.
+- `tools/agents_gate.sh:14` " still names the frozen regions as `AGENTS.md:50-59` and `:97-136`,
+  which are the PRE-SPLIT spans. `:19` already carries the corrected `53-62` / `100-139`. A file
+  whose header contradicts itself three lines later is how the next reader re-derives the wrong set:
+  make `:14` say the spans were measured on the pre-split file and give both, or point at `:19`.
+
+Then `make test` must be green with no other change, and report `git diff --stat` so the reviewer can
+see these are comment lines only.
 
 - [ ] **Step 1: Correct the exception citation**
 
