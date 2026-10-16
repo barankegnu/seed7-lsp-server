@@ -150,7 +150,7 @@ the moved-region class and R9 split the invariant rule in two):
         printf '%s\n' "$tk"
       fi
     done
-} | sed 's/ *$//' | sort -u > tools/agents_required.txt
+} | sed 's/ *$//' | LC_ALL=C sort -u > tools/agents_required.txt
 wc -l tools/agents_required.txt
 ```
 
@@ -504,7 +504,40 @@ Ceiling mutation: bump `MAX_GRAPH_BYTES` down by 100 and require the size check 
   optimizer knobs, the `profile_out` reading rule, the never-`-s` rule, and the measured µs rows
   currently inline. `AGENTS.md` gains a one-line pointer to it inside *Seed7 traps*.
 
-- [ ] **Step 1: Move the five bullets (3 660 bytes) and the profiling paragraph verbatim**
+- [ ] **Step 0: Extend the list while `AGENTS.md` is still whole — this cannot be done later**
+
+Class 5's provenance is a line-range recipe over the *un-moved* file. Once Step 1 cuts 50-59 and
+97-136 out of `AGENTS.md`, re-running Task 1's Step 1 cannot regenerate those tokens: the ranges
+then bound different prose, and the moved text lives in a file the rule never reads. From here the
+list is **appended to, never re-extracted wholesale** — and any extension must happen before the
+first deletion.
+
+The re-review of Task 1 measured per-block coverage of the six units Step 1 cuts as **2 of 6**:
+`108-114` and `115-119` own no required token, because class 5's `{6,}` length floor rejects
+`-ocn` (4 chars) and `-flto` (5), and space-bearing literals are unreachable by a spaceless class.
+So Step 4 could drop four of six blocks and print `0 failed`. Two more classes, measured on
+today's file through the same outside-must-be-zero filter:
+
+```sh
+# class 6: same char class, floor at 4  —  adds -flto, -ocn, -ocN (all outside=0)
+sed -n '50,59p;97,136p' AGENTS.md | grep -oE '`[A-Za-z0-9_.,/+:-]{4,}`' | tr -d '`' | sort -u
+
+# class 7: command-shaped literals, prefix-anchored so prose cannot match  —  adds s7 -a, s7c -p,
+#   s7c -p -O2 -l src <file>, s7c -p -O2 -l src tests/occurrences_test.sd7, s7c -s x, s7c -t,
+#   s7 -p FILE, s7 [options] sourcefile [parameters], usecs / calls / place / name. Bare `s7`
+#   (outside=14) and bare `s7c` (outside=1) are rejected by the same filter: that is R8's bare-flag
+#   rule working, not an exception to it.
+sed -n '50,59p;97,136p' AGENTS.md | grep -oE '`(s7|s7c|usecs)[^`]*`' | tr -d '`' | sort -u
+```
+
+Append the survivors to `tools/agents_required.txt` (`LC_ALL=C` sorted) and record BOTH numbers in
+the commit: total tokens, and how many of the six cut units now own at least one. The bar is
+**5 of 6**. `115-119` is a declared permanent gap: its only literals are `s7c` (outside=1) and
+`https://seed7.net/faq.htm#compile` (outside=2), so any token from it already passes on text that
+is not being moved — a failable token for that block would have to be a prose fragment, which is a
+check that cannot fail. Say so in the file's comment; do not invent the token.
+
+- [ ] **Step 1: Move the five bullets (3 683 bytes) and the profiling paragraph (944) verbatim**
 
 Cut from `AGENTS.md`: *Profile with `s7c -p`…* (1 035), *Three optimizer knobs…* (620), *`s7c`
 IS the interpreter's analyze phase…* (472), *Never build a probe with `-s`…* (707), *`s7` takes
@@ -527,11 +560,17 @@ tokens saved per call, ~0.6 % of a 195 k peak prompt** — the point of layering
 drowning in reference material, not that it makes a run measurably faster. If a reviewer reads
 this task as a token win, the commit message is wrong, not the code.
 
-- [ ] **Step 4: Prove the gate catches a loss (mutation)**
+- [ ] **Step 4: Prove the gate catches a loss — one mutation per cut unit**
 
-Delete one moved bullet from `docs/seed7-cli.md`, keep `AGENTS.md` as-is, run the gate, and
-require FAIL naming the missing tokens. Restore. If the gate stays green, its token list missed
-a token — fix the list before trusting Task 5.
+For EACH of the six units (`50-59`, `97-107`, `108-114`, `115-119`, `120-127`, `128-136`): delete
+it from `docs/seed7-cli.md` alone, run the gate, and record the `MISSING` count and the exit code.
+`108-114` and `120-127` must redden on class-6/7 tokens (`-ocn`, `-flto`, `-g-debug_c`, `s7c -s x`);
+`50-59` on `usecs / calls / place / name` and `profile_out`. `115-119` is expected GREEN — that is
+the gap Step 0 declared and measured, so record it as green with the outside counts that make it
+so, rather than papering over it with a prose token. Restore each unit before the next (keep a
+`cp` of the pre-mutation file; restoring from the index is only safe once the file is committed).
+If any unit other than `115-119` stays green, the list missed a token — fix the list before
+trusting this task.
 
 - [ ] **Step 5: Full suite, commit**
 
@@ -571,7 +610,9 @@ git checkout -- AGENTS.md docs/seed7-cli.md   # restore Task 5's version from th
 - [ ] **Step 3: Decide and record**
 
 Keep the candidate only if all three hold: the gate passes, `make test` is green, and the
-candidate's `AGENTS.md` is strictly smaller than Task 5's. Otherwise restore Task 5's version and
+candidate's `AGENTS.md` is strictly smaller than Task 5's. The gate is the judge, and it may only
+ever be **appended** to: a candidate that re-extracts `tools/agents_required.txt` has deleted the
+net, not the prose, and is rejected on that alone. Otherwise restore Task 5's version and
 record the candidate's `MISSING` tokens in the commit message — that list *is* the experiment's
 result, because it is precisely what a fresh model drops out of a rules file. Do not merge a
 candidate that failed the gate, and do not open a new file to report it.
