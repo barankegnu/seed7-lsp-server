@@ -614,11 +614,10 @@ first deletion.
 
 **R20: no literal line numbers in this task.** Task 4 inserted 3 lines at `AGENTS.md:9-10` and
 shifted every range this plan hardcodes, and the shift is not cosmetic: at the stale span the bullets'
-block ends three lines early and `s7c -t` silently leaves the net — 15 tokens where the tree yields
-16. Locate the material by content each time — `grep -n` for the bullet's opening words and derive
-the span. Measured at HEAD 5612f07 so you can check your own derivation: profiling paragraph 53-61
-(943 bytes), five CLI bullets 100-139 (3 687 bytes), 4 630 bytes total, 17 unique-to-moved tokens
-of which 8 are already frozen, so Step 0 appends 9 and the list becomes 41). R22: an earlier draft of
+block ends three lines early and `s7c -t` silently leaves the net — 19 tokens where the tree yields 20. Locate the material by content each time — `grep -n` for the bullet's opening words and derive
+the span. Measured at HEAD 5612f07 so you can check your own derivation: the profiling paragraph is 53-62
+(943 bytes), the five CLI bullets 100-139 (3 687 bytes), 4 630 bytes total; **20** literals are unique
+to that material (R25), 8 already frozen, so the honest append is **12** and the list reaches 44. R22: an earlier draft of
 this correction said 53-61 / 863 / 4 550 / 16 — it cut the paragraph one line early, dropping its
 final wrapped line, which is the same class of mistake R20 was about. Verify a boundary by printing
 the line just past it, not by counting from its first line.
@@ -640,8 +639,9 @@ sed -n '<derived paragraph range>;<derived bullets range>' AGENTS.md | grep -oE 
 
 **The outside filter is the whole point, and it must be applied with the gate's own semantics: `grep -F`
 substring, per token, over everything OUTSIDE the moved ranges.** Measured at HEAD `407812f` with the
-derived ranges, class 6 + class 7 surface 24 candidates, of which only **16** survive the filter, and
-8 of those 16 are already in the frozen list, so Step 0 appends **9** (list 32 " 41):
+derived ranges, class 6 + class 7 surface 24 candidates, of which **20** survive the filter (R25
+corrects an earlier "16"), and 8 of those 20 are already in the frozen list, so Step 0 appends **12**
+(list 32 -> 44). The first nine:
 
 ```
 -flto  -ocN  -ocn  s7 [options] sourcefile [parameters]  s7c -p
@@ -649,16 +649,29 @@ s7c -p -O2 -l src <file>  s7c -p -O2 -l src tests/occurrences_test.sd7  s7c -t
 usecs / calls / place / name
 ```
 
-The 8 rejected candidates are the reason this step exists as a measurement rather than a paste: `.sd7`
-(outside 37), `main` (11), `RANGE_ERROR` (3), `time` (3), `locals` (3), `INDEX_ERROR` (1), `rpc.sd7`
-(1) also occur in text nobody is moving, so each would be a check that can never fail " and an
-earlier draft of this very plan listed `s7 -a`, `s7c -s x` and `s7 -p FILE` as survivors when the
-filter rejects them too. A token's job is to go missing exactly when the moved text goes missing.
+The **7** rejected candidates are the reason this step exists as a measurement rather than a paste:
+`.sd7` (outside 37), `main` (11 - it hides inside `main.sd7`), `RANGE_ERROR` (3), `time` (3),
+`locals` (3), `INDEX_ERROR` (1), `rpc.sd7` (1) also occur in text nobody is moving, so each would be a
+check that can never fail. A token's job is to go missing exactly when the moved text goes missing.
+
+**R25: the other three of the twelve are `s7 -a`, `s7c -s x`, `s7 -p FILE`, and an earlier draft of
+this plan told the reader they were filter-rejected. That was false**, and self-contradictory: Step 4
+of this same task demands the never-`-s` block go MISSING on `s7c -s x`. Each of the three occurs
+exactly once, inside the moved text, and nowhere else in `AGENTS.md`. They were missed not by a filter
+judgment but by the candidate extractor's shape: it demanded a standalone backticked literal equal to
+the token, so it could not see literals embedded mid-sentence, while the gate's own `grep -qF` substring
+matcher sees them trivially. Generalise it: **filter candidates with the same matcher the checker will
+use**, or the measurement describes your tooling. Nine shipped pre-cut because I ruled from the broken
+count; commit `57a058d` added the three, measured against `git show d300662:AGENTS.md`. Add them to the nine above:
+
+```
+s7 -a  s7c -s x  s7 -p FILE
+```
 
 Append the survivors to `tools/agents_required.txt` (`LC_ALL=C` sorted) and record BOTH numbers in
 the commit: total tokens, and how many of the six cut units now own at least one. The bar is
 **5 of 6**. `115-119` is a declared permanent gap: its only literals are `s7c` (outside=1) and
-`https://seed7.net/faq.htm#compile` (outside=2), so any token from it already passes on text that
+`https://seed7.net/faq.htm#compile` (outside=1, measured on the post-cut tree by the implementer; an earlier draft of this line said 2), so any token from it already passes on text that
 is not being moved — a failable token for that block would have to be a prose fragment, which is a
 check that cannot fail. Say so in the file's comment; do not invent the token.
 
