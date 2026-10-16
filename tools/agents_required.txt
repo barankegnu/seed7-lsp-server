@@ -30,3 +30,12 @@ src/analysis.sd7:333
 tests/occurrences_test
 tests/occurrences_test.sd7
 utf8.s7i:132
+-flto
+-ocN
+-ocn
+s7 [options] sourcefile [parameters]
+s7c -p
+s7c -p -O2 -l src <file>
+s7c -p -O2 -l src tests/occurrences_test.sd7
+s7c -t
+usecs / calls / place / name

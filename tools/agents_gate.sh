@@ -15,6 +15,17 @@
 # extraction; re-verify the ranges before trusting them), kept only when they occur nowhere else --
 # a token that survives elsewhere is a check that cannot fail. Both invariant rules are kept on
 # purpose: the number form alone would drop the owner paths, the owner form alone covers 4 of 7.
+#
+# AFTER THE SPLIT (Task 5). AGENTS.md:53-62 and :100-139 now live in docs/seed7-cli.md, so the
+# line-range recipe above is spent: those ranges bound different prose today, and re-extracting the
+# list wholesale would drop the moved tokens from it. Append only, never re-extract -- and append
+# BEFORE the cut you are protecting, because after it the extractor cannot see the text. Task 5
+# appended the 9 literals unique to the moved material (32 -> 41) and proved the net by deleting
+# each of the six cut units from docs/seed7-cli.md alone: 2, 4, 3, none, 1, 2 MISSING. The
+# `s7c` IS-the-analyze-phase bullet is a declared permanent gap, not an oversight: its only
+# literals, `s7c` (1 occurrence outside the moved text) and https://seed7.net/faq.htm#compile
+# (1 outside), already pass on text nobody moved; a prose fragment as a token is a check that
+# cannot fail.
 # Each token in the list is one check: `grep -qF` over the union of AGENTS.md and
 # docs/seed7-cli.md, in that order, whichever of them exist. A file named in the list that does not
 # exist yet counts as empty, not fatal. One check per token, so N is the list length and M counts
