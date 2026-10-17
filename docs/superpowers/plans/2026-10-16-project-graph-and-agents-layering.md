@@ -793,6 +793,19 @@ list (that is what makes the grade meaningful).
 
 - [ ] **Step 2: Grade mechanically**
 
+The gate is only as strong as its own list, and nothing currently stops a run from SHRINKING that
+list: a wholesale re-extraction or a careless deletion lowers `agents: N checks` and still prints
+`0 failed`. Task 6's candidate is exactly the kind of edit that would do it. So the grader checks the
+list itself, mechanically, before anything else:
+
+```sh
+git diff --numstat tools/agents_required.txt      # deletions column MUST be 0
+wc -l < tools/agents_required.txt                 # MUST be >= 44
+```
+
+A candidate whose list edit drops a line is rejected on that alone, substitution only excepted and it is
+not excepted here (Task 7 owns the one planned substitution).
+
 ```sh
 cp AGENTS.md /tmp/AGENTS.task5; cp docs/seed7-cli.md /tmp/cli.task5
 cp /tmp/agents-candidate.md AGENTS.md; cp /tmp/agents-candidate-cli.md docs/seed7-cli.md
