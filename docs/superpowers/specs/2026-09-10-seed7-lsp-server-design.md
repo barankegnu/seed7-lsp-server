@@ -139,7 +139,7 @@ end block;
 
 which converts a crash into a JSON-RPC internal error plus a stderr line, and a live
 server. Since every accessor is total, no crafted input currently reaches this net; it
-stays as defence in depth and is deliberately **not** claimed as test coverage. The catchable set is fixed by `seed7_05.s7i:277-291`: MEMORY_ERROR,
+stays as defence in depth and is deliberately **not** claimed as test coverage. The catchable set is fixed by `seed7_05.s7i:280-294` (**line range corrected 2026-10-17, counted against the installed 5.4.10 in `3bd3c19`**): MEMORY_ERROR,
 ASSERTION_ERROR, NUMERIC_ERROR, OVERFLOW_ERROR, RANGE_ERROR, INDEX_ERROR, FILE_ERROR,
 DATABASE_ERROR, GRAPHIC_ERROR, ILLEGAL_ACTION, CREATE_ERROR, DESTROY_ERROR, COPY_ERROR,
 IN_ERROR. There is no `SIZE_ERROR` and no catch-all clause, so `ILLEGAL_ACTION` must be
