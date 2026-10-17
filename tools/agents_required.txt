@@ -1,0 +1,44 @@
+10 ms
+1. Only
+1. Only `src/analysis.sd7`
+2. Only
+2. Only `src/doc_store.sd7`
+3. Only
+3. Only `src/utf8bytes.sd7`
+4. Only
+4. Only `src/*.sd7`
+5. Capabilities
+63 entries
+67 identifiers
+691 lines
+6. `renameDecision`
+7. Outbound
+analysisOf
+analyzeAll
+collectSyms
+## Do not "fix" these
+## Every change
+-g-debug_c
+## Invariants — a violation is a defect, not a style preference
+## Milestones
+profile_out
+## Protocol decisions that are easy to undo by accident
+scan.sd7:95
+seed7_05.s7i:280-294
+## Seed7 traps
+src/analysis.sd7:333
+tests/occurrences_test
+tests/occurrences_test.sd7
+utf8.s7i:132
+-flto
+-ocN
+-ocn
+s7 -a
+s7 -p FILE
+s7 [options] sourcefile [parameters]
+s7c -p
+s7c -p -O2 -l src <file>
+s7c -p -O2 -l src tests/occurrences_test.sd7
+s7c -s x
+s7c -t
+usecs / calls / place / name

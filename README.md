@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 19 suites, every one reporting 0 failed, no editor required
+    make test          # 21 suites, every one reporting 0 failed, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -130,12 +130,13 @@ uses this rule is `lspWholeLine`.
 
 `workspace/symbol`, project-wide rename and anything else needing an index of files the
 editor never opened (M6, unscheduled), nested and local `documentSymbol` hierarchy,
-completion of local variables,
 completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
 staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not
-be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)), `utf-8` position negotiation, `workspace/configuration`, and
+be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)),
+`utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` in
+`src/lsp_server.sd7`'s `capabilitiesJson` and honours no client preference), `workspace/configuration`, and
 Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
 editors display as "no data" rather than as a failure — and a capability is advertised
 only once its method is answered.
@@ -150,9 +151,12 @@ diagnostics, dispatch, entry point —
 with the LSP features themselves in `src/features/`, one file per method plus `kinds.sd7`
 for the shared symbol/type mappings. `tests/` has one suite each, plus
 `tests/transcript.py`, which drives the real process over real frames.
-`tools/` holds the two generators that keep the docs honest — `keyword_gate.sh` (the refused-name set,
-re-derived from the interpreter) and `corpus_scan.sh` (the occurrence pass run over all 342 files of
-the Seed7 checkout) — neither is part of `make test`.
+`tools/` holds the generators and gates that keep the docs honest — `keyword_gate.sh` (the refused-name set,
+re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 342 files of
+the Seed7 checkout), and the two the suite runs: `project_graph.sh` and `agents_gate.sh`.
+
+`docs/PROJECT_GRAPH.md` is that shape in one read — modules, includes, methods answered against
+methods advertised, suites and the module each is named after. Regenerate with `make graph`.
 
 - `AGENTS.md` — constraints for anyone editing this code: the Seed7 traps, the invariants, and
   the recipe for performance claims (profile a compiled, optimized build with `s7c -p -O2 -l src`

@@ -78,7 +78,7 @@ const func string: joinSurrogates (in string: stri) is func
 # Does this string hold any code point the fold could touch? One scan, no allocation.
 # The fold returns a string with no surrogate IDENTICAL to its input, so no black-box input
 # separates the guarded path from the unguarded one and no mutant can redden a check -- what
-# justifies the guard is a measurement, taken the way AGENTS.md requires: profiled AND optimised
+# justifies the guard is a measurement, taken the way docs/seed7-cli.md requires: profiled AND optimised
 # build, table read off profile_out, 50 strAt calls on the `text' of a 234-line didOpen body
 # (11 466 characters, no surrogate anywhere). Command: s7c -p -O2 -l src <probe>, then run it.
 #
