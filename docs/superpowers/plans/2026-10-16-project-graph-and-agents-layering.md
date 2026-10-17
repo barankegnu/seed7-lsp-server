@@ -832,7 +832,9 @@ candidate that failed the gate, and do not open a new file to report it.
 ## Task 7: the citation and wording defects found while measuring
 
 **Files:**
-- Modify: `src/doc_store.sd7:104`, `src/rpc.sd7:81`, `tools/agents_gate.sh:14` (comment-only pointers, Step 0)
+- Modify: `src/doc_store.sd7:104`, `src/rpc.sd7:81` (comment-only pointers, Step 0)
+- Modify: `docs/seed7-cli.md` " the section that recorded this defect (R30, controller-authorized mid-task; its text became false the moment the citation was fixed)
+- Modify: `docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md:142` (R31: the same stale range sits in the file `AGENTS.md:5-6` names as the design authority)
 - Modify: `AGENTS.md` (exception citation line)
 - Modify: `README.md:133-134` and the "utf-8 position negotiation" phrase
 - Modify: `tools/agents_required.txt` (the frozen token for that citation must be substituted)
@@ -859,6 +861,16 @@ one hop away. Each is a comment line: no behaviour, no string any suite asserts,
 
 Then `make test` must be green with no other change, and report `git diff --stat` so the reviewer can
 see these are comment lines only.
+
+- [ ] **Step 0b: Correct the citation in the design authority (R31)**
+
+`docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md:142` states "The catchable set is fixed
+by `seed7_05.s7i:277-291`". Plans are records of work and keep their stale numbers as evidence; a
+spec is an instruction " `AGENTS.md:5-6` tells every agent to read it before changing behaviour and
+resolves conflicts in its favour " so an agent that trusts it writes the wrong line range forward.
+Correct the range to the counted `280-294` and mark the correction in place, dated, with the commit
+that counted it, so the history stays legible instead of being quietly restated. Do not otherwise
+re-edit the spec: this is one fact, not a tidy-up.
 
 - [ ] **Step 1: Correct the exception citation**
 
