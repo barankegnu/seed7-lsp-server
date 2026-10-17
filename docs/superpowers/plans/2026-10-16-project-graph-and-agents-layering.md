@@ -580,8 +580,11 @@ not more.
 - [ ] **Step 5: Verify everything**
 
 Run: `make test`
-Expected: 21 totals, `graph: 20 checks, 0 failed` (19 + R18's existence floor, which also
-absorbs the column-2-exists assertion rather than adding a sixth), `agents: N checks, 0 failed`.
+Expected: 21 totals, `graph: 21 checks, 0 failed` (20 = 19 + R18's existence floor, which also
+absorbs the column-2-exists assertion rather than adding a sixth; +1 is the header-wording content check
+the final review added after this plan was written, which greps the generator's stdout because freshness
+can re-bless a document but cannot see a revert of the clause inside the generator),
+`agents: N checks, 0 failed`.
 Ceiling mutation: set `MAX_GRAPH_BYTES` **below the artifact's measured byte count** and require the
 size check to FAIL, then revert. Do NOT write "cut it by 100": the ceiling is the artifact rounded
 UP to the next 512, so a 100-byte cut usually still sits above the file and the check cannot trip.

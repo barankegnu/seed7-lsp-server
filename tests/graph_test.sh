@@ -101,6 +101,14 @@ check "semanticTokens/range IS marked advertised" \
       'test $(grep -c "^A C textDocument/semanticTokens/range" docs/PROJECT_GRAPH.md) -eq 1'
 check "codeAction is neither answered nor advertised" \
       'test $(grep -c "^- - textDocument/codeAction" docs/PROJECT_GRAPH.md) -eq 1'
+# This one greps the generator's stdout, not the committed artifact, and it is the only check here that
+# does. Freshness (check 1 + the last) pins artifact == generator, so it reddens a hand-edit of the
+# document; nothing else reddens a revert of the clause inside the generator, which is how the header
+# came to be misread as "diagnosticProvider is advertised" (invariant 5 backwards). Written after the
+# wording landed (723f391), so it passes on sight; proved by mutation -- restoring the 55c912d generator
+# prints 0 for this grep and FAILs this title.
+check "methods header names the spec column, not an advertisement" \
+      'test $(sh tools/project_graph.sh | grep -c "^## methods .*the last column is the capability the SPEC requires.*C is the only advertisement marker") -eq 1'
 # The end address `^\`\`\`` is how the brief scopes the range to the section; today no artifact line
 # starts with a fence, so sed prints to EOF and `^  clean` is still counted once. Verified against the
 # mutant: with name-prefix matching the section prints five gaps and this check goes FAIL.
