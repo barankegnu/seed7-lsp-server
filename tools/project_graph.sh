@@ -152,7 +152,7 @@ method_inventory() {
   matched=''
   gaps_advertised=''
   gaps_answered=''
-  printf '\n## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised; the last column is the capability the SPEC requires, so a path named there is not a claim that we advertise it -- C is the only advertisement marker)\n'
+  printf '\n## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised; the last column is the capability the SPEC requires (a bare `-` = the spec requires none), so a path named there is not a claim that we advertise it -- C is the only advertisement marker)\n'
   printf '\n'
   # `kind' (request | notification) is read only to reach the third column: the row format is fixed
   # by tests/graph_test.sh's anchors, which start at the two flags and name no kind.

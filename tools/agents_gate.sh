@@ -64,7 +64,8 @@
 # Prints each missing token as `MISSING <token>`, then the graded line
 # `agents: N checks, M failed`; exits 1 iff M > 0.
 
-# `set -u' for typo-catching; `set -e' excluded because `grep -qF' is the control flow here.
+# `set -u' for typo-catching. `set -e' kept out so a future `grep' outside a conditional cannot
+# abort the gate: every grep today is an `if' condition, where POSIX `set -e' would not fire anyway.
 set -u
 
 LC_ALL=C

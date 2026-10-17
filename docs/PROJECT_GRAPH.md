@@ -32,7 +32,7 @@ features/selection_range.sd7  126  blocks.sd7 doc_store.sd7 rpc.sd7 +stdlib: jso
 features/semantic_tokens.sd7  150  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 scan.sd7
 features/signature_help.sd7   114  analysis.sd7 doc_store.sd7 jsonw.sd7
 
-## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised; the last column is the capability the SPEC requires, so a path named there is not a claim that we advertise it -- C is the only advertisement marker)
+## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised; the last column is the capability the SPEC requires (a bare `-` = the spec requires none), so a path named there is not a claim that we advertise it -- C is the only advertisement marker)
 
 A - $/cancelRequest                        -
 - - $/progress                             -
