@@ -190,7 +190,9 @@ exactly the decorative-check failure `AGENTS.md` forbids.
 - [ ] **Step 2: Write the gate**
 
 `tools/agents_gate.sh`: for each required token, `grep -qF -- "$tok" $FILES` over
-`AGENTS.md docs/seed7-cli.md` (whichever exist), count pass/fail, print the repo's total line
+`AGENTS.md docs/seed7-cli.md` (whichever exist) — **except a token starting `## `, which must be in
+`AGENTS.md` itself** (R26), because a section header borrowed by the reference file proves nothing about
+the rules file. Count pass/fail, print the repo's total line
 `agents: N checks, M failed`, and on failure print each missing token on its own line prefixed
 `MISSING `. Exit `M == 0 ? 0 : 1`. Header comment must state WHY (content may move, may not
 vanish), HOW, the `shortcut:` line (a token list frozen today cannot catch a token that was
@@ -654,23 +656,20 @@ The **7** rejected candidates are the reason this step exists as a measurement r
 `locals` (3), `INDEX_ERROR` (1), `rpc.sd7` (1) also occur in text nobody is moving, so each would be a
 check that can never fail. A token's job is to go missing exactly when the moved text goes missing.
 
-**R25/R27: the other three of the twelve are `s7 -a`, `s7c -s x`, `s7 -p FILE`, and an earlier draft of
-this plan told the reader they were filter-rejected. That was false**, and self-contradictory: Step 4
-of this same task demands the never-`-s` block go MISSING on `s7c -s x`. Each of the three occurs
-exactly once, inside the moved text, and nowhere else in `AGENTS.md`. "They were missed at the Step 0 ruling's survivor list, and the mechanism inside that ruling is "
-"**UNIDENTIFIED**, written that way on purpose. R25's explanation " + D + " that my candidate extractor demanded a
-standalone backticked literal, so it could not see literals embedded mid-sentence " + D + " was tested and is false:
-replaying class 6 and class 7 over `git show d300662:AGENTS.md` surfaces all three (they sit on lines
-100, 116 and 123 of the un-moved file). A cause was asserted twice in this plan's history and refuted
-once by an implementer's replay and once by the controller's own; the durable text now records what is
-known (they were cut at the survivor filter, counts 24 -> 20 unique-to-moved, 12 new) and marks the
-rest unknown. "
- Nine shipped pre-cut because I ruled from the broken
-count; commit `57a058d` added the three, measured against `git show d300662:AGENTS.md`. Add them to the nine above:
+**R25/R27 — the other three of the twelve are `s7 -a`, `s7c -s x` and `s7 -p FILE`, and an earlier
+draft of this plan told the reader they had been filter-rejected. That was false, and
+self-contradictory: Step 4 of this same task demands the never-`-s` block go MISSING on `s7c -s x`.
+Each of the three occurs exactly once, inside the moved text, and nowhere else in `AGENTS.md`.
 
-```
-s7 -a  s7c -s x  s7 -p FILE
-```
+They were cut at the Step 0 ruling's survivor list. **The mechanism inside that ruling is
+UNIDENTIFIED, and it is left that way on purpose.** R25's explanation — that my candidate extractor
+demanded a standalone backticked literal and so could not see literals embedded mid-sentence — was
+tested and is false: replaying class 6 and class 7 over `git show d300662:AGENTS.md` surfaces all
+three, as standalone backticked literals, at lines 100, 116 and 123 of the un-moved file. Two causes
+have now been asserted in this plan's history and refuted by a replay, so the durable text records
+what is measured (24 candidates, 20 unique-to-moved, 12 new) and marks the rest unknown rather than
+installing a third tidy story. Nine shipped pre-cut because I ruled from the broken count; commit
+`57a058d` added the remaining three, replayed against that parent blob.
 
 Append the survivors to `tools/agents_required.txt` (`LC_ALL=C` sorted) and record BOTH numbers in
 the commit: total tokens, and how many of the six cut units now own at least one. The bar is
@@ -764,6 +763,10 @@ to cut `AGENTS.md` down. Four changes, all inside files this task already owns.
    since any measurement can be replayed against a parent blob after the fact. The rule: an append
    commit names the parent blob whose `AGENTS.md` it replayed the recipe against, and shows the tokens
    absent from the rest of that blob.
+
+One clause to add when a round next touches that file (non-blocking, no current defect): state in
+`tools/agents_gate.sh` that header tokens in the list must **originate in `AGENTS.md`**, since a
+docs-only heading frozen into the list would otherwise be permanently unsatisfiable.
 
 Leave alone, record instead: `s7c -p` is implied by the two longer `s7c -p -O2 ...` tokens, so it can
 only go MISSING when all three go, and `s7 -a` is also stated in `README.md` and the design spec. Both
