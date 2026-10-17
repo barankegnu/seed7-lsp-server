@@ -1,12 +1,22 @@
-# Seed7 interpreter CLI
+# Seed7 interpreter CLI, and the evidence behind `AGENTS.md`
 
-The `s7` / `s7c` command line, the two `-p` flags, the optimizer knobs and the measured profiling
-rows. Moved verbatim out of `AGENTS.md` -- and two rules came with this text: never take a
-performance number off the interpreter, never build a probe with its runtime checks suppressed.
-`AGENTS.md` keeps red first, `make test` before and after, and the pointer that says read this.
+Reference material only: nothing in this file is a rule, and every rule it supports is stated
+in `AGENTS.md`. Two collections live here because they are consulted *during* an edit, not
+before it.
 
-The headings keep the old section names, so a grep for the old phrase lands here — including the
-"*Seed7 traps* below" cross-reference inside the profiling paragraph, which names the next section.
+* **The `s7` / `s7c` command line** — the two `-p` flags, the optimizer knobs, the profiling
+  recipe and the measured µs rows. Moved verbatim out of `AGENTS.md` when the file was last
+  cut; `AGENTS.md` keeps red first, `make test` before and after, and the pointer that says
+  never guess a flag.
+* **`AGENTS.md` provenance** — the measured figures, citations, fixtures and decision history
+  behind the rules that still sit in `AGENTS.md`. Moved out by the later cut, which left a
+  pointer at each one. Read a section here when a number, a citation or a past measurement
+  bears on your change, or before you restate either. A rule listed below is **not** weaker
+  than one in the rules file, and this is not a place a rule goes to stop being enforceable.
+
+The headings below keep `AGENTS.md`'s old section names, so a grep for the old phrase lands
+here. Moved text is pasted **verbatim**: if wording here ever disagrees with `AGENTS.md`, the
+rules file wins and the disagreement is a defect to fix in one of them.
 
 ## Every change — profiling
 
@@ -20,6 +30,7 @@ is the refactoring candidate. Profile the optimized build, because an unoptimize
 pass you want to see often hides behind interpreter overhead. Record the command and the table next
 to any figure that reaches a document — the measured example is in *Seed7 traps* below. Clean up
 after a probe: the binary lands beside its source and `profile_out` in the cwd.
+
 
 ## Seed7 traps — s7/s7c options
 
@@ -63,3 +74,262 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   that cap), `-a` analyses only, `-i` prints the identifier table after analysis — the same records
   `collectSyms` walks — and `-d x` / `-t x` set the compile-time and runtime trace levels from the
   letters `a c d e h s` (`-t` alone is `-ta`; `s7c -t` takes a different set, `e f s`).
+
+---
+
+# AGENTS.md provenance
+
+## Every change — mutation and measurement provenance
+
+The mutation proof that found four assertions passing for unrelated reasons and one
+branch no input could ever reach -- the claim the rules file keeps without its tally:
+
+```
+rather than inventing a synthetic trigger. To prove an assertion can fail, mutate one
+production branch and require that named check to go FAIL; this found four assertions that
+passed for unrelated reasons and one branch no input could ever reach. Do it after
+```
+
+"No fixture reaches it" is not "no input reaches it": the guard the unit suite could not
+see was killed in two seconds by the wire suite, so the honest answer was a missing fixture,
+not an equivalent mutant.
+
+```
+it"** — a guard the unit suite could not see was killed in two seconds by the wire suite,
+and the honest answer was a missing fixture, not an equivalent mutant. And a probe
+```
+
+The two measurement stories, with the numbers they bought:
+
+```
+Two measurement rules, both bought with a wrong number that reached a document or a
+commit. A byte count must come from the artifact the product emits — the wire
+`Content-Length` — never from re-serialising a parsed copy: `json.dumps` writes `", "`
+between elements, which turned a 309 521-byte `semanticTokens` frame into a recorded
+"451 KB", a 46 % overstatement on a 142 005-element array. And a probe must print a
+sentinel that the harness requires before any payload is counted as a result — a fuzz
+whose entry point had never run reported fourteen inputs as "no raise" while printing
+nothing but the interpreter banner.
+```
+
+The tests-written-after example: the nine readFrameBody checks of dd99890, four mutants
+that reddened a named check, and the high-surrogate mutant that escaped until two lone-lows
+were added -- which is the discovery the check existed to record.
+
+```
+should be said so out loud (`dd99890`'s nine `readFrameBody` checks are this case: four mutants reddened
+named checks, and one mutant — widening the high-surrogate bound — escaped until two lone-lows were
+added, which is the discovery the check existed to record).
+```
+
+## Seed7 traps — the refused-name set
+
+`CANNOT_BE_NAME` as measured: 63 entries for `s7` 5.4.10, re-probed word by word. The array
+is generated; the rules file keeps the "never hand-edit it, run the generator" command and the
+membership that surprises people.
+
+```
+- Which names the language refuses is measured, not remembered: `src/keywords.sd7`'s
+  `CANNOT_BE_NAME` (63 entries for `s7` 5.4.10) is regenerated by `tools/keyword_gate.sh`, which
+  probes `var integer: <WORD> is 1;` per word and exits 1 if the array drifts. `step`, `key`,
+  `len`, `range` are on it and fail as parameters AND as locals; `type`, `proc`, `result`, `enum`,
+  `and`, `or`, `div` are NOT — `const func integer: type (in integer: n)` analyses and prints `3`.
+  Never extend or shorten the array by hand; run the generator.
+```
+
+The note that made the hand-written name list subordinate to the generated set:
+
+```
+- `key`, `len` and `line` are taken by the language and library. Choose other names.  (The first bullet of this list is the generated, measured set.)
+```
+
+## Seed7 traps — original text of the merged bullets
+
+Char and string literals, as two separate bullets before they became one:
+
+```
+- Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
+  Tab inside a literal is `\9;`. A char literal cannot hold the escape character
+  (`'\'` does not parse — the escape eats the closing quote): write `chr(92)` and name it.
+  `doc_store.BACKSLASH` is that name.
+```
+
+```
+- A char literal cannot hold the escape character or a quote the way you expect: `'\'` does
+  not parse. Use `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  The quote character is written `'''` — open, the quote as content, close — and `''''` is
+  the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
+  before coding to it; two of this session's test fixtures were wrong because I guessed.
+```
+
+`in` / `not in`, as two separate bullets before they became one:
+
+```
+- `x not in arr` does not parse when `x` is a struct-field select (`syms[i].sign not in
+  shown`); `analysis.listed()` exists because of it.
+```
+
+```
+- `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
+  match for any `k` and any `array` type. The existing `x not in arr` entry names the
+  struct-field-select case; the broader rule is that `in` has no array overload.
+```
+
+## Seed7 traps — corrections and wasted cycles recorded
+
+The str(ch) bullet once read no char-to-string conversion, and that cost a wasted
+attempt at the M5 surrogate joiner:
+
+```
+  what `jsonw.sd7` does, but it is a choice, not a necessity. This line said "no char-to-string
+  conversion" and cost a wasted attempt building M5's surrogate joiner.
+```
+
+Guessing a char-literal spelling put two fixtures wrong before s7 was asked:
+
+```
+  the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
+  before coding to it; two of this session's test fixtures were wrong because I guessed.
+```
+
+A parameterised main let one fuzz report a result it had never computed:
+
+```
+- `main` takes **no parameter** here. A parameterised `main` (probed with both
+  `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
+  missing`, exit 0, and the probe silently never ran — which is how one fuzz of mine
+  reported a result it had not computed. The idiom the standard library uses is a plain
+```
+
+## Seed7 traps — the bounds-guard case
+
+The slice rule, with the measured branch that shows a green suite proves nothing:
+
+```
+- A slice whose low bound exceeds its high bound is the **empty string, silently** —
+  `text[3 .. 2]` has length 0. So "I deleted this bounds guard and every suite stayed
+  green" proves the guard is *harmless to remove*, never that its `FALSE` branch is
+  unreachable; `scan.maskOf`'s gap guard is exactly that case, and its `FALSE` branch is
+  ordinary adjacency (`(b`), firing more often than `TRUE` on `a := (b) + c[1];`.
+```
+
+## Protocol decisions — the analyzer-column derivation
+
+The three pinned checks in `tests/analysis_test.sd7`, each carrying the raw error count, the
+kind, the line and the message beside its column. The rules file keeps the convention, the
+`lspRangeBytes` rule and the fact that these checks go red if the interpreter changes; the
+figures are here, and re-measure from them before restating one.
+
+```
+  escape for `ILLEGAL_STRING_ESCAPE`. Pinned by three checks in
+  `tests/analysis_test.sd7`, each carrying the raw error count, the kind, the line
+  and the message beside the column: `Illegal string escape "\z"` reports column 26 both after
+  `"ππ"` (the `z` there is the 24th character) and after one astral character (there it is
+  the 23rd); and the first diagnostic on `    writeln(1) writeln(2);` — **with its
+  four-space indent**, the byte arithmetic is not the same without it — is
+  `EXPECTED_SYMBOL` at line 4 column 23, one byte past a `writeln` spanning bytes 16-22.
+  Change the interpreter's convention and those checks go red.
+```
+
+## Protocol decisions — the rename refusals, measured
+
+Both arms as first recorded. The first carries the measured cost of the over-refusal: it
+also refuses a legal rename of const integer: x is 1; const integer: y is x;. The second
+carries what the field-access arm replaced, and why a silent file that no longer compiles was
+the failure mode.
+
+```
+- `rename` refuses when the declaration line holds more than one record of the name. Seed7 lets a
+  parameter share its routine's name, and the index has no column for a declaration, so choosing by
+  line would sometimes rewrite the wrong symbol. Measured cost: it also refuses a legal rename of
+  `const integer: x is 1; const integer: y is x;`. Refusal on a write is the rule — do not "fix" the
+  over-refusal with a column test unless regions become column-aware.
+```
+
+```
+- `rename` also refuses when the symbol's own scope window holds the same spelling written after a
+  `.' — a record field (`counter := counter + box.counter;`). Measured on `m5-review-fixes`: before
+  the arm, the cursor on that local answered six edits, two of them the field access, and the
+  field's declaration sits outside the window, so the write renames the field's uses and leaves the
+  field — a file that no longer compiles, silently. The flag is `occurrence.dotPrev`, stamped in
+  `occurrencesOf` (the only pass that knows the previous token), and the predicate is
+  `occurrences.scopeHasFieldAccess`, which applies scope: a field access in another routine must
+  not refuse this one's rename, and `features_test.sd7` pins that control. Measured cost: a
+  **global** refuses on a field access anywhere in its file, because a global's window is the whole
+  document. `references` keeps the over-inclusive list but now sets `unresolved` for it — spec
+  12.2's split, read may over-include, write must not.
+```
+
+## Protocol decisions — `#` and based literals
+
+Why the radix-versus-comment ambiguity is not theoretical:
+
+```
+- `#` is both the line-comment introducer and the radix marker of `16#beef`.
+  The scanner decides, because it knows whether it is inside a number token.
+  `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
+```
+
+## Do not "fix" these — the evidence that compiling is not an escape
+
+The rules file keeps the rule and points at README, which is the single source of truth
+for it; the s7c mechanism and its citation are here and in the CLI reference above:
+
+```
+- Analysis executes the analysed code. It is a property of using the interpreter as the
+  parser, not a bug to route around — see the README's security section, which is the
+  single source of truth for it. The M3 answer is a trust gate, not stderr scraping. Compiling
+  is not an escape either: `s7c` produces its call-code by running that same analyze phase
+  (<https://seed7.net/faq.htm#compile>), so there is no second front end to hide behind and no
+  build flag that makes analysis inert.
+```
+
+## Milestones
+
+The M1-M5 record in full: what is merged, what is still open from M3, why R-F10 is a
+conformance violation as well as stale data, the M5 reflection re-measurement, the measured
+cost of filling every library scope record, and how scan.sd7 carries the UTF-16 column of a
+token without a cumulative table. What is true today for a reader is the What works / What does
+not work yet pair in README.md; the rules that survive from this record are in AGENTS.md under
+Milestones.
+
+```
+M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
+(documentSymbol, definition, hover, completion, signatureHelp), and M4's scanner and
+token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
+selectionRange, semanticTokens, one-analysis-per-version) are merged, and M5's cross-reference
+features (`occurrences.sd7`, references, file-local `prepareRename`/`rename`) are merged on
+`m5-references-and-rename`. Still open from M3: the trust gate, local-variable
+completion, and R-F10 — which is a conformance violation as well as stale data, because
+`textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
+not read a document's content through its uri.
+
+M5's `occurrences.sd7` is the only use-site index, and it is lexical by necessity, not by
+choice: re-measured in M5, reflection still yields declarations only — `body()` answers
+`CALLOBJECT` and `getValue(b, attr reference)` fails to match, so there is no use-site walk.
+`resolveBinding` decides whose name a token is (a routine's own locals come from
+`analysis.sd7`'s scope records, whose cost is measured: filling every library record would add
+7–10 ms per analysis) and `inScope` is the ONLY place scope is applied. Two refusals are
+invariants of the write path, not preferences: an unprovable binding and `scopeUncertain`
+(a nested routine's locals, or a one-line routine's absent region, mean the scope cannot be
+seen) both make `rename` answer `null` rather than guess — over-inclusive on a read,
+refusal on a write. `workspace/symbol` and project-wide rename are M6: they need an index of
+files the editor never opened, and with them the staleness and watching questions R-F10 already
+show are not free.
+
+M4's `scan.sd7` is the server's only lexical machine; `doc_store.codeText` is a
+projection of it. A token's UTF-16 column is carried forward incrementally by `nextToken`
+(`scan.sd7:95` advances `cur.col16` by `utf16CharLength(ch)` per character and `:291`
+stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a whole
+document is O(document), not O(document × tokens). The reflection API yields declarations
+only, never use sites, which is why references and rename stay M5.
+```
+
+## Open citation defect, noted not fixed
+
+AGENTS.md cites the catchable exceptions at seed7_05.s7i:277-291, and repeats that range in
+Protocol decisions. The Background section of
+docs/superpowers/plans/2026-10-16-project-graph-and-agents-layering.md records that in 5.4.10
+the enum sits at 280-294 (lib/seed7_05.s7i, counted) and leaves the correction to Task 7 of
+that plan. Nothing here adopts the alternative line range, and nothing here re-verifies it:
+the rules file keeps the existing citation until somebody counts in this checkout.

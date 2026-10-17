@@ -1,13 +1,18 @@
 # AGENTS.md
 
 Work here as a careful maintainer of a language server, not an author of Seed7
-tutorials. This file holds what no config confesses. The layout is the generated
-`docs/PROJECT_GRAPH.md`, the commands are in the `Makefile`, and the design authority is
+tutorials. This file holds what no config confesses. The commands are in the `Makefile`, and
+the design authority is
 `docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md` — read it before
 changing behaviour, since the plan argues from it and conflicts resolve in its favour.
 
 The module/method/suite shape is generated at `docs/PROJECT_GRAPH.md` — read it before walking
 `src/`, and regenerate it with `make graph` when `src/` changes.
+
+This file keeps rules, not their evidence. `docs/seed7-cli.md` holds the `s7`/`s7c` options
+and, below them, the measured figures, citations and decision history the rules here point at.
+Read it when a figure or a citation bears on your change. A pointer is not a demotion: the rule
+stays here and is enforceable from here; only its evidence is one hop away.
 
 ## Every change
 
@@ -15,8 +20,7 @@ Red first. Write the check, run it, confirm it fails for the reason you claim, t
 implement. `make test` before and after. A check that cannot fail is worse than no
 check: when a safety net becomes unreachable from real input, delete the assertion
 rather than inventing a synthetic trigger. To prove an assertion can fail, mutate one
-production branch and require that named check to go FAIL; this found four assertions that
-passed for unrelated reasons and one branch no input could ever reach. Do it after
+production branch and require that named check to go FAIL. Do it after
 committing, and revert per file — `git checkout -- .` restores from the index and will
 silently undo work you have not committed yet. When a review or a probe contradicts a
 commit message, correct the message in the next commit — the correction is the finding.
@@ -26,52 +30,48 @@ mutation, check the mutant is not **semantically identical** — `if n > MAX the
 and `if n >= MAX then n := MAX` are the same function because the assignment is a no-op
 at `n = MAX`, so no black-box input can separate them and the demanded proof was
 unsatisfiable by construction; (2) **"no fixture reaches it" is not "no input reaches
-it"** — a guard the unit suite could not see was killed in two seconds by the wire suite,
-and the honest answer was a missing fixture, not an equivalent mutant. And a probe
-method: to prove an `include` is unused you must exercise the module's **own** include
-list from a standalone probe, with a positive control proving the probe can fail — a test
-file that already includes the same modules makes any deletion pass for the wrong reason.
+it"** — there the honest answer was a missing fixture, not an equivalent mutant. And a probe method: to prove an `include` is unused you must exercise
+the module's **own** include list from a standalone probe, with a positive control proving
+the probe can fail — a test file that already includes the same modules makes any deletion
+pass for the wrong reason.
 
 Two measurement rules, both bought with a wrong number that reached a document or a
 commit. A byte count must come from the artifact the product emits — the wire
-`Content-Length` — never from re-serialising a parsed copy: `json.dumps` writes `", "`
-between elements, which turned a 309 521-byte `semanticTokens` frame into a recorded
-"451 KB", a 46 % overstatement on a 142 005-element array. And a probe must print a
-sentinel that the harness requires before any payload is counted as a result — a fuzz
-whose entry point had never run reported fourteen inputs as "no raise" while printing
-nothing but the interpreter banner.
+`Content-Length` — never from re-serialising a parsed copy. And a probe must print a
+sentinel that the harness requires before any payload is counted as a result. (`Every change —
+mutation and measurement provenance` in `docs/seed7-cli.md` holds both stories.)
 
 Tests written after the code exist are a different thing from tests written first, and saying
 "coverage" does not make them the same. When a check is added to code that already works — inherited,
 or fixed by someone who left no report — it passes on sight, which proves nothing about whether it can
 fail. Label it in the commit, and prove it by mutation: revert or widen the specific production
 decision and name the check that goes red. If no mutation reddens anything, the check is decorative and
-should be said so out loud (`dd99890`'s nine `readFrameBody` checks are this case: four mutants reddened
-named checks, and one mutant — widening the high-surrogate bound — escaped until two lone-lows were
-added, which is the discovery the check existed to record).
+should be said so out loud.
 
 ## Seed7 traps
 
 Each of these cost a debugging cycle. Seed7 is not Python and will not warn you first.
 
 - Which names the language refuses is measured, not remembered: `src/keywords.sd7`'s
-  `CANNOT_BE_NAME` (63 entries for `s7` 5.4.10) is regenerated by `tools/keyword_gate.sh`, which
-  probes `var integer: <WORD> is 1;` per word and exits 1 if the array drifts. `step`, `key`,
-  `len`, `range` are on it and fail as parameters AND as locals; `type`, `proc`, `result`, `enum`,
-  `and`, `or`, `div` are NOT — `const func integer: type (in integer: n)` analyses and prints `3`.
-  Never extend or shorten the array by hand; run the generator.
+  `CANNOT_BE_NAME` is regenerated by `tools/keyword_gate.sh`, which probes each word and exits
+  1 if the array drifts. `step`, `key`, `len`, `range` are on it and fail as parameters AND as
+  locals; `type`, `proc`, `result`, `enum`, `and`, `or`, `div` are NOT. Never extend or shorten
+  the array by hand; run the generator.
 - A `local` variable cannot be initialised from a parameter of the same function.
   Declare with a constant, then assign in `begin`.
-- `key`, `len` and `line` are taken by the language and library. Choose other names.  (The first bullet of this list is the generated, measured set.)
+- `key`, `len` and `line` are taken by the language and library. Choose other names.
   So is `sum` — and a result variable that collides with a library function is worse than a
   warning, the whole declaration silently fails (`DECL_FAILED` after a `NO_MATCH`).
 - A `func` with a `result` clause **assigns** its result variable; Seed7 returns it
   implicitly. Writing `res := x; return res;` does not match at analysis time, and a bare
   `return` in a `proc` raises `PROC_EXPECTED`. `is return expr;` is the other correct form.
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
-  Tab inside a literal is `\9;`. A char literal cannot hold the escape character
-  (`'\'` does not parse — the escape eats the closing quote): write `chr(92)` and name it.
-  `doc_store.BACKSLASH` is that name.
+  Tab inside a literal is `\9;`. A char literal cannot hold the escape character or a quote
+  the way you expect: `'\'` does not parse — the escape eats the closing quote. Use
+  `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  The quote character is written `'''` — open, the quote as content, close — and `''''` is
+  the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
+  before coding to it.
 - At statement level `<&` writes to the output stream; assignment is `&:=`. Worse,
   `A <& B < C` parses as a *comparison* and quietly yields `FALSE` — which is how a
   capabilities payload once shipped `{"capabilities":FALSE}`. Compose JSON with
@@ -100,8 +100,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `str(ch)` DOES work — `str(chr(128512))` returns a one-character string, and `chr(n)` is how a
   code point becomes text. What fails is `string(ch)` and concatenating a char (`ch & ""`,
   `"" & ch`, even `chr(195) & chr(165)`): none match. Slicing the source (`stri[i .. i]`) is still
-  what `jsonw.sd7` does, but it is a choice, not a necessity. This line said "no char-to-string
-  conversion" and cost a wasted attempt building M5's surrogate joiner.
+  what `jsonw.sd7` does, but it is a choice, not a necessity.
 - `writeln` and `write` take exactly ONE argument. `writeln("a=", n)` does not match — compose the
   line with `<&` and `str()` first. An argument list that fails to match inside `main` reports
   only "Declaration of main failed", which reads like a broken body.
@@ -110,35 +109,28 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   because of this; `readln` and `getl` are the safe reads.
 - A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
   block, so a brace-form array declaration fails somewhere far away in the error tree.
-- `x not in arr` does not parse when `x` is a struct-field select (`syms[i].sign not in
+- `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
+  match for any `k` and any `array` type — `in` has no array overload. It does not parse
+  either when the left side is a struct-field select (`syms[i].sign not in
   shown`); `analysis.listed()` exists because of it.
 - Declare before use: a `func` cannot call a helper defined later in the file, so the small
   total wrappers in `analysis.sd7` sit above the walker that uses them.
 - Seed7's `and`/`or` short-circuit, but a long `or`/`and` chain of parenthesised
   comparisons can fail to *match* — split the predicate into small `const func boolean:`
   one-liners (see `doc_store.isAlpha`/`isDigit`/`nameChar`).
-- A char literal cannot hold the escape character or a quote the way you expect: `'\'` does
-  not parse. Use `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
-  The quote character is written `'''` — open, the quote as content, close — and `''''` is
-  the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
-  before coding to it; two of this session's test fixtures were wrong because I guessed.
 - `stri` is not a type name; the type is `string`. `var stri: text is ""` fails with
   "Match for {var stri : text is {"" } } failed".
 - `NULL_FILE` does not exist; the null file constant is `STD_NULL`.
 - `gets(<utf8 file>, -1)` raises `RANGE_ERROR` at `ut8_rtl.c(586)`; a `readln` loop reads
   the same file. Relevant to R-F10, which needs to read a file from disk.
-- `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
-  match for any `k` and any `array` type. The existing `x not in arr` entry names the
-  struct-field-select case; the broader rule is that `in` has no array overload.
 - A slice whose low bound exceeds its high bound is the **empty string, silently** —
   `text[3 .. 2]` has length 0. So "I deleted this bounds guard and every suite stayed
   green" proves the guard is *harmless to remove*, never that its `FALSE` branch is
-  unreachable; `scan.maskOf`'s gap guard is exactly that case, and its `FALSE` branch is
-  ordinary adjacency (`(b`), firing more often than `TRUE` on `a := (b) + c[1];`.
+  unreachable — `scan.maskOf`'s gap guard is that case, and its `FALSE` branch fires more often
+  than its `TRUE` one (*Seed7 traps — the bounds-guard case* in `docs/seed7-cli.md`).
 - `main` takes **no parameter** here. A parameterised `main` (probed with both
   `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
-  missing`, exit 0, and the probe silently never ran — which is how one fuzz of mine
-  reported a result it had not computed. The idiom the standard library uses is a plain
+  missing`, exit 0, and the probe silently never ran. The idiom the standard library uses is a plain
   `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
 
 ## Invariants — a violation is a defect, not a style preference
@@ -205,24 +197,16 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `lspRangeBytes` and nothing else does. Consequence: `[col, col+1]` marks the character
   *after* the token for `EXPECTED_SYMBOL` and the illegal-character class, and inside the
   escape for `ILLEGAL_STRING_ESCAPE`. Pinned by three checks in
-  `tests/analysis_test.sd7`, each carrying the raw error count, the kind, the line
-  and the message beside the column: `Illegal string escape "\z"` reports column 26 both after
-  `"ππ"` (the `z` there is the 24th character) and after one astral character (there it is
-  the 23rd); and the first diagnostic on `    writeln(1) writeln(2);` — **with its
-  four-space indent**, the byte arithmetic is not the same without it — is
-  `EXPECTED_SYMBOL` at line 4 column 23, one byte past a `writeln` spanning bytes 16-22.
-  Change the interpreter's convention and those checks go red.
+  `tests/analysis_test.sd7`; change the interpreter's convention and those checks go red.
+  Their columns and fixtures: *Protocol decisions — the analyzer-column derivation* in
+  `docs/seed7-cli.md`. Re-measure from there before you restate a number.
 - `rename` refuses when the declaration line holds more than one record of the name. Seed7 lets a
   parameter share its routine's name, and the index has no column for a declaration, so choosing by
-  line would sometimes rewrite the wrong symbol. Measured cost: it also refuses a legal rename of
-  `const integer: x is 1; const integer: y is x;`. Refusal on a write is the rule — do not "fix" the
+  line would sometimes rewrite the wrong symbol. Refusal on a write is the rule — do not "fix" the
   over-refusal with a column test unless regions become column-aware.
 - `rename` also refuses when the symbol's own scope window holds the same spelling written after a
-  `.' — a record field (`counter := counter + box.counter;`). Measured on `m5-review-fixes`: before
-  the arm, the cursor on that local answered six edits, two of them the field access, and the
-  field's declaration sits outside the window, so the write renames the field's uses and leaves the
-  field — a file that no longer compiles, silently. The flag is `occurrence.dotPrev`, stamped in
-  `occurrencesOf` (the only pass that knows the previous token), and the predicate is
+  `.' — a record field (`counter := counter + box.counter;`). The flag is `occurrence.dotPrev`,
+  stamped in `occurrencesOf` (the only pass that knows the previous token), and the predicate is
   `occurrences.scopeHasFieldAccess`, which applies scope: a field access in another routine must
   not refuse this one's rename, and `features_test.sd7` pins that control. Measured cost: a
   **global** refuses on a field access anywhere in its file, because a global's window is the whole
@@ -237,16 +221,15 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
   The scanner decides, because it knows whether it is inside a number token.
-  `lib/aes.s7i` has 691 lines with based literals, so this is not theoretical.
 
 ## Do not "fix" these
 
 - Analysis executes the analysed code. It is a property of using the interpreter as the
   parser, not a bug to route around — see the README's security section, which is the
-  single source of truth for it. The M3 answer is a trust gate, not stderr scraping. Compiling
-  is not an escape either: `s7c` produces its call-code by running that same analyze phase
-  (<https://seed7.net/faq.htm#compile>), so there is no second front end to hide behind and no
-  build flag that makes analysis inert.
+  single source of truth for it, including why compiling is not an escape: `s7c` produces its
+  call-code by running that same analyze phase, so there is no second front end to hide behind
+  and no build flag that makes analysis inert. The M3 answer is a trust gate, not stderr
+  scraping.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
   scheduled for M3 and split into its own plan, so it is still open.
@@ -261,32 +244,20 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 ## Milestones
 
-M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
-(documentSymbol, definition, hover, completion, signatureHelp), and M4's scanner and
-token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
-selectionRange, semanticTokens, one-analysis-per-version) are merged, and M5's cross-reference
-features (`occurrences.sd7`, references, file-local `prepareRename`/`rename`) are merged on
-`m5-references-and-rename`. Still open from M3: the trust gate, local-variable
-completion, and R-F10 — which is a conformance violation as well as stale data, because
-`textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
-not read a document's content through its uri.
+`workspace/symbol` and project-wide rename are M6: they need an index of files the editor
+never opened, and with them the staleness and watching questions R-F10 already show are not
+free. What is merged, and what is still open from M3 (the trust gate, local-variable
+completion, R-F10), is `README.md`'s *What works* / *What does not work yet*; the M1–M5 record,
+with its measurements, is *Milestones* in `docs/seed7-cli.md`. The rules that live nowhere
+else:
 
-M5's `occurrences.sd7` is the only use-site index, and it is lexical by necessity, not by
-choice: re-measured in M5, reflection still yields declarations only — `body()` answers
-`CALLOBJECT` and `getValue(b, attr reference)` fails to match, so there is no use-site walk.
-`resolveBinding` decides whose name a token is (a routine's own locals come from
-`analysis.sd7`'s scope records, whose cost is measured: filling every library record would add
-7–10 ms per analysis) and `inScope` is the ONLY place scope is applied. Two refusals are
-invariants of the write path, not preferences: an unprovable binding and `scopeUncertain`
-(a nested routine's locals, or a one-line routine's absent region, mean the scope cannot be
-seen) both make `rename` answer `null` rather than guess — over-inclusive on a read,
-refusal on a write. `workspace/symbol` and project-wide rename are M6: they need an index of
-files the editor never opened, and with them the staleness and watching questions R-F10 already
-show are not free.
-
-M4's `scan.sd7` is the server's only lexical machine; `doc_store.codeText` is a
-projection of it. A token's UTF-16 column is carried forward incrementally by `nextToken`
-(`scan.sd7:95` advances `cur.col16` by `utf16CharLength(ch)` per character and `:291`
-stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a whole
-document is O(document), not O(document × tokens). The reflection API yields declarations
-only, never use sites, which is why references and rename stay M5.
+- `occurrences.sd7` is the only use-site index, and it is lexical by necessity, not by
+  choice: the reflection API yields declarations only, never use sites. `resolveBinding`
+  decides whose name a token is, and `inScope` is the ONLY place scope is applied
+  (invariant 6).
+- Two refusals are invariants of the write path, not preferences: an unprovable binding and
+  `scopeUncertain` (a nested routine's locals, or a one-line routine's absent region, mean the
+  scope cannot be seen) both make `rename` answer `null` rather than guess — over-inclusive on
+  a read, refusal on a write.
+- `scan.sd7` is the server's only lexical machine; `doc_store.codeText` is a projection of
+  it, and one analysis per version is the cost rule that goes with it.
