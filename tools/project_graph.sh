@@ -63,8 +63,8 @@ METHOD_RE='msg\.method = "[^"]+"'
 # number, so the generator and the suite cannot drift). A ceiling exists because the graph is only a
 # saving while it is smaller than the reads it replaces: it stands in for walking 28 modules, the 75
 # client->server methods and the 21 suites, and once it costs more to read than that walk it is just
-# another file to grep. Measured 2026-10-17 at 9 238 bytes / 139 lines for the whole artifact: 7 552
-# through `## reconciliation' plus 1 686 for the suite map. Rounded UP to the next 512 so a
+# another file to grep. Measured 2026-10-17 at 9 426 bytes / 139 lines for the whole artifact: 7 552
+# through `## reconciliation' plus 1 686 for the suite map, plus the 188-byte header clause `e31ad02' added. Rounded UP to the next 512 so a
 # legitimate one-row addition does not redden the suite. The generator does not enforce it: `make
 # graph' writes what the tree says, the suite judges the size.
 MAX_GRAPH_BYTES=9728
