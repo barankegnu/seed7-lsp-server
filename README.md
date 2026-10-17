@@ -130,12 +130,13 @@ uses this rule is `lspWholeLine`.
 
 `workspace/symbol`, project-wide rename and anything else needing an index of files the
 editor never opened (M6, unscheduled), nested and local `documentSymbol` hierarchy,
-completion of local variables,
 completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
 staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not
-be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)), `utf-8` position negotiation, `workspace/configuration`, and
+be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)),
+`utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` at
+`src/lsp_server.sd7:125` and honours no client preference), `workspace/configuration`, and
 Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
 editors display as "no data" rather than as a failure — and a capability is advertised
 only once its method is answered.

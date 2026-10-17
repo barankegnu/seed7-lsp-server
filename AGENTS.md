@@ -79,7 +79,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `&` concatenates strings and rejects an integer; use `str(n)`. `startsWith`, not
   `beginsWith`; `length`, not `strlen`; `pos(a, b) <> 0` for containment;
   `integer(stri)` and `integer(stri, base)` to parse.
-- The catchable exceptions are the 14 in `seed7_05.s7i:277-291`. `SIZE_ERROR` does not
+- The catchable exceptions are the 14 in `seed7_05.s7i:280-294`. `SIZE_ERROR` does not
   exist. `string(jsonValue)` on a non-string raises `ILLEGAL_ACTION`, so switch on
   `category(v)` instead of catching.
 - `hash [k] v` needs a named type: `const type: h is hash [k] v;`, empty value
@@ -217,7 +217,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   and `UNCLOSED_COMMENT` arrive with 0, and `UNCLOSED_COMMENT` carries the line the
   comment *opened*. Ask `lspRangeBytes` for an absurd column and let it clamp.
 - `errorType` has 67 identifiers in the interpreter's C enum; the 14 catchable
-  `EXCEPTION`s in `seed7_05.s7i:277-291` are a different set (15 names, one of them
+  `EXCEPTION`s in `seed7_05.s7i:280-294` are a different set (15 names, one of them
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
   The scanner decides, because it knows whether it is inside a number token.

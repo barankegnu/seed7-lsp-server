@@ -325,11 +325,26 @@ document is O(document), not O(document × tokens). The reflection API yields de
 only, never use sites, which is why references and rename stay M5.
 ```
 
-## Open citation defect, noted not fixed
+## Citation defect, counted and closed
 
-AGENTS.md cites the catchable exceptions at seed7_05.s7i:277-291, and repeats that range in
-Protocol decisions. The Background section of
-docs/superpowers/plans/2026-10-16-project-graph-and-agents-layering.md records that in 5.4.10
-the enum sits at 280-294 (lib/seed7_05.s7i, counted) and leaves the correction to Task 7 of
-that plan. Nothing here adopts the alternative line range, and nothing here re-verifies it:
-the rules file keeps the existing citation until somebody counts in this checkout.
+AGENTS.md put the catchable exceptions at lines 277-291 of `lib/seed7_05.s7i` and repeated that
+range in Protocol decisions. The Background section of
+docs/superpowers/plans/2026-10-16-project-graph-and-agents-layering.md said 280-294 for 5.4.10 and
+left the correction to Task 7, which counted it in this checkout. Both AGENTS.md places now carry
+the counted range, and the frozen token in `tools/agents_required.txt` was substituted, not added
+to beside the stale one.
+
+The commands, run here against the installed interpreter. `grep -n 'type: EXCEPTION'` gives the
+type declaration at 256; `grep -n '^const EXCEPTION: ' | sed -n '1p;$p'` gives 280 `OKAY_NO_ERROR`
+and 294 `IN_ERROR`; `grep -c` on that pattern gives 15 names, so 14 catchable. Do NOT anchor on
+`EXCEPTION is newtype` with single spaces: the declaration is padded (`EXCEPTION      is newtype`),
+so that grep prints nothing and exits 1, which reads exactly like an enum that moved. An empty grep
+is a bad anchor, not a result.
+
+The masking is the finding worth keeping. While this section still carried the old range it was the
+only file in the gate's union holding it, so `tools/agents_gate.sh` printed `agents: 44 checks, 0
+failed` AFTER AGENTS.md had been corrected and BEFORE the list entry was substituted: the defect
+record was satisfying the check meant to catch the defect. A file that documents a wrong citation
+can prop up the net that guards it. So this section names both ranges without the `seed7_05.s7i:`
+prefix, which leaves AGENTS.md the only file that can satisfy the token -- a citation dropped or
+made stale there now prints MISSING.

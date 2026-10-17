@@ -24,7 +24,7 @@ collectSyms
 profile_out
 ## Protocol decisions that are easy to undo by accident
 scan.sd7:95
-seed7_05.s7i:277-291
+seed7_05.s7i:280-294
 ## Seed7 traps
 src/analysis.sd7:333
 tests/occurrences_test
