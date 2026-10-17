@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 19 suites, every one reporting 0 failed, no editor required
+    make test          # 21 suites, every one reporting 0 failed, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -135,8 +135,8 @@ staleness (R-F10: an unsaved library edit reports a stale outline, hover and com
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not
 be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)),
-`utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` at
-`src/lsp_server.sd7:125` and honours no client preference), `workspace/configuration`, and
+`utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` in
+`src/lsp_server.sd7`'s `capabilitiesJson` and honours no client preference), `workspace/configuration`, and
 Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
 editors display as "no data" rather than as a failure — and a capability is advertised
 only once its method is answered.

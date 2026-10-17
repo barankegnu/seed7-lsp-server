@@ -137,7 +137,10 @@ cap_paths() {
 # One pass makes the rows AND the reconciliation gaps, because a gap is exactly a row whose two flags
 # disagree -- two passes would be two judgements that can drift apart.
 # `A': the dispatcher's if-chain names the method. `C': the method's spec capability path is one the
-# server writes. The comparison is the WHOLE dotted path, never its first segment: matching
+# server writes. The fourth column prints that spec path whether or not we advertise it, so the header
+# line has to say so: a fresh reader otherwise reads `- - textDocument/diagnostic diagnosticProvider'
+# as an advertised capability, which is invariant 5 backwards.
+# The comparison is the WHOLE dotted path, never its first segment: matching
 # `completionProvider.resolveProvider' against the advertised `completionProvider' reports five gaps
 # that do not exist (measured), which is invariant 5 invented out of thin air. A method with no
 # spec capability (`-', like the lifecycle traffic) is not a gap in either direction: there is no
@@ -149,7 +152,7 @@ method_inventory() {
   matched=''
   gaps_advertised=''
   gaps_answered=''
-  printf '\n## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised)\n'
+  printf '\n## methods (LSP 3.18 clientToServer|both: A = answered, C = capability advertised; the last column is the capability the SPEC requires, so a path named there is not a claim that we advertise it -- C is the only advertisement marker)\n'
   printf '\n'
   # `kind' (request | notification) is read only to reach the third column: the row format is fixed
   # by tests/graph_test.sh's anchors, which start at the two flags and name no kind.
