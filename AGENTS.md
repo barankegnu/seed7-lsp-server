@@ -68,7 +68,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
   Tab inside a literal is `\9;`. A char literal cannot hold the escape character or a quote
   the way you expect: `'\'` does not parse — the escape eats the closing quote. Use
-  `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  `chr(92)`/`chr(39)` and name them — `scan.BACKSLASH`/`scan.APOSTROPHE`.
   The quote character is written `'''` — open, the quote as content, close — and `''''` is
   the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
   before coding to it.

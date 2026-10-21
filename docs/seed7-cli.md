@@ -151,12 +151,12 @@ Char and string literals, as two separate bullets before they became one:
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
   Tab inside a literal is `\9;`. A char literal cannot hold the escape character
   (`'\'` does not parse — the escape eats the closing quote): write `chr(92)` and name it.
-  `doc_store.BACKSLASH` is that name.
+  `scan.BACKSLASH` is that name.
 ```
 
 ```
 - A char literal cannot hold the escape character or a quote the way you expect: `'\'` does
-  not parse. Use `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  not parse. Use `chr(92)`/`chr(39)` and name them — `scan.BACKSLASH`/`scan.APOSTROPHE`.
   The quote character is written `'''` — open, the quote as content, close — and `''''` is
   the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
   before coding to it; two of this session's test fixtures were wrong because I guessed.
@@ -326,6 +326,36 @@ stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a
 document is O(document), not O(document × tokens). The reflection API yields declarations
 only, never use sites, which is why references and rename stay M5.
 ```
+
+## Figures re-measured against the sibling checkouts, 2026-10-21
+
+Every figure below was restated from a fresh run of the command beside it, against the `~/seed7`
+and `~/Seed7Home` checkouts on this machine (`Seed7Home` HEAD dated the same day). The older
+numbers elsewhere in these documents are not errors — they are measurements of an earlier tree.
+
+| figure | now | command |
+|---|---|---|
+| `libraries/*.htm` declaration anchors | 3001 (2923 distinct) | `grep -ho '<a name="[^"]*"' libraries/*.htm \| wc -l` (\| `sort -u \| wc -l`) |
+| `<li><a href="libraries/` in `subject_index.htm` | 3173 (2988 with a `#`, 185 plain) | `grep -c '<li><a href="libraries/' subject_index.htm` |
+| all `<li><a` there | 3493 (320 to other dirs: 286 `manual/`, 34 `scrshots/`) | `grep -o '<li><a href="[^"]+"' subject_index.htm \| wc -l` |
+| `subject_index.htm` size | 524 628 bytes | `wc -c < subject_index.htm` |
+| `$ syntax` lines in `lib/syntax.s7i` | 194 | `grep -c '^\$ syntax' lib/syntax.s7i` |
+| distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
+| `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
+| `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
+| suite totals | 21 suites, 1040 checks: `scan` 66, `features` 186, `lsp_server` 79, `transcript` 192 | `make test` |
+
+Two measurement traps found while taking these, both of which produce a confidently wrong number:
+
+- **A case-limited character class silently undercounts the keyword set.** `"[a-z_0-9]+"` finds
+  62 entries in `src/keywords.sd7`, not 63, because one word is `fixLen`. The array is correct;
+  the regex was wrong. Count mixed-case words with `[A-Za-z_0-9]+` or verify against
+  `sh tools/keyword_gate.sh`, which re-derives the set from the interpreter itself.
+- **`find` recurses where the tool's glob does not.** `find ~/seed7/lib ~/seed7/prg -name '*.s7i'
+  -o -name '*.sd7'` reports 394 files, because `lib` holds 264 `.s7i` counting its
+  subdirectories, while `tools/corpus_scan.sh` passes `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7`
+  and so sees 342. A drift claim against that number was an artifact of the measuring command,
+  not of the checkout; re-derive a file count with the same glob the tool uses.
 
 ## Citation defect, counted and closed
 
