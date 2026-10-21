@@ -67,6 +67,10 @@ dkms.conf
 # SDD scratch (ledger, briefs, review packages)
 .superpowers
 
+# pi harness per-project state (its todo store, session scratch) -- machine-local, and it
+# regenerates on demand, so it is scratch in the same sense as the block above.
+.pi/
+
 # Python bytecode from the transcript harness
 __pycache__/
 *.pyc
