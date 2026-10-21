@@ -434,6 +434,15 @@ const proc: main is func
     projectRoots := 0 times "";
     rootsDeclared := FALSE;
     # ---- trust gate ---------------------------------------------------------
+    # A root of / alone opens the gate with no notice: pathOf gives / which matches every
+    # path, so the openness is identical to rootless, but rootsDeclared must be FALSE so the
+    # rootless notice fires.
+    msg := parseMessage(initFrame(16, ",\"rootUri\":\"file:///\""));
+    handle(msg);
+    check("a root of / does not declare roots (all-slash is rootless in effect)",
+          str(rootsDeclared), "FALSE");
+    projectRoots := 0 times "";
+    rootsDeclared := FALSE;
     # After initFrame(13) above, no workspaceFolders or rootUri was sent, so rootsDeclared
     # is FALSE and the gate is open by default.
     check("no declared roots means the gate is open",

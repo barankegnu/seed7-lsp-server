@@ -1527,6 +1527,7 @@ replies, code, err, junk = run([frame(GATE_INIT), frame(msgs[1]),
                                 frame(opened(IN_URI, BROKEN)),
                                 frame(opened(OUT_URI, BROKEN)),
                                 frame(changed(OUT_URI, BROKEN, 2)),
+                                frame(closed(OUT_URI)),
                                 frame(shutdown(2)), frame(exit_())])
 diag_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
 expect(not any(p["params"]["uri"] == OUT_URI for p in diag_notes),
@@ -1536,6 +1537,10 @@ expect("analyzed " + OUT_URI not in err,
 expect(any(r.get("method") == "window/logMessage" and "roots" in r["params"]["message"]
            for r in replies),
        "the refusal names the declared roots")
+expect(any(r.get("method") == "window/logMessage" and "roots" in r["params"]["message"]
+           and r["params"]["type"] == 3
+           for r in replies),
+       "the per-document refusal stays at Info (type 3)")
 expect(any(p["params"]["uri"] == IN_URI and p["params"]["diagnostics"]
            for p in diag_notes),
        "the inside document still gets its diagnostics")
@@ -1553,6 +1558,11 @@ expect(any(r.get("method") == "window/logMessage" and
            "no project roots" in r.get("params", {}).get("message", "")
            for r in replies),
        "a rootless client is told once that it runs unguarded")
+expect(any(r.get("method") == "window/logMessage" and
+           "no project roots" in r.get("params", {}).get("message", "") and
+           r.get("params", {}).get("type") == 2
+           for r in replies),
+       "the rootless notice is a Warning (type 2), not Info")
 rootless_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
                   and r["params"]["uri"] == OUT_URI]
 expect(bool(rootless_notes) and
