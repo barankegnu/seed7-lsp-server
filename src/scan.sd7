@@ -478,6 +478,8 @@ const func tok: tokenAt (in string: text, in integer: idx) is func
 # doc_store's contract for codeText, and this is the only place the machine that implements it
 # lives. An unclosed comment's stop is length(text), so the mask covers the rest of the buffer
 # without trusting width16 (which only spans the first line of a multi-line token).
+# &:= is STR_APPEND (grows in place); & copies its whole left side, so per-token append is
+# quadratic in document size.
 const func string: maskOf (in string: text) is func
   result
     var string: out is "";
@@ -495,23 +497,23 @@ const func string: maskOf (in string: text) is func
         tk := nextToken(text, cur);
         # FALSE is adjacency ("(b"), not an error: tokens advance monotonically
         if tk.start > copied then
-          out := out & text[copied .. pred(tk.start)];
+          out &:= text[copied .. pred(tk.start)];
         end if;
         if hiddenKind(tk.kind) then
           for i range tk.start to tk.stop do
             if text[i] = '\n' or text[i] = '\r' then
-              out := out & text[i .. i];
+              out &:= text[i .. i];
             else
-              out := out & " ";
+              out &:= " ";
             end if;
           end for;
         else
-          out := out & text[tk.start .. tk.stop];
+          out &:= text[tk.start .. tk.stop];
         end if;
         copied := succ(tk.stop);
       end if;
     end while;
     if copied <= length(text) then
-      out := out & text[copied .. length(text)];
+      out &:= text[copied .. length(text)];
     end if;
   end func;

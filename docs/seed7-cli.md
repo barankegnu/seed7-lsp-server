@@ -348,3 +348,25 @@ record was satisfying the check meant to catch the defect. A file that documents
 can prop up the net that guards it. So this section names both ranges without the `seed7_05.s7i:`
 prefix, which leaves AGENTS.md the only file that can satisfy the token -- a citation dropped or
 made stale there now prints MISSING.
+
+## Every change — the mask rebuild cost, measured
+
+`scan.maskOf` is rebuilt on every `didChange` (through `doc_store.setVersion`). Its append loop
+used `&`, which copies its whole left side per token, making it quadratic in document size. The
+rewrite to `&:=` (`STR_APPEND`, grows in place) is what makes `didChange` cheap.
+
+Profiled, optimized build: `s7c -p -O2 -l src /tmp/mask_cost.sd7` then run `/tmp/mask_cost`,
+reading `profile_out` with `awk -F'\t' '$4=="maskOf"{print $1" usecs, "$2" calls"}'`.
+The probe calls `maskOf` once on the text of `~/seed7/lib/shiftjis.s7i` (375 352 characters,
+read with a `readln` loop — `gets(f, -1)` raises `RANGE_ERROR`).
+
+Before the rewrite:
+
+    22567957 usecs, 1 calls
+
+After the rewrite:
+
+    30239 usecs, 1 calls
+
+Three orders of magnitude. The `ponytail:` lazy-fill upgrade path that lived in
+`src/doc_store.sd7`'s note is deleted: at ~30 ms over a stdlib-sized file it no longer matters.

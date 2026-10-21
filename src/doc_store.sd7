@@ -98,10 +98,9 @@ const func integer: lineUnits (in string: text, in integer: start) is func
     end while;
   end func;
 
-# ponytail: the mask is rebuilt on every didChange, and the rebuild cost is NOT measured here --
-# the figure this note carried had no command and no longer survives it. Upgrade path is a version
-# stamp plus a lazy fill, and the first person to need that number should take it with
-# `s7c -p -O2 -l src` over a stdlib-sized file, per docs/seed7-cli.md, and write it here with its command.
+# The mask is rebuilt on every didChange. Before the &:= rewrite this was ~22.6 s over 375 352 chars;
+# after it is ~30 ms (s7c -p -O2 -l src /tmp/mask_cost.sd7 over ~/seed7/lib/shiftjis.s7i, profile_out).
+# The rewrite is what makes didChange cheap; the lazy fill the ponytail note promised is no longer needed.
 const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) is func
   begin
     doc.text := text;

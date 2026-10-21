@@ -99,7 +99,7 @@ const func string: readFrameBody (inout file: source,
         # read still ends the session through `okay', and the loop must not spin on it.
         remaining := 0;
       else
-        body := body <& chunk;
+        body &:= chunk;
         remaining := remaining - utf8Length(chunk);
       end if;
     end while;
