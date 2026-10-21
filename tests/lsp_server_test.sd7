@@ -1,4 +1,5 @@
 $ include "seed7_05.s7i";
+  include "osfiles.s7i";
   include "lsp_tst.sd7";
   include "lsp_server.sd7";
 
@@ -159,6 +160,26 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     if i >= 1 and i <= length(oc) then
       out := str(oc[i].line0) <& ":" <& str(oc[i].col16);
     end if;
+  end func;
+
+# A clean .sd7 buffer with one declaration, so its outline is not empty.
+const string: CLEAN_TEXT is "$ include \"seed7_05.s7i\";\nconst proc: onlyHere is func\n  begin\n  end func;\n";
+
+const func boolean: uriInAnalysisCache (in string: uri) is
+  return uri in analysisCache;
+
+const proc: openOutside (in string: uri) is func
+  begin
+    openDocs @:= [uri] lsDoc.value;
+    setVersion(openDocs[uri], CLEAN_TEXT, 1);
+    excl(analysisCache, uri);
+  end func;
+
+const proc: openInside (in string: uri) is func
+  begin
+    openDocs @:= [uri] lsDoc.value;
+    setVersion(openDocs[uri], CLEAN_TEXT, 1);
+    excl(analysisCache, uri);
   end func;
 
 const proc: main is func
@@ -402,5 +423,51 @@ const proc: main is func
     msg := parseMessage(initFrame(13, ",\"workspace\":{\"applyEdit\":true}"));
     handle(msg);
     checkTrue("workspace.applyEdit true is read", clientCanApplyEdits);
+    # ---- trust gate ---------------------------------------------------------
+    # After initFrame(13) above, no workspaceFolders or rootUri was sent, so rootsDeclared
+    # is FALSE and the gate is open by default.
+    check("no declared roots means the gate is open",
+          str(analysable("file:///anywhere/at/all.sd7")), "TRUE");
+    # Set roots the way initialize would: one root /tmp/proj.
+    projectRoots := []("/tmp/proj");
+    rootsDeclared := TRUE;
+    check("inside the declared root: analysable",
+          str(analysable("file:///tmp/proj/src/a.sd7")), "TRUE");
+    check("outside the declared root: refused",
+          str(analysable("file:///tmp/other/b.sd7")), "FALSE");
+    check("a sibling directory of the root is refused, not half-matched",
+          str(analysable("file:///tmp/proj2/c.sd7")), "FALSE");
+    # A .s7i outside the roots: ensureAnalyzed is gated, so the driver never reads it.
+    openOutside("file:///tmp/other/lib.s7i");
+    ensureAnalyzed("file:///tmp/other/lib.s7i");
+    check("a .s7i outside the roots is never analysed, so the driver never reads it",
+          str(uriInAnalysisCache("file:///tmp/other/lib.s7i")), "FALSE");
+    # A .s7i inside the roots: the driver reads it from disk and the cache fills.
+    block
+      makeDir("/tmp/proj");
+    exception
+      catch FILE_ERROR: noop;  # already exists from a previous run
+    end block;
+    libDoc := open("/tmp/proj/lib.s7i", "w");
+    write(libDoc, libText());
+    close(libDoc);
+    openInside("file:///tmp/proj/lib.s7i");
+    ensureAnalyzed("file:///tmp/proj/lib.s7i");
+    check("a .s7i INSIDE the roots is analysed, so the check above is not vacuous",
+          str(uriInAnalysisCache("file:///tmp/proj/lib.s7i")), "TRUE");
+    # An untrusted document's outline is empty and costs no analysis.
+    openOutside("file:///tmp/other/b.sd7");
+    check("an untrusted document's outline is empty", documentSymbolResult(
+          symbolsOfDocument("file:///tmp/other/b.sd7"), "/tmp/other/b.sd7"), "[]");
+    check("an untrusted document cost no analysis",
+          str(uriInAnalysisCache("file:///tmp/other/b.sd7")), "FALSE");
+    # A trusted document costs one analysis and has a non-empty outline.
+    openInside("file:///tmp/proj/src/a.sd7");
+    ensureAnalyzed("file:///tmp/proj/src/a.sd7");
+    check("a trusted document does cost one, and its outline is not empty",
+          str(uriInAnalysisCache("file:///tmp/proj/src/a.sd7")) <& "/" <&
+          (documentSymbolResult(symbolsOfDocument("file:///tmp/proj/src/a.sd7"),
+                                "/tmp/proj/src/a.sd7") = "[]" ? "empty" : "filled"),
+          "TRUE/filled");
     report("lsp_server");
   end func;

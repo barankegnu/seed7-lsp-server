@@ -32,6 +32,11 @@ var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
 
+# Decoded root paths the client declared at initialize, empty means none declared.
+var array string: projectRoots is 0 times "";
+# TRUE iff initialize yielded at least one usable root.
+var boolean: rootsDeclared is FALSE;
+
 # The ONE client capability this server reads, and the only reason `initialize' params are
 # consulted at all: a WorkspaceEdit is a promise only a client that declared workspace.applyEdit
 # can keep. Every other member of that payload stays unread -- that debt (the rootUri trust gate,
@@ -167,12 +172,23 @@ const func string: textToAnalyze (in string: uri) is func
 # deliberately (see `analysisCache' above for why there is no second mechanism). The
 # `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py counts, because the log is
 # the observable and no counter variable belongs in the product.
+const func boolean: analysable (in string: uri) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := not rootsDeclared or underRoot(pathOf(uri), projectRoots);
+  end func;
+
 const proc: ensureAnalyzed (in string: uri) is func
   local
     var docAnalysis: fresh is docAnalysis.value;
   begin
-    if uri in openDocs and not (uri in analysisCache) then
-      fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
+    # Scanner-backed features (foldingRange, selectionRange, semanticTokens) keep answering for
+    # an untrusted buffer: they read doc.text and cannot execute code. The hover/definition/
+    # outline/rename family answers from an empty symbol list instead.
+    if analysable(uri) then
+      if uri in openDocs and not (uri in analysisCache) then
+        fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
       # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
       # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
       # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
@@ -181,6 +197,7 @@ const proc: ensureAnalyzed (in string: uri) is func
       analysisCache @:= [uri] fresh;
       note("analyzed " <& uri <& " version " <& str(openDocs[uri].version) <&
            " records " <& str(length(fresh.syms)));
+      end if;
     end if;
   end func;
 
@@ -240,9 +257,13 @@ const proc: refresh (in string: uri) is func
     var analysisResult: a is analysisResult.value;
     var array lspDiag: mapped is 0 times lspDiag.value;
   begin
-    a := analyzeDocument(uri);
-    mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
-    publish(uri, openDocs[uri], mapped);
+    # Returning early for an untrusted uri: publishing an empty diagnostics list would claim
+    # a clean document, which is the class of lie the spec's §4 already refuses for parseStri.
+    if analysable(uri) then
+      a := analyzeDocument(uri);
+      mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
+      publish(uri, openDocs[uri], mapped);
+    end if;
   end func;
 
 const proc: handleChange (in rpcMsg: msg) is func
@@ -284,12 +305,38 @@ const proc: handle (in rpcMsg: msg) is func
     var prepareAnswer: prep is prepareAnswer.value;
     var renameAnswer: ren is renameAnswer.value;
     var string: newName is "";
+    var jsonValue: folders is jsonValue.value;
+    var jsonValue: rootUriVal is jsonValue.value;
+    var string: rootPath is "";
+    var integer: fi is 0;
+    var array string: collected is 0 times "";
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
       # atKey answers NULL for a missing `workspace' and boolAt falls back for a missing key or a
       # non-boolean value, so the boolean true is the only input that raises the flag.
       clientCanApplyEdits := boolAt(atKey(msg.params, "workspace"), "applyEdit", FALSE);
+      # Trust gate: collect the project roots the client declared. workspaceFolders is an
+      # array of {uri} objects; rootUri is the single-folder fallback. An empty string is
+      # skipped, never fatal.
+      collected := 0 times "";
+      folders := atKey(msg.params, "workspaceFolders");
+      rootUriVal := atKey(msg.params, "rootUri");
+      if category(folders) = JSON_ARRAY and length(folders) <> 0 then
+        for fi range 1 to length(folders) do
+          rootPath := pathOf(strAt(itemAt(folders, fi), "uri", ""));
+          if rootPath <> "" then
+            collected &:= rootPath;
+          end if;
+        end for;
+      elsif category(rootUriVal) = JSON_STRING then
+        rootPath := pathOf(string(rootUriVal));
+        if rootPath <> "" then
+          collected &:= rootPath;
+        end if;
+      end if;
+      projectRoots := collected;
+      rootsDeclared := length(collected) <> 0;
       sendResult(msg.id, initializeResultJson);
     elsif msg.method = "initialized" then
     elsif msg.method = "$/setTrace" then
@@ -312,7 +359,11 @@ const proc: handle (in rpcMsg: msg) is func
         # A didOpen with no didClose in between is another frame a client must not send and this
         # server answers. The document was just replaced, whatever its version number says.
         excl(analysisCache, uri);
-        refresh(uri);
+        if not analysable(uri) then
+          logMessage("refusing to analyse " <& uri <& ": it is outside the project roots this client declared");
+        else
+          refresh(uri);
+        end if;
       end if;
     elsif msg.method = "textDocument/documentSymbol" then
       uri := uriOfRequest(msg);

@@ -10,7 +10,7 @@ doc_index.sd7                 150  +stdlib: osfiles.s7i
 doc_store.sd7                 341  scan.sd7 utf8bytes.sd7
 jsonw.sd7                     135  utf8bytes.sd7
 keywords.sd7                   73
-lsp_server.sd7                461  analysis.sd7 diagnostics.sd7 doc_store.sd7 features/completion.sd7 features/definition.sd7 features/document_symbol.sd7 features/folding_range.sd7 features/hover.sd7 features/prepare_rename.sd7 features/references.sd7 features/rename.sd7 features/selection_range.sd7 features/semantic_tokens.sd7 features/signature_help.sd7 rpc.sd7 transport.sd7 uris.sd7 +stdlib: stdio.s7i utf8.s7i
+lsp_server.sd7                512  analysis.sd7 diagnostics.sd7 doc_store.sd7 features/completion.sd7 features/definition.sd7 features/document_symbol.sd7 features/folding_range.sd7 features/hover.sd7 features/prepare_rename.sd7 features/references.sd7 features/rename.sd7 features/selection_range.sd7 features/semantic_tokens.sd7 features/signature_help.sd7 rpc.sd7 transport.sd7 uris.sd7 +stdlib: stdio.s7i utf8.s7i
 lsp_tst.sd7                    35  +stdlib: stdio.s7i
 main.sd7                       51  lsp_server.sd7
 occurrences.sd7               558  analysis.sd7 blocks.sd7 keywords.sd7 scan.sd7
