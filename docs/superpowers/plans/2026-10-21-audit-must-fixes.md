@@ -47,7 +47,7 @@ The spec is silent on these five inputs; each line is pinned by the named task.
 1. **No root declared at all** (`rootUri: null`, no `workspaceFolders`) — a reasonable client (single-file editing) must still get diagnostics, and must be told once that it is running unguarded. → Task 3, Step 1.
 2. **A root that is a string-prefix of another directory** (`/tmp/root` vs `/tmp/root2/x.sd7`) — must not match, or the gate is a prefix joke. → Task 2, Step 1.
 3. **A percent-encoded root uri** (`file:///tmp/my%20dir`) vs a decoded document path — must match, because `pathOf` already decodes. → Task 2, Step 1.
-4. **A request against an untrusted document** — hover/definition/outline answer their ordinary "nothing here" shapes, `references` answers `null`, `rename` answers `null` (never an error, per spec 12.1), and no `analyzed` line ever appears on stderr for that uri. → Task 3 and Task 4.
+4. **A request against an untrusted document** — hover/definition/outline answer their ordinary "nothing here" shapes; `references` does NOT answer `null` but returns the text occurrences with `unresolved` TRUE and its disclosure (spec 12.2: a read may over-include provided it says so); `rename` answers `null` (never an error, per spec 12.1); and no `analyzed` line ever appears on stderr for that uri. → Task 3 and Task 4, and the shipped shape is pinned in `tests/lsp_server_test.sd7`.
 5. **The `&:=` rewrite on a document whose hidden text spans lines and holds an astral character** — the mask must still be the same length as the text with every newline kept. → Task 1, Step 1.
 
 ---
