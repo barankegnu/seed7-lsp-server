@@ -132,9 +132,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
   missing`, exit 0, and the probe silently never ran. The idiom the standard library uses is a plain
   `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
-- `&` copies its whole left side, so a per-token append (`s &:= token` in a loop) is quadratic.
+- `&` copies its whole left side, so a per-token append (`s := s & token` in a loop) is quadratic.
   `&:=` is the in-place `STR_APPEND` — it grows the buffer, so the cost is amortised linear. The
-  evidence and the measured ratio live in *Every change — measurement provenance* in `docs/seed7-cli.md`.
+  evidence and the measured ratio live in *Every change — the mask rebuild cost, measured* in `docs/seed7-cli.md`.
 
 ## Invariants — a violation is a defect, not a style preference
 

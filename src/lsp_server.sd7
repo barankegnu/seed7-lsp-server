@@ -168,6 +168,8 @@ const func string: textToAnalyze (in string: uri) is func
 
 # TRUE for a root that narrows the gate: non-empty and not all slashes (a root of /
 # strips to empty inside underRoot and matches every path, so it is rootless in effect).
+# A mixed list keeps only the narrowing roots — declaring / alongside another root does
+# not open everything; the narrower result still refuses paths outside the surviving root.
 const func boolean: usableRoot (in string: p) is func
   result
     var boolean: out is FALSE;

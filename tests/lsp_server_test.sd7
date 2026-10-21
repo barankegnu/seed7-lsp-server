@@ -496,6 +496,16 @@ const proc: main is func
           (documentSymbolResult(symbolsOfDocument("file:///tmp/seed7_lsp_proj/src/a.sd7"),
                                 "/tmp/seed7_lsp_proj/src/a.sd7") = "[]" ? "empty" : "filled"),
           "TRUE/filled");
+    # Mixed workspaceFolders root list with / and a real root: usableRoot discards the slash,
+    # so rootsDeclared stays TRUE (no rootless notice) but the surviving root narrows the gate.
+    msg := parseMessage(initFrame(17, ",\"workspaceFolders\":[{\"uri\":\"file:///\"},{\"uri\":\"file:///tmp/seed7_lsp_proj\"}]"));
+    handle(msg);
+    check("mixed root list with / keeps rootsDeclared (no rootless notice)",
+          str(rootsDeclared), "TRUE");
+    check("mixed root list: path inside surviving root is analysable",
+          str(analysable("file:///tmp/seed7_lsp_proj/src/a.sd7")), "TRUE");
+    check("mixed root list: outside-path is refused (the narrow result)",
+          str(analysable("file:///etc/passwd")), "FALSE");
     # Restore the gate state so no later check silently runs behind a closed gate.
     projectRoots := 0 times "";
     rootsDeclared := FALSE;
