@@ -144,10 +144,10 @@ Append six checks to `tests/uris_test.sd7` before `report("uris")` — the file'
     check("a sibling whose name starts with the root is NOT under it",
           str(underRoot("/tmp/root2/a.sd7", []("/tmp/root"))), "FALSE");
     check("no roots means nothing is contained",
-          str(underRoot("/tmp/root/a.sd7", [](""))), "FALSE");
+          str(underRoot("/tmp/root/a.sd7", 0 times "")), "FALSE");
 ```
 
-Add one more, Review Focus 3: `pathOf("file:///tmp/my%20dir/a.sd7")` fed through `underRoot` against `[]("/tmp/my dir")` must answer `TRUE` — the predicate compares decoded strings, and this is the check that keeps Task 3 from percent-decoding one side only.
+Add one more, Review Focus 3: `pathOf("file:///tmp/my%20dir/a.sd7")` fed through `underRoot` against `[]("/tmp/my dir")` must answer `TRUE` — the predicate compares decoded strings, and this is the check that keeps Task 3 from percent-decoding one side only. (The empty-roots check uses `0 times ""`, not `[]("")`: a one-element array holding the empty string is a *root of ""*, and `startsWith(path, "" & "/")` would match every absolute path — which is why `underRoot` skips an empty root rather than matching on it, and Task 3's capture skips empty strings too.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -171,7 +171,8 @@ Expected: FAIL on "a sibling whose name starts with the root is NOT under it" �
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/uris.sd7 tests/uris_test.sd7
+make graph
+git add src/uris.sd7 tests/uris_test.sd7 docs/PROJECT_GRAPH.md
 git commit -m "uris.underRoot: containment on decoded paths, one rule one place"
 ```
 
@@ -235,7 +236,13 @@ Expected: the file does not analyse (`analysable` undefined) → no graded line 
 
 `initialize` branch, beside the existing `clientCanApplyEdits` read: take `workspaceFolders` first (a JSON array of objects each with `uri`), else `rootUri`; push every `pathOf(...)` result onto `projectRoots`, and set `rootsDeclared := TRUE` only if at least one survived. A non-array `workspaceFolders`, a missing `uri`, or an empty string is skipped, never fatal.
 
-Gate at the single analysis point: in `ensureAnalyzed`, wrap the `fresh := analyzeAll(...)` / cache-fill / `note` block in `if analysable(uri) then`. `refresh` returns early for a non-`analysable` uri — publishing an empty diagnostics list would claim a clean document, which is the class of lie the spec's §4 already refuses for `parseStri`. The `didOpen` branch keeps storing the document (so `didClose` and later trust decisions work) and, when `not analysable(uri)`, sends exactly one `logMessage` naming the uri and the roots that were declared, so the client is told once per document and not once per keystroke. Keep it `MSG_INFO`: this is information, and `logMessage` is the channel that already exists.
+Gate at the single analysis point: in `ensureAnalyzed`, wrap the `fresh := analyzeAll(...)` / cache-fill / `note` block in `if analysable(uri) then`. `refresh` returns early for a non-`analysable` uri — publishing an empty diagnostics list would claim a clean document, which is the class of lie the spec's §4 already refuses for `parseStri`. The `didOpen` branch keeps storing the document (so `didClose` and later trust decisions work) and, when `not analysable(uri)`, sends exactly one `logMessage` so the client is told once per document and not once per keystroke — and the sentence is pinned, because Task 4's wire check greps it for the word `roots`:
+
+```seed7
+      "refusing to analyse " <& uri <& ": it is outside the project roots this client declared"
+```
+
+Keep it `MSG_INFO`: this is information, and `logMessage` is the channel that already exists.
 
 Leave the scanner-backed features alone: `foldingRange`, `selectionRange` and `semanticTokens` read `doc.text` and cannot execute anything, so they keep answering for an untrusted buffer, and the hover/definition/outline/rename family answers from an empty symbol list. One comment at `ensureAnalyzed` says that in two lines, because the next reader will ask why some features work outside the roots.
 
@@ -252,7 +259,8 @@ Expected: FAIL on "outside the declared root: refused", "an untrusted document c
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/lsp_server.sd7 tests/lsp_server_test.sd7
+make graph
+git add src/lsp_server.sd7 tests/lsp_server_test.sd7 docs/PROJECT_GRAPH.md
 git commit -m "trust gate: analyse only inside the roots initialize declared"
 ```
 
