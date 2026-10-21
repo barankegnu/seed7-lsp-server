@@ -114,6 +114,15 @@ you run by hand to find a crash, not for a session. To trace a running server, b
 `-O3 -flto -oc3 -w2 -e -g-debug_c -p -tfs` — verified clean — and remember `profile_out` appears in
 its cwd.
 
+What each build leaves behind, measured: the release line leaves only `src/main`; the debug line
+also keeps `src/tmp_main.c` (5 030 213 bytes), because `-g-debug_c` points the debug information at
+the generated C and s7c does not delete the file it refers to. Both are gitignored and
+`make clean-build` removes them together with `profile_out`. `make build`, `make build-debug` and
+`make clean-build` are these two lines in the Makefile; `make build-debug` uses the `-tfs` form
+above, so a traced server is buildable without ever putting a byte on the protocol channel —
+verified the same way: 3 frames, `hoverProvider` present, Error diagnostic published, `-> main`
+trace lines on stderr only.
+
 ---
 
 # AGENTS.md provenance

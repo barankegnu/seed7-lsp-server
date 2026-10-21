@@ -1,5 +1,15 @@
 S7      ?= s7
+S7C     ?= s7c
 SRC     := src
+# The two compiled builds. The release line is the one that may serve. The debug line as handed
+# down ends in -tefs; every flag in it is documented in ~/seed7/doc/s7c.1 (`-t` takes the letters
+# e f s, one per option, and the combination is theirs, not the man page's) -- but -te prints every
+# CAUGHT exception to stdout, and rpc.sd7's atKey raises and catches INDEX_ERROR/ILLEGAL_ACTION on
+# the request path by design, so a -te server writes non-frame bytes into the LSP stream. Bisected
+# and measured; per-flag meanings and the evidence live in "Build -- the two flag sets" in
+# docs/seed7-cli.md, so build-debug traces with -tfs instead.
+RELEASE_FLAGS := -O3 -flto -oc3 -w2
+DEBUG_FLAGS   := $(RELEASE_FLAGS) -e -g-debug_c -p -tfs
 # A suite that fails to analyse prints nothing on stdout and still exits 0, so a recipe
 # must grade the suite's own total line, never s7's status. The name class admits digits
 # because src/utf8bytes.sd7 is a module named with one: with [a-z_]+ the recipe could
@@ -13,7 +23,7 @@ TESTS   := jsonw uris utf8bytes scan occurrences keywords blocks folding selecti
 # so a suite can silently stop running while `make test` prints green lines (ledger R1).
 TESTS_SH := agents graph
 
-.PHONY: test graph server $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
+.PHONY: test graph server build build-debug clean-build $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
 
 test: $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
 
@@ -42,3 +52,23 @@ graph:
 
 server:
 	@$(S7) -q -l $(SRC) $(SRC)/main.sd7
+
+# s7c has no -o, so the executable lands beside its source: src/main. Both that and the
+# -g-debug_c temporary C that build-debug leaves (src/tmp_main.c, ~5 MB) are gitignored, and
+# clean-build exists because `git status --porcelain -uall' must be empty after any build -- an
+# untracked file also disqualifies the checkout as an isolated worktree, and a broad `git add -A'
+# would otherwise commit a 5 MB generated file.
+build:
+	@$(S7C) $(RELEASE_FLAGS) -l $(SRC) $(SRC)/main.sd7
+	@echo "built $(SRC)/main -- run it with ./$(SRC)/main"
+
+# -p writes profile_out in the CURRENT directory when the program finishes, and -g-debug_c keeps
+# the generated C beside the source, so this recipe says where both land rather than leaving the
+# reader to look for them.
+build-debug:
+	@$(S7C) $(DEBUG_FLAGS) -l $(SRC) $(SRC)/main.sd7
+	@echo "built $(SRC)/main (profiling: profile_out lands in the cwd on exit; $(SRC)/tmp_main.c stays)"
+
+clean-build:
+	@rm -f $(SRC)/main $(SRC)/tmp_*.c profile_out
+	@echo "removed $(SRC)/main, $(SRC)/tmp_*.c and profile_out"

@@ -53,11 +53,13 @@ diagnostics of the server itself go to stderr; the LSP stream is stdout.
 To run it compiled instead — same protocol, measured to build in about 7 s and to answer
 `initialize`, `didOpen` and `shutdown` with only frames on stdout:
 
-    s7c -O3 -flto -oc3 -w2 -l src src/main.sd7 && ./src/main
+    make build && ./src/main
 
-Do not add `-te`, or `-tefs`, to that line: it puts caught-exception traces on stdout, and
-this server catches exceptions on the request path by design. The flag sets and the
-measurement are in *Build — the two flag sets* in `docs/seed7-cli.md`.
+Do not add `-te`, or `-tefs`, to that build: it puts caught-exception traces on stdout, and
+this server catches exceptions on the request path by design. `make build-debug` is the traced
+variant, safe because it traces with `-tfs`; `make clean-build` removes the artifacts either one
+leaves in `src/`. The flag sets and the measurements are in *Build — the two flag sets* in
+`docs/seed7-cli.md`.
 
 * **Emacs (eglot)** — real API, works today:
 
