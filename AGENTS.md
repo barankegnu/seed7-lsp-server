@@ -228,8 +228,10 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   parser, not a bug to route around — see the README's security section, which is the
   single source of truth for it, including why compiling is not an escape: `s7c` produces its
   call-code by running that same analyze phase, so there is no second front end to hide behind
-  and no build flag that makes analysis inert. The M3 answer is a trust gate, not stderr
-  scraping.
+  and no build flag that makes analysis inert. The M3 trust gate now ships: `analysable`
+  gates `ensureAnalyzed` and `refresh` by path containment on decoded paths, and a client
+  that declares no root runs unguarded. It is a containment control, not a sandbox —
+  analysis still executes code inside the roots.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
   scheduled for M3 and split into its own plan, so it is still open.
@@ -246,7 +248,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 `workspace/symbol` and project-wide rename are M6: they need an index of files the editor
 never opened, and with them the staleness and watching questions R-F10 already show are not
-free. What is merged, and what is still open from M3 (the trust gate, local-variable
+free. What is merged, and what is still open from M3 (local-variable
 completion, R-F10), is `README.md`'s *What works* / *What does not work yet*; the M1–M5 record,
 with its measurements, is *Milestones* in `docs/seed7-cli.md`. The rules that live nowhere
 else:

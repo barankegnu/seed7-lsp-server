@@ -278,7 +278,9 @@ for it; the s7c mechanism and its citation are here and in the CLI reference abo
 ```
 - Analysis executes the analysed code. It is a property of using the interpreter as the
   parser, not a bug to route around — see the README's security section, which is the
-  single source of truth for it. The M3 answer is a trust gate, not stderr scraping. Compiling
+  single source of truth for it. The M3 trust gate now ships: `analysable` gates
+  `ensureAnalyzed` and `refresh` by path containment on decoded paths, and a client that
+  declares no root runs unguarded. It is a containment control, not a sandbox. Compiling
   is not an escape either: `s7c` produces its call-code by running that same analyze phase
   (<https://seed7.net/faq.htm#compile>), so there is no second front end to hide behind and no
   build flag that makes analysis inert.
@@ -299,7 +301,7 @@ M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
 token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
 selectionRange, semanticTokens, one-analysis-per-version) are merged, and M5's cross-reference
 features (`occurrences.sd7`, references, file-local `prepareRename`/`rename`) are merged on
-`m5-references-and-rename`. Still open from M3: the trust gate, local-variable
+`m5-references-and-rename`. Still open from M3: local-variable
 completion, and R-F10 — which is a conformance violation as well as stale data, because
 `textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
 not read a document's content through its uri.

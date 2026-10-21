@@ -26,9 +26,13 @@ program to call-code" and then emits C to be built
 front end to point at a document, and no build flag that makes analysis inert.
 
 Treat opening an untrusted `.sd7` the way you would treat running it: point this server
-only at code you trust, and at one project per editor window. A trust gate (analyse only
-inside configured roots, or require an explicit acknowledgement at `initialize`) is
-planned for M3 and **not implemented**.
+only at code you trust, and at one project per editor window. A trust gate now ships: the
+server analyses only documents inside the `rootUri`/`workspaceFolders` a client declared at
+`initialize`, and an untrusted `didOpen` publishes no diagnostics and logs the reason once. A
+client that declares no root runs unguarded by design — the single-file editing this
+README recommends must not break. The gate is a *containment* control on top of the rule
+above, not a sandbox: analysis still executes code inside the roots, `s7 -a` is not a
+defence, and compiling is not an escape.
 
 Startup may also print two `Authorization required, but no authorization protocol
 specified` lines. Those come from the X11-linked Seed7 runtime, not from this server;
@@ -130,7 +134,7 @@ uses this rule is `lspWholeLine`.
 
 `workspace/symbol`, project-wide rename and anything else needing an index of files the
 editor never opened (M6, unscheduled), nested and local `documentSymbol` hierarchy,
-completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
+completion of local variables, pull diagnostics, formatting, `.s7i`
 staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not

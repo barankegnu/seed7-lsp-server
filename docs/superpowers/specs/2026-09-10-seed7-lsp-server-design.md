@@ -203,7 +203,7 @@ No editor is required to test any of this, which is the point of the module spli
 | M0 | risk spikes | done — §3/§4/§5 above are measurements, not assumptions |
 | M1 | transport + rpc + lifecycle + doc store | transcript: `initialize` answers with our capabilities; unknown method → `-32601`; request before initialize → `-32002`; `shutdown`/`exit` codes correct |
 | M2 | diagnostics | `didOpen` of a broken file publishes the expected diagnostics; a truncated file publishes none at Error severity |
-| M3 | documentSymbol + definition + hover + signatureHelp + completion | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper; signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover. **Merged on `m3` — the hover/signatureHelp/completion deliverable landed with it — except the trust gate and R-F10 (split to their own plans), and local-variable completion (follows).** |
+| M3 | documentSymbol + definition + hover + signatureHelp + completion | both work on a file that uses the stdlib, and on a `.s7i` buffer via the driver wrapper; signature text matches the declaration in the `.s7i`; `(** *)` prose appears in hover. **Merged on `m3` — the hover/signatureHelp/completion deliverable landed with it — except R-F10 (split to its own plan) and local-variable completion (follows). The trust gate shipped in `audit-fixes`: `analysable` gates `ensureAnalyzed`/`refresh` by path containment on decoded paths; a rootless client is open by design.** |
 | M4 | folding + selectionRange + semanticTokens | scanner-only, no interpreter involved |
 | M5 | occurrence index → `references`, file-local `prepareRename`/`rename` | references names every occurrence of the bound symbol in the open file, with exact columns; a rename updates that one file completely and refuses anything declared elsewhere, or whose scope it cannot see; **merged on `m5-references-and-rename`** |
 | M6 | workspace/symbol, project index, file watching | not scheduled; the analyzer answers library declarations for free, so the cost is only files the editor never opened |
@@ -218,6 +218,10 @@ No editor is required to test any of this, which is the point of the module spli
    the README, and wants a trust gate in M3 (configured roots or an explicit
    `initializationOptions` acknowledgement). Cost of ignoring it: "open a cloned repo"
    becomes "execute a cloned repo".
+   **Shipped (`audit-fixes`):** `analysable` gates `ensureAnalyzed` and `refresh` by path
+   containment on decoded paths; a client that declares no root (`rootUri: null`, no
+   `workspaceFolders`) runs unguarded by design so single-file editing works. The gate is a
+   containment control, not a sandbox — analysis still executes code inside the roots.
 1. **Long-session memory.** Each analysis allocates a full `program`. Refcount destruction should make this a non-issue, but it is unmeasured over hours. Mitigation: `s7 -a` on a loop while watching RSS is an afternoon; if it grows, restart-on-idle is honest and invisible to the client.
 2. **Version skew with the interpreter.** `getError` fields and `errorType` names are the interface we depend on. Pinning a minimum 5.4.x and reporting the interpreter version in `serverInfo` makes mismatches visible instead of mysterious.
 3. **`globalObjects` is global to the program**, thousands of entries; per-keystroke filtering must stay cheap. Measure before optimising; a name-prefix hash is the obvious fix.
