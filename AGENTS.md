@@ -87,6 +87,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - A file that defines `main` cannot be included by a test (redeclaration). That is why
   `main.sd7` and `lsp_server.sd7` are separate files.
 - For s7/s7c options, profiling and optimizer knobs: `docs/seed7-cli.md` — never guess a flag.
+- `-tefs` is not a flag set for the server. `-te` prints every **caught** exception to **stdout**,
+  and `rpc.sd7`'s `atKey` catches `INDEX_ERROR`/`ILLEGAL_ACTION` on the request path deliberately,
+  so a `-te` build writes non-frame bytes into the LSP stream. Trace a running server with `-tfs`.
+  The release and debug lines, and the measurement that separated them: *Build — the two flag sets*
+  in `docs/seed7-cli.md`.
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.

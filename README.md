@@ -50,6 +50,15 @@ The server is one command, over stdio:
 Replace `src` with the absolute path to this checkout's `src` directory. Logs and
 diagnostics of the server itself go to stderr; the LSP stream is stdout.
 
+To run it compiled instead — same protocol, measured to build in about 7 s and to answer
+`initialize`, `didOpen` and `shutdown` with only frames on stdout:
+
+    s7c -O3 -flto -oc3 -w2 -l src src/main.sd7 && ./src/main
+
+Do not add `-te`, or `-tefs`, to that line: it puts caught-exception traces on stdout, and
+this server catches exceptions on the request path by design. The flag sets and the
+measurement are in *Build — the two flag sets* in `docs/seed7-cli.md`.
+
 * **Emacs (eglot)** — real API, works today:
 
       (add-to-list 'eglot-server-programs

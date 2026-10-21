@@ -75,6 +75,45 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   `collectSyms` walks — and `-d x` / `-t x` set the compile-time and runtime trace levels from the
   letters `a c d e h s` (`-t` alone is `-ta`; `s7c -t` takes a different set, `e f s`).
 
+## Build — the two flag sets
+
+The invocation this project uses to compile the server or a probe. Both lines were run against
+this tree on 2026-10-22; the flags are transcribed from `~/seed7/doc/s7c.1`, never guessed.
+
+| build | flags |
+|---|---|
+| release | `-O3 -flto -oc3 -w2` |
+| debug | `-O3 -flto -oc3 -w2 -e -g-debug_c -p -tefs` |
+
+With `-l src src/main.sd7` after them, and what each flag is (`s7c.1`, and
+<https://seed7.net/faq.htm#compile> for the optimizer knobs):
+
+- `-On` — hands `-O3` to the *C compiler*; `-ocn` optimises the generated C **with constants**,
+  where level 3 evaluates *all* constant expressions. Constant folding is `-ocN`, not `-On`.
+- `-flto` — link time optimization.
+- `-w2` — warning level 2 (`-wn`).
+- `-e` — the executable signals on an uncaught exception, so a debugger can catch it; pair with
+  `-g` (debug information referring to the `.sd7` files) or `-g-debug_c` (referring to the
+  temporary C). Never pair either with `-s`: that *suppresses* the runtime checks this repo
+  depends on.
+- `-p` — simple function profiling; the run writes `profile_out` in the cwd.
+- `-tefs` — runtime trace levels from the set `e f s`.
+
+Measured, release line: builds in 7.2 s to an 1 888 176-byte `src/main`, and that binary speaks
+the protocol — one probe sent `initialize` (with `rootUri`), a `didOpen` of a broken document,
+`shutdown` and `exit`, and got 3 frames back, `hoverProvider` present and an Error diagnostic
+published, with nothing but frames on stdout.
+
+**The debug line must not be used to run the server.** Bisected on this tree: `-te` prints every
+caught exception to **stdout** — `*** Exception INDEX_ERROR raised at hsh_rtl.c(1073)` followed by
+the interactive `RETURN / * / /` prompt — and `atKey` catches `INDEX_ERROR` and `ILLEGAL_ACTION` on
+the request path *by design* (`src/rpc.sd7`), so those bytes land in the protocol channel. Measured:
+stdout began with 642 bytes of non-frame text before the first frame; `-p` alone, `-e` alone and
+`-tf`/`-ts` each stayed clean, so `e` is the whole cause. The debug line is therefore for a probe
+you run by hand to find a crash, not for a session. To trace a running server, build
+`-O3 -flto -oc3 -w2 -e -g-debug_c -p -tfs` — verified clean — and remember `profile_out` appears in
+its cwd.
+
 ---
 
 # AGENTS.md provenance
