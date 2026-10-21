@@ -25,8 +25,9 @@ const func boolean: isLibraryBufferPath (in string: path) is
   return endsWith(path, ".s7i");
 
 # underRoot answers TRUE when path equals a root or starts with root & "/";
-# textual comparison after pathOf() decodes — separator- and case-exact; on Windows
-# a drive letter's case would need folding, and Windows is untested here — out of scope.
+# "/" or "//" strips to empty — the filesystem root, contains every absolute path.
+# An empty-string root ("") is skipped. Textual comparison after pathOf() decodes
+# — separator- and case-exact; Windows drive-letter case is untested, out of scope.
 const func boolean: underRoot (in string: path, in array string: roots) is func
   result
     var boolean: found is FALSE;
@@ -37,10 +38,12 @@ const func boolean: underRoot (in string: path, in array string: roots) is func
     for i range 1 to length(roots) do
       root := roots[i];
       if length(root) <> 0 then
-        if root[length(root)] = '/' then
+        while length(root) <> 0 and root[length(root)] = '/' do
           root := root[1 .. pred(length(root))];
-        end if;
-        if path = root or startsWith(path, root <& "/") then
+        end while;
+        if length(root) = 0 then
+          found := TRUE;
+        elsif path = root or startsWith(path, root <& "/") then
           found := TRUE;
         end if;
       end if;

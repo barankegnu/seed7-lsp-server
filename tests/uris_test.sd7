@@ -27,5 +27,11 @@ const proc: main is func
           str(underRoot("/tmp/root/a.sd7", 0 times "")), "FALSE");
     check("decoded path matches decoded root",
           str(underRoot(pathOf("file:///tmp/my%20dir/a.sd7"), []("/tmp/my dir"))), "TRUE");
+    check("root slash is the filesystem root, contains every absolute path",
+          str(underRoot("/any/where.sd7", []("/"))), "TRUE");
+    check("multiple trailing slashes on the root strip fully",
+          str(underRoot("/tmp/root/a.sd7", []("/tmp/root//"))), "TRUE");
+    check("an empty-string root element matches nothing",
+          str(underRoot("/tmp/a.sd7", [](""))), "FALSE");
     report("uris");
   end func;
