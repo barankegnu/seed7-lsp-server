@@ -68,7 +68,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
   Tab inside a literal is `\9;`. A char literal cannot hold the escape character or a quote
   the way you expect: `'\'` does not parse — the escape eats the closing quote. Use
-  `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  `chr(92)`/`chr(39)` and name them — `scan.BACKSLASH`/`scan.APOSTROPHE`.
   The quote character is written `'''` — open, the quote as content, close — and `''''` is
   the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
   before coding to it.
@@ -87,6 +87,11 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - A file that defines `main` cannot be included by a test (redeclaration). That is why
   `main.sd7` and `lsp_server.sd7` are separate files.
 - For s7/s7c options, profiling and optimizer knobs: `docs/seed7-cli.md` — never guess a flag.
+- `-tefs` is not a flag set for the server. `-te` prints every **caught** exception to **stdout**,
+  and `rpc.sd7`'s `atKey` catches `INDEX_ERROR`/`ILLEGAL_ACTION` on the request path deliberately,
+  so a `-te` build writes non-frame bytes into the LSP stream. Trace a running server with `-tfs`.
+  The release and debug lines, and the measurement that separated them: *Build — the two flag sets*
+  in `docs/seed7-cli.md`.
 - `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
   **stdout** and exit 1. Never judge a run by its status code, and never let an
   exception reach stdout — it corrupts the protocol channel.
@@ -132,6 +137,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
   missing`, exit 0, and the probe silently never ran. The idiom the standard library uses is a plain
   `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
+- `&` copies its whole left side, so a per-token append (`s := s & token` in a loop) is quadratic.
+  `&:=` is the in-place `STR_APPEND` — it grows the buffer, so the cost is amortised linear. The
+  evidence and the measured ratio live in *Every change — the mask rebuild cost, measured* in `docs/seed7-cli.md`.
 
 ## Invariants — a violation is a defect, not a style preference
 
@@ -221,6 +229,8 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
   The scanner decides, because it knows whether it is inside a number token.
+- `analysable` is the ONLY trust predicate. Every `analyzeAll` and every `publish` call site
+  must consult it — F1 existed because that rule was true of `analyzeAll` and not of `publish`.
 
 ## Do not "fix" these
 
@@ -228,8 +238,10 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   parser, not a bug to route around — see the README's security section, which is the
   single source of truth for it, including why compiling is not an escape: `s7c` produces its
   call-code by running that same analyze phase, so there is no second front end to hide behind
-  and no build flag that makes analysis inert. The M3 answer is a trust gate, not stderr
-  scraping.
+  and no build flag that makes analysis inert. The M3 trust gate now ships: `analysable`
+  gates `ensureAnalyzed` and `refresh` by path containment on decoded paths, and a client
+  that declares no root runs unguarded. It is a containment control, not a sandbox —
+  analysis still executes code inside the roots.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
   scheduled for M3 and split into its own plan, so it is still open.
@@ -246,7 +258,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 
 `workspace/symbol` and project-wide rename are M6: they need an index of files the editor
 never opened, and with them the staleness and watching questions R-F10 already show are not
-free. What is merged, and what is still open from M3 (the trust gate, local-variable
+free. What is merged, and what is still open from M3 (local-variable
 completion, R-F10), is `README.md`'s *What works* / *What does not work yet*; the M1–M5 record,
 with its measurements, is *Milestones* in `docs/seed7-cli.md`. The rules that live nowhere
 else:

@@ -75,6 +75,54 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   `collectSyms` walks — and `-d x` / `-t x` set the compile-time and runtime trace levels from the
   letters `a c d e h s` (`-t` alone is `-ta`; `s7c -t` takes a different set, `e f s`).
 
+## Build — the two flag sets
+
+The invocation this project uses to compile the server or a probe. Both lines were run against
+this tree on 2026-10-22; the flags are transcribed from `~/seed7/doc/s7c.1`, never guessed.
+
+| build | flags |
+|---|---|
+| release | `-O3 -flto -oc3 -w2` |
+| debug | `-O3 -flto -oc3 -w2 -e -g-debug_c -p -tefs` |
+
+With `-l src src/main.sd7` after them, and what each flag is (`s7c.1`, and
+<https://seed7.net/faq.htm#compile> for the optimizer knobs):
+
+- `-On` — hands `-O3` to the *C compiler*; `-ocn` optimises the generated C **with constants**,
+  where level 3 evaluates *all* constant expressions. Constant folding is `-ocN`, not `-On`.
+- `-flto` — link time optimization.
+- `-w2` — warning level 2 (`-wn`).
+- `-e` — the executable signals on an uncaught exception, so a debugger can catch it; pair with
+  `-g` (debug information referring to the `.sd7` files) or `-g-debug_c` (referring to the
+  temporary C). Never pair either with `-s`: that *suppresses* the runtime checks this repo
+  depends on.
+- `-p` — simple function profiling; the run writes `profile_out` in the cwd.
+- `-tefs` — runtime trace levels from the set `e f s`.
+
+Measured, release line: builds in 7.2 s to an 1 888 176-byte `src/main`, and that binary speaks
+the protocol — one probe sent `initialize` (with `rootUri`), a `didOpen` of a broken document,
+`shutdown` and `exit`, and got 3 frames back, `hoverProvider` present and an Error diagnostic
+published, with nothing but frames on stdout.
+
+**The debug line must not be used to run the server.** Bisected on this tree: `-te` prints every
+caught exception to **stdout** — `*** Exception INDEX_ERROR raised at hsh_rtl.c(1073)` followed by
+the interactive `RETURN / * / /` prompt — and `atKey` catches `INDEX_ERROR` and `ILLEGAL_ACTION` on
+the request path *by design* (`src/rpc.sd7`), so those bytes land in the protocol channel. Measured:
+stdout began with 642 bytes of non-frame text before the first frame; `-p` alone, `-e` alone and
+`-tf`/`-ts` each stayed clean, so `e` is the whole cause. The debug line is therefore for a probe
+you run by hand to find a crash, not for a session. To trace a running server, build
+`-O3 -flto -oc3 -w2 -e -g-debug_c -p -tfs` — verified clean — and remember `profile_out` appears in
+its cwd.
+
+What each build leaves behind, measured: the release line leaves only `src/main`; the debug line
+also keeps `src/tmp_main.c` (5 030 213 bytes), because `-g-debug_c` points the debug information at
+the generated C and s7c does not delete the file it refers to. Both are gitignored and
+`make clean-build` removes them together with `profile_out`. `make build`, `make build-debug` and
+`make clean-build` are these two lines in the Makefile; `make build-debug` uses the `-tfs` form
+above, so a traced server is buildable without ever putting a byte on the protocol channel —
+verified the same way: 3 frames, `hoverProvider` present, Error diagnostic published, `-> main`
+trace lines on stderr only.
+
 ---
 
 # AGENTS.md provenance
@@ -151,12 +199,12 @@ Char and string literals, as two separate bullets before they became one:
 - Strings are `"...\"..."`. There are no single quotes, and `""` is not escaping.
   Tab inside a literal is `\9;`. A char literal cannot hold the escape character
   (`'\'` does not parse — the escape eats the closing quote): write `chr(92)` and name it.
-  `doc_store.BACKSLASH` is that name.
+  `scan.BACKSLASH` is that name.
 ```
 
 ```
 - A char literal cannot hold the escape character or a quote the way you expect: `'\'` does
-  not parse. Use `chr(92)`/`chr(39)` and name them — `doc_store.BACKSLASH`/`SINGLE_QUOTE`.
+  not parse. Use `chr(92)`/`chr(39)` and name them — `scan.BACKSLASH`/`scan.APOSTROPHE`.
   The quote character is written `'''` — open, the quote as content, close — and `''''` is
   the parse error ("Character literal exceeds source line"). Verify a spelling with `s7`
   before coding to it; two of this session's test fixtures were wrong because I guessed.
@@ -278,7 +326,9 @@ for it; the s7c mechanism and its citation are here and in the CLI reference abo
 ```
 - Analysis executes the analysed code. It is a property of using the interpreter as the
   parser, not a bug to route around — see the README's security section, which is the
-  single source of truth for it. The M3 answer is a trust gate, not stderr scraping. Compiling
+  single source of truth for it. The M3 trust gate now ships: `analysable` gates
+  `ensureAnalyzed` and `refresh` by path containment on decoded paths, and a client that
+  declares no root runs unguarded. It is a containment control, not a sandbox. Compiling
   is not an escape either: `s7c` produces its call-code by running that same analyze phase
   (<https://seed7.net/faq.htm#compile>), so there is no second front end to hide behind and no
   build flag that makes analysis inert.
@@ -299,7 +349,7 @@ M1+M2 (base protocol, lifecycle, sync, diagnostics), M3's five symbol features
 token-backed features (`scan.sd7`, `blocks.sd7`, `utf8bytes.sd7`, foldingRange,
 selectionRange, semanticTokens, one-analysis-per-version) are merged, and M5's cross-reference
 features (`occurrences.sd7`, references, file-local `prepareRename`/`rename`) are merged on
-`m5-references-and-rename`. Still open from M3: the trust gate, local-variable
+`m5-references-and-rename`. Still open from M3: local-variable
 completion, and R-F10 — which is a conformance violation as well as stale data, because
 `textToAnalyze` reads an open `.s7i` back from disk while the spec says the server must
 not read a document's content through its uri.
@@ -325,6 +375,36 @@ document is O(document), not O(document × tokens). The reflection API yields de
 only, never use sites, which is why references and rename stay M5.
 ```
 
+## Figures re-measured against the sibling checkouts, 2026-10-21
+
+Every figure below was restated from a fresh run of the command beside it, against the `~/seed7`
+and `~/Seed7Home` checkouts on this machine (`Seed7Home` HEAD dated the same day). The older
+numbers elsewhere in these documents are not errors — they are measurements of an earlier tree.
+
+| figure | now | command |
+|---|---|---|
+| `libraries/*.htm` declaration anchors | 3001 (2923 distinct) | `grep -ho '<a name="[^"]*"' libraries/*.htm \| wc -l` (\| `sort -u \| wc -l`) |
+| `<li><a href="libraries/` in `subject_index.htm` | 3173 (2988 with a `#`, 185 plain) | `grep -c '<li><a href="libraries/' subject_index.htm` |
+| all `<li><a` there | 3493 (320 to other dirs: 286 `manual/`, 34 `scrshots/`) | `grep -o '<li><a href="[^"]+"' subject_index.htm \| wc -l` |
+| `subject_index.htm` size | 524 628 bytes | `wc -c < subject_index.htm` |
+| `$ syntax` lines in `lib/syntax.s7i` | 194 | `grep -c '^\$ syntax' lib/syntax.s7i` |
+| distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
+| `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
+| `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
+| suite totals | 21 suites, 1040 checks: `scan` 66, `features` 186, `lsp_server` 79, `transcript` 192 | `make test` |
+
+Two measurement traps found while taking these, both of which produce a confidently wrong number:
+
+- **A case-limited character class silently undercounts the keyword set.** `"[a-z_0-9]+"` finds
+  62 entries in `src/keywords.sd7`, not 63, because one word is `fixLen`. The array is correct;
+  the regex was wrong. Count mixed-case words with `[A-Za-z_0-9]+` or verify against
+  `sh tools/keyword_gate.sh`, which re-derives the set from the interpreter itself.
+- **`find` recurses where the tool's glob does not.** `find ~/seed7/lib ~/seed7/prg -name '*.s7i'
+  -o -name '*.sd7'` reports 394 files, because `lib` holds 264 `.s7i` counting its
+  subdirectories, while `tools/corpus_scan.sh` passes `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7`
+  and so sees 342. A drift claim against that number was an artifact of the measuring command,
+  not of the checkout; re-derive a file count with the same glob the tool uses.
+
 ## Citation defect, counted and closed
 
 AGENTS.md put the catchable exceptions at lines 277-291 of `lib/seed7_05.s7i` and repeated that
@@ -348,3 +428,26 @@ record was satisfying the check meant to catch the defect. A file that documents
 can prop up the net that guards it. So this section names both ranges without the `seed7_05.s7i:`
 prefix, which leaves AGENTS.md the only file that can satisfy the token -- a citation dropped or
 made stale there now prints MISSING.
+
+## Every change — the mask rebuild cost, measured
+
+`scan.maskOf` is rebuilt on every `didChange` (through `doc_store.setVersion`). Its append loop
+used `&`, which copies its whole left side per token, making it quadratic in document size. The
+rewrite to `&:=` (`STR_APPEND`, grows in place) is what makes `didChange` cheap.
+
+Profiled, optimized build: `s7c -p -O2 -l src /tmp/mask_cost.sd7` then run `/tmp/mask_cost`,
+reading `profile_out` with `awk -F'\t' '$4=="maskOf"{print $1" usecs, "$2" calls"}'`.
+The probe calls `maskOf` once on the text of `~/seed7/lib/shiftjis.s7i` (375 352 characters,
+read with a `readln` loop — `gets(f, -1)` raises `RANGE_ERROR`).
+
+Before the rewrite:
+
+    22567957 usecs, 1 calls
+
+After the rewrite:
+
+    30239 usecs, 1 calls
+
+746×. The `ponytail:` lazy-fill upgrade path that lived in
+`src/doc_store.sd7`'s note is deleted: the ratio holds, but the absolute ~30 ms is an
+optimized-build figure (`s7c -p -O2`); the shipped interpreted server pays more per call.

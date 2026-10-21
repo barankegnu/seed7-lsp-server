@@ -418,7 +418,7 @@ expect(junk == 0, "the refusal run put only frames on stdout (junk=%d)" % junk)
 # are about the SYMBOL rather than the client.
 replies, code, err, junk = run(pr_msgs(req(1, "initialize",
                                            {"capabilities": {}, "processId": None,
-                                            "rootUri": None,
+                                            "rootUri": "file:///tmp",
                                             "workspace": {"applyEdit": True}})))
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(60, {}).get("result") == PR_EXPECT,
@@ -489,8 +489,8 @@ def rn_msgs(init):
             shutdown(76), exit_()]
 
 
-APPLY = req(1, "initialize", {"capabilities": {}, "processId": None, "rootUri": None,
-                              "workspace": {"applyEdit": True}})
+APPLY = req(1, "initialize", {"capabilities": {}, "processId": None,
+                              "rootUri": "file:///tmp", "workspace": {"applyEdit": True}})
 RN_RUN = rn_msgs(APPLY)
 replies, code, err, junk = run([frame(m) for m in RN_RUN])
 by_id = {r.get("id"): r for r in replies if "id" in r}
@@ -1511,6 +1511,66 @@ expect(rng_decoded == [(1, 0, 5, 3, 2), (1, 6, 7, 4, 2), (1, 15, 1, 5, 1), (1, 2
 
 expect(by_id.get(4, {}).get("result") is None,
        "semanticTokens/full for an unopened uri is null")
+
+# --- Task 4: the trust gate on the wire ----------------------------------------
+# After-the-fact pins: Task 3 shipped the gate (analysable gates ensureAnalyzed and refresh,
+# and an untrusted didOpen sends one window/logMessage whose sentence contains "roots").
+# Block one: a client that declared file:///tmp/proj as its root opens one file inside it and
+# one outside; the outside file is never analysed, publishes nothing, and the refusal names the
+# roots. Block two: a client that declared NO root runs unguarded and still gets diagnostics.
+IN_URI = "file:///tmp/seed7_lsp_proj/in.sd7"
+OUT_URI = "file:///tmp/outside.sd7"
+GATE_INIT = req(1, "initialize",
+                  {"capabilities": {}, "processId": None,
+                   "rootUri": "file:///tmp/seed7_lsp_proj"})
+replies, code, err, junk = run([frame(GATE_INIT), frame(msgs[1]),
+                                frame(opened(IN_URI, BROKEN)),
+                                frame(opened(OUT_URI, BROKEN)),
+                                frame(changed(OUT_URI, BROKEN, 2)),
+                                frame(closed(OUT_URI)),
+                                frame(shutdown(2)), frame(exit_())])
+diag_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
+expect(not any(p["params"]["uri"] == OUT_URI for p in diag_notes),
+       "a document outside the declared roots publishes nothing")
+expect("analyzed " + OUT_URI not in err,
+       "the outside document is never analysed")
+expect(any(r.get("method") == "window/logMessage" and "roots" in r["params"]["message"]
+           for r in replies),
+       "the refusal names the declared roots")
+expect(any(r.get("method") == "window/logMessage" and "roots" in r["params"]["message"]
+           and r["params"]["type"] == 3
+           for r in replies),
+       "the per-document refusal stays at Info (type 3)")
+expect(any(p["params"]["uri"] == IN_URI and p["params"]["diagnostics"]
+           for p in diag_notes),
+       "the inside document still gets its diagnostics")
+expect(len([r for r in replies if r.get("method") == "window/logMessage"]) == 1,
+       "a didChange on the outside document adds no second logMessage (once-per-document)")
+expect(junk == 0, "the gate run put only frames on stdout (junk=%d)" % junk)
+
+# Block two: no root at all -- the gate is open by design, so single-file editing works.
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(OUT_URI, BROKEN)),
+                                frame(shutdown(2)), frame(exit_())])
+expect("analyzed " + OUT_URI in err,
+       "a rootless client still analyses the document")
+expect(any(r.get("method") == "window/logMessage" and
+           "no project roots" in r.get("params", {}).get("message", "")
+           for r in replies),
+       "a rootless client is told once that it runs unguarded")
+expect(any(r.get("method") == "window/logMessage" and
+           "no project roots" in r.get("params", {}).get("message", "") and
+           r.get("params", {}).get("type") == 2
+           for r in replies),
+       "the rootless notice is a Warning (type 2), not Info")
+rootless_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
+                  and r["params"]["uri"] == OUT_URI]
+expect(bool(rootless_notes) and
+       any(d["severity"] == 1 for d in rootless_notes[-1]["params"]["diagnostics"]),
+       "and publishes one Error diagnostic (%s)"
+       % [d.get("severity") for d in (rootless_notes[-1]["params"]["diagnostics"]
+                                      if rootless_notes else [])])
+expect(junk == 0, "the rootless run put only frames on stdout (junk=%d)" % junk)
 
 print("transcript: %d checks, %d failed" % (passed, len(fails)))
 sys.exit(1 if fails else 0)

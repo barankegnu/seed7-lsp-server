@@ -308,7 +308,9 @@ parameter.
   Overloaded names carry one class: the first declaration's, since the legend cannot express
   "depends on the call".
 - `keyword` needs the reserved list, and in Seed7 that list is *declared*. Measured source:
-  `lib/syntax.s7i`'s 192 `$ syntax` lines, from which
+  `lib/syntax.s7i`'s 192 `$ syntax` lines (194 as re-counted on 2026-10-21 — the library grew two
+  syntax declarations and the 77 candidates below are unchanged; see
+  *Figures re-measured against the sibling checkouts* in `docs/seed7-cli.md`), from which
   `grep -h '^\$ syntax' syntax.s7i | grep -o '\.[a-z_][a-z_0-9]*\.' | tr -d '.' | sort -u`
   yields 77 candidates — `and array assert attr begin block case … const … elsif end exception
   … if in include inout is … struct sub subrange subtype … until val value var varfunc when

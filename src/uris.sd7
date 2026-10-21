@@ -24,6 +24,35 @@ const func string: pathOf (in string: uri) is func
 const func boolean: isLibraryBufferPath (in string: path) is
   return endsWith(path, ".s7i");
 
+# underRoot answers TRUE when path equals a root or starts with root & "/";
+# "/" or "//" strips to empty — the filesystem root, which matches any path.
+# An empty-string root ("") is skipped. Textual comparison after pathOf() decodes
+# — separator- and case-exact; Windows drive-letter case is untested, out of scope.
+# Deliberate limit: `..` segments are not resolved and symlinks are not followed, so
+# `/root/../secret/x.sd7` matches `/root` and a symlink escapes by name. Canonicalising
+# would need filesystem access per document and would still not stop a symlink inside a root.
+const func boolean: underRoot (in string: path, in array string: roots) is func
+  result
+    var boolean: found is FALSE;
+  local
+    var integer: i is 0;
+    var string: root is "";
+  begin
+    for i range 1 to length(roots) do
+      root := roots[i];
+      if length(root) <> 0 then
+        while length(root) <> 0 and root[length(root)] = '/' do
+          root := root[1 .. pred(length(root))];
+        end while;
+        if length(root) = 0 then
+          found := TRUE;
+        elsif path = root or startsWith(path, root <& "/") then
+          found := TRUE;
+        end if;
+      end if;
+    end for;
+  end func;
+
 const string: URI_SAFE is
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~/";
 

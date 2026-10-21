@@ -15,5 +15,23 @@ const proc: main is func
           pathOf(uriFor("/tmp/a b/x.sd7")), "/tmp/a b/x.sd7");
     check("uriFor round-trips non-ascii",
           pathOf(uriFor("/tmp/日本/x.sd7")), "/tmp/日本/x.sd7");
+    check("a child of a declared root is under it",
+          str(underRoot("/tmp/root/a/b.sd7", []("/tmp/root"))), "TRUE");
+    check("the root itself is under it",
+          str(underRoot("/tmp/root", []("/tmp/root"))), "TRUE");
+    check("a trailing slash on the root changes nothing",
+          str(underRoot("/tmp/root/a.sd7", []("/tmp/root/"))), "TRUE");
+    check("a sibling whose name starts with the root is NOT under it",
+          str(underRoot("/tmp/root2/a.sd7", []("/tmp/root"))), "FALSE");
+    check("no roots means nothing is contained",
+          str(underRoot("/tmp/root/a.sd7", 0 times "")), "FALSE");
+    check("decoded path matches decoded root",
+          str(underRoot(pathOf("file:///tmp/my%20dir/a.sd7"), []("/tmp/my dir"))), "TRUE");
+    check("root slash is the filesystem root, contains every absolute path",
+          str(underRoot("/any/where.sd7", []("/"))), "TRUE");
+    check("multiple trailing slashes on the root strip fully",
+          str(underRoot("/tmp/root/a.sd7", []("/tmp/root//"))), "TRUE");
+    check("an empty-string root element matches nothing",
+          str(underRoot("/tmp/a.sd7", [](""))), "FALSE");
     report("uris");
   end func;

@@ -26,9 +26,16 @@ program to call-code" and then emits C to be built
 front end to point at a document, and no build flag that makes analysis inert.
 
 Treat opening an untrusted `.sd7` the way you would treat running it: point this server
-only at code you trust, and at one project per editor window. A trust gate (analyse only
-inside configured roots, or require an explicit acknowledgement at `initialize`) is
-planned for M3 and **not implemented**.
+only at code you trust, and at one project per editor window. A trust gate now ships: the
+server analyses only documents inside the `rootUri`/`workspaceFolders` a client declared at
+`initialize`, and an untrusted `didOpen` sends no diagnostics notification and logs the reason
+once. A client that declares no root runs unguarded by design — the single-file editing this
+README recommends must not break — and is told so at `initialize`. The gate is a
+*containment* control on top of the rule above, not a sandbox: analysis still executes
+code inside the roots, `s7 -a` is not a defence, and compiling is not an escape. The
+comparison is textual on decoded paths: `..` segments are not resolved and symlinks are
+not followed, so a path that escapes by name still matches — canonicalising would need
+filesystem access per document and would still not stop a symlink inside a root.
 
 Startup may also print two `Authorization required, but no authorization protocol
 specified` lines. Those come from the X11-linked Seed7 runtime, not from this server;
@@ -42,6 +49,17 @@ The server is one command, over stdio:
 
 Replace `src` with the absolute path to this checkout's `src` directory. Logs and
 diagnostics of the server itself go to stderr; the LSP stream is stdout.
+
+To run it compiled instead — same protocol, measured to build in about 7 s and to answer
+`initialize`, `didOpen` and `shutdown` with only frames on stdout:
+
+    make build && ./src/main
+
+Do not add `-te`, or `-tefs`, to that build: it puts caught-exception traces on stdout, and
+this server catches exceptions on the request path by design. `make build-debug` is the traced
+variant, safe because it traces with `-tfs`; `make clean-build` removes the artifacts either one
+leaves in `src/`. The flag sets and the measurements are in *Build — the two flag sets* in
+`docs/seed7-cli.md`.
 
 * **Emacs (eglot)** — real API, works today:
 
@@ -130,7 +148,7 @@ uses this rule is `lspWholeLine`.
 
 `workspace/symbol`, project-wide rename and anything else needing an index of files the
 editor never opened (M6, unscheduled), nested and local `documentSymbol` hierarchy,
-completion of local variables, pull diagnostics, formatting, the trust gate, `.s7i`
+completion of local variables, pull diagnostics, formatting, `.s7i`
 staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not
@@ -152,8 +170,10 @@ with the LSP features themselves in `src/features/`, one file per method plus `k
 for the shared symbol/type mappings. `tests/` has one suite each, plus
 `tests/transcript.py`, which drives the real process over real frames.
 `tools/` holds the generators and gates that keep the docs honest — `keyword_gate.sh` (the refused-name set,
-re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 342 files of
-the Seed7 checkout), and the two the suite runs: `project_graph.sh` and `agents_gate.sh`.
+re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 342 files the
+scan is actually given — `lib/*.s7i` plus `prg/*.sd7`, which is fewer than every `*.sd7`/`*.s7i`
+`find` recurses to, since `lib` holds another 51 `.s7i` below its top level), and the two the
+suite runs: `project_graph.sh` and `agents_gate.sh`.
 
 `docs/PROJECT_GRAPH.md` is that shape in one read — modules, includes, methods answered against
 methods advertised, suites and the module each is named after. Regenerate with `make graph`.

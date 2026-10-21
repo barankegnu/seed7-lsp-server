@@ -21,9 +21,10 @@ $ include "seed7_05.s7i";
 
 const integer: MAX_DIAGNOSTICS is 100;
 
-# window/logMessage MessageType.Info. Deliberately not diagnostics.sd7's SEV_INFORMATION: the
+# window/logMessage MessageType. Deliberately not diagnostics.sd7's SEV_INFORMATION: the
 # two enums share the number 3 and nothing else.
 const integer: MSG_INFO is 3;
+const integer: MSG_WARNING is 2;
 
 const type: docMap is hash [string] lsDoc;
 
@@ -32,10 +33,15 @@ var array string: libraryDirs is 0 times "";
 var boolean: gotInitialize is FALSE;
 var boolean: gotShutdown is FALSE;
 
-# The ONE client capability this server reads, and the only reason `initialize' params are
-# consulted at all: a WorkspaceEdit is a promise only a client that declared workspace.applyEdit
-# can keep. Every other member of that payload stays unread -- that debt (the rootUri trust gate,
-# hierarchicalDocumentSymbolSupport, SymbolKind valueSet) is LISTED in the M5 design's section 10
+# Decoded root paths the client declared at initialize, empty means none declared.
+var array string: projectRoots is 0 times "";
+# TRUE iff initialize yielded at least one usable root.
+var boolean: rootsDeclared is FALSE;
+
+# Two readers of `initialize' params: the applyEdit flag below (a WorkspaceEdit is a promise only
+# a client that declared workspace.applyEdit can keep), and the project roots captured for the
+# trust gate. Every other member of that payload stays unread -- that debt
+# (hierarchicalDocumentSymbolSupport, SymbolKind valueSet) is LISTED in the M5 design's section 10
 # rather than paid here, and this flag is the one place section 7 lets section 6 depend on. It
 # reaches prepare_rename.sd7 as a PARAMETER: a file in src/features/ is included before
 # this global exists and must read no global.
@@ -71,13 +77,13 @@ const proc: handlerFailed (in string: kind, in string: body) is func
 # A line the feature said it needed the user to see, sent to the client as a window/logMessage
 # BEFORE whatever answer follows, and mirrored to stderr. Both halves are frames or stderr: this
 # is the only place a log line reaches the protocol channel, and nothing writes it to stdout.
-const proc: logMessage (in string: text) is func
+const proc: logMessage (in integer: level, in string: text) is func
   local
     var jsonWriter: w is jsonWriter.value;
   begin
     note(text);
     openObject(w);
-      field(w, "type");    addInt(w, MSG_INFO);
+      field(w, "type");    addInt(w, level);
       field(w, "message"); addStr(w, text);
     closeObject(w);
     sendNotification("window/logMessage", finishJson(w));
@@ -160,6 +166,32 @@ const func string: textToAnalyze (in string: uri) is func
     end if;
   end func;
 
+# TRUE for a root that narrows the gate: non-empty and not all slashes (a root of /
+# strips to empty inside underRoot and matches every path, so it is rootless in effect).
+# A mixed list keeps only the narrowing roots — declaring / alongside another root does
+# not open everything; the narrower result still refuses paths outside the surviving root.
+const func boolean: usableRoot (in string: p) is func
+  result
+    var boolean: out is FALSE;
+  local
+    var string: stripped is "";
+  begin
+    stripped := p;
+    while length(stripped) <> 0 and stripped[length(stripped)] = '/' do
+      stripped := stripped[1 .. pred(length(stripped))];
+    end while;
+    out := length(stripped) <> 0;
+  end func;
+
+# The gate predicate: TRUE when no roots were declared (the rootless case is open by design)
+# or the document's decoded path is inside one of them. Consulted by ensureAnalyzed and refresh.
+const func boolean: analysable (in string: uri) is func
+  result
+    var boolean: out is FALSE;
+  begin
+    out := not rootsDeclared or underRoot(pathOf(uri), projectRoots);
+  end func;
+
 # The single place a document is analysed. Every reader below goes through it, so a changed
 # document costs one parseStri and a symbol request arriving after that change costs none -- the
 # change's own refresh has already filled the entry. OBLIGATION: any path that changes a
@@ -171,16 +203,22 @@ const proc: ensureAnalyzed (in string: uri) is func
   local
     var docAnalysis: fresh is docAnalysis.value;
   begin
-    if uri in openDocs and not (uri in analysisCache) then
-      fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
-      # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
-      # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
-      # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
-      # not 21 times). A `hash [string] struct` stores by value (probed), so this cannot alias
-      # `fresh`.
-      analysisCache @:= [uri] fresh;
-      note("analyzed " <& uri <& " version " <& str(openDocs[uri].version) <&
-           " records " <& str(length(fresh.syms)));
+    # Scanner-backed features (foldingRange, selectionRange, semanticTokens) keep answering for
+    # an untrusted buffer: they read doc.text and cannot execute code. The hover/definition/
+    # outline/references/rename family answers from an empty symbol list instead -- references
+    # returns its text occurrences with an unresolved disclosure (spec 12.2's read may over-include).
+    if analysable(uri) then
+      if uri in openDocs and not (uri in analysisCache) then
+        fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
+        # ponytail: one entry per OPEN document, which is what didClose's drop bounds -- the
+        # alternative is one per version, and spec §4.3 prices a single 1 060-record array at
+        # +1.15 MiB (measured here: 21 versions of one document raised RSS by 1.5 MiB in TOTAL,
+        # not 21 times). A `hash [string] struct` stores by value (probed), so this cannot alias
+        # `fresh`.
+        analysisCache @:= [uri] fresh;
+        note("analyzed " <& uri <& " version " <& str(openDocs[uri].version) <&
+             " records " <& str(length(fresh.syms)));
+      end if;
     end if;
   end func;
 
@@ -240,9 +278,13 @@ const proc: refresh (in string: uri) is func
     var analysisResult: a is analysisResult.value;
     var array lspDiag: mapped is 0 times lspDiag.value;
   begin
-    a := analyzeDocument(uri);
-    mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
-    publish(uri, openDocs[uri], mapped);
+    # Returning early for an untrusted uri: publishing an empty diagnostics list would claim
+    # a clean document, which is the class of lie the spec's §4 already refuses for parseStri.
+    if analysable(uri) then
+      a := analyzeDocument(uri);
+      mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
+      publish(uri, openDocs[uri], mapped);
+    end if;
   end func;
 
 const proc: handleChange (in rpcMsg: msg) is func
@@ -284,13 +326,45 @@ const proc: handle (in rpcMsg: msg) is func
     var prepareAnswer: prep is prepareAnswer.value;
     var renameAnswer: ren is renameAnswer.value;
     var string: newName is "";
+    var jsonValue: folders is jsonValue.value;
+    var jsonValue: rootUriVal is jsonValue.value;
+    var string: rootPath is "";
+    var integer: fi is 0;
+    var array string: collected is 0 times "";
   begin
     if msg.method = "initialize" then
       gotInitialize := TRUE;
       # atKey answers NULL for a missing `workspace' and boolAt falls back for a missing key or a
       # non-boolean value, so the boolean true is the only input that raises the flag.
       clientCanApplyEdits := boolAt(atKey(msg.params, "workspace"), "applyEdit", FALSE);
+      # Trust gate: collect the project roots the client declared. workspaceFolders is an
+      # array of {uri} objects; rootUri is the single-folder fallback. An empty string is
+      # skipped, never fatal.
+      collected := 0 times "";
+      folders := atKey(msg.params, "workspaceFolders");
+      rootUriVal := atKey(msg.params, "rootUri");
+      if category(folders) = JSON_ARRAY and length(folders) <> 0 then
+        for fi range 1 to length(folders) do
+          rootPath := pathOf(strAt(itemAt(folders, fi), "uri", ""));
+          if usableRoot(rootPath) then
+            collected &:= rootPath;
+          end if;
+        end for;
+      elsif category(rootUriVal) = JSON_STRING then
+        rootPath := pathOf(strAt(msg.params, "rootUri", ""));
+        if usableRoot(rootPath) then
+          collected &:= rootPath;
+        end if;
+      end if;
+      projectRoots := collected;
+      rootsDeclared := length(collected) <> 0;
       sendResult(msg.id, initializeResultJson);
+      # A rootless client runs unguarded by design (single-file editing must not break), but
+      # the plan promises the client is told once. Sent AFTER the result so the InitializeResult
+      # is the first frame on the wire, not a logMessage.
+      if not rootsDeclared then
+        logMessage(MSG_WARNING, "the server will analyse every document it is given because no project roots were declared");
+      end if;
     elsif msg.method = "initialized" then
     elsif msg.method = "$/setTrace" then
     elsif msg.method = "$/cancelRequest" then
@@ -312,7 +386,11 @@ const proc: handle (in rpcMsg: msg) is func
         # A didOpen with no didClose in between is another frame a client must not send and this
         # server answers. The document was just replaced, whatever its version number says.
         excl(analysisCache, uri);
-        refresh(uri);
+        if not analysable(uri) then
+          logMessage(MSG_INFO, "refusing to analyse " <& uri <& ": it is outside the project roots this client declared");
+        else
+          refresh(uri);
+        end if;
       end if;
     elsif msg.method = "textDocument/documentSymbol" then
       uri := uriOfRequest(msg);
@@ -339,7 +417,7 @@ const proc: handle (in rpcMsg: msg) is func
         # The disclosure goes out before the answer it describes, so a client that shows the
         # notification cannot be handed a wider list than the symbol without being told.
         if refs.unresolved then
-          logMessage(refs.why);
+          logMessage(MSG_INFO, refs.why);
         end if;
         sendResult(msg.id, refs.json);
       else
@@ -352,7 +430,7 @@ const proc: handle (in rpcMsg: msg) is func
                                     wordOfRequest(msg), uri, clientCanApplyEdits);
         # The reason goes out before the null it explains, as references' disclosure does.
         if prep.refused then
-          logMessage(prep.why);
+          logMessage(MSG_INFO, prep.why);
         end if;
         sendResult(msg.id, prep.json);
       else
@@ -370,11 +448,11 @@ const proc: handle (in rpcMsg: msg) is func
         # the user can correct, so it is -32602 InvalidParams. Both mirror `why' to the log and
         # stderr; only the second costs an error frame.
         if ren.error = "invalid" then
-          logMessage(ren.why);
+          logMessage(MSG_INFO, ren.why);
           sendError(msg.id, -32602, ren.why);
         else
           if ren.why <> "" then
-            logMessage(ren.why);
+            logMessage(MSG_INFO, ren.why);
           end if;
           sendResult(msg.id, ren.json);
         end if;
@@ -448,7 +526,9 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/didClose" then
       uri := uriOfRequest(msg);
       if uri in openDocs then
-        publish(uri, openDocs[uri], 0 times lspDiag.value);
+        if analysable(uri) then
+          publish(uri, openDocs[uri], 0 times lspDiag.value);
+        end if;
         excl(openDocs, uri);
         # The drop that bounds the cache at one entry per OPEN document.
         excl(analysisCache, uri);

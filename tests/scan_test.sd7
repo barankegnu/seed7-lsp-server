@@ -179,6 +179,21 @@ const func string: tokenTextOf (in string: text, in integer: line0,
     end if;
   end func;
 
+const func integer: countChar (in string: stri, in char: ch) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: i is 0;
+  begin
+    for i range 1 to length(stri) do
+      if stri[i] = ch then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
+const string: TEXT is "# comment\n\"\128169;y\" code\n(* span\nmore *)";
+
 const proc: main is func
   begin
     check("name, op, bracket",
@@ -520,5 +535,9 @@ const proc: main is func
     check("inside a comment there is no token",
           tokenTextOf("(* hidden *)", 0, 5), "");
 
+    check("the mask preserves length, newlines and its own result over astral text",
+          str(length(maskOf(TEXT))) & "/" & str(countChar(maskOf(TEXT), '\n')) & "/" &
+          str(maskOf(maskOf(TEXT)) = maskOf(TEXT)),
+          str(length(TEXT)) & "/" & str(countChar(TEXT, '\n')) & "/TRUE");
     report("scan");
   end func;

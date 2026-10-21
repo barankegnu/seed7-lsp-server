@@ -517,11 +517,12 @@ its own release. It is not a suite and does not enter `make test`; it belongs to
   every other server→client request except the two above stay unbuilt; `workspace/configuration`
   is now a decision to *cut* for a personal setup, not an omission — settings come in on argv.
 - `utf-8` position negotiation stays cut: we declare `utf-16`, which every client must support.
-- Still owed and still not paid, unchanged from before this milestone, each its own spec: the
-  trust gate (ten lines once `rootUri` is read, deferred deliberately — the user is the only
-  operator and the README states the risk), R-F10 (an open `.s7i` is read from disk, which is a
-  spec "must not"), and the response shapes that depend on unread client capabilities
-  (`hierarchicalDocumentSymbolSupport`, `SymbolKind` `valueSet`).
+- The trust gate shipped on `audit-fixes`: `analysable` gates `ensureAnalyzed`/`refresh` by path
+  containment on decoded paths; a rootless client is open by design (the core spec's §9 risk 0
+  already records this). Still owed and still not paid, unchanged from before this milestone:
+  R-F10 (an open `.s7i` is read from disk, which is a spec "must not"), and the response shapes
+  that depend on unread client capabilities (`hierarchicalDocumentSymbolSupport`, `SymbolKind`
+  `valueSet`).
 - Nested `documentSymbol` hierarchy, local-variable completion, formatting, Windows: untouched.
 - `selectionRange` reports the wrong UTF-16 range on a line with multi-byte text ahead of the
   token (§11.8) — a defect found by this design, fixed by it, with a wire check that goes red on

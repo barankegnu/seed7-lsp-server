@@ -54,6 +54,13 @@ dkms.conf
 # debug information files
 *.dwo
 
+# s7c takes no -o, so a compiled build lands beside its source: `make build' and
+# `make build-debug' produce src/main. Ignored so a build cannot leave the tree dirty.
+/src/main
+# build-debug adds -g-debug_c, whose debug information refers to the generated C, so s7c keeps
+# that 5 MB temporary file instead of cleaning it up.
+/src/tmp_*.c
+
 # Local git worktrees
 .worktrees
 

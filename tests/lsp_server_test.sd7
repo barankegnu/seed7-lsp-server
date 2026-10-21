@@ -1,4 +1,5 @@
 $ include "seed7_05.s7i";
+  include "osfiles.s7i";
   include "lsp_tst.sd7";
   include "lsp_server.sd7";
 
@@ -161,6 +162,19 @@ const func string: at (in array occurrence: oc, in integer: i) is func
     end if;
   end func;
 
+# A clean .sd7 buffer with one declaration, so its outline is not empty.
+const string: CLEAN_TEXT is "$ include \"seed7_05.s7i\";\nconst proc: onlyHere is func\n  begin\n  end func;\n";
+
+const func boolean: uriInAnalysisCache (in string: uri) is
+  return uri in analysisCache;
+
+const proc: openDoc (in string: uri) is func
+  begin
+    openDocs @:= [uri] lsDoc.value;
+    setVersion(openDocs[uri], CLEAN_TEXT, 1);
+    excl(analysisCache, uri);
+  end func;
+
 const proc: main is func
   local
     var rpcMsg: msg is rpcMsg.value;
@@ -172,6 +186,7 @@ const proc: main is func
     var array symRec: truncSyms is 0 times symRec.value;
     var array symRec: libSyms is 0 times symRec.value;
     var prepareAnswer: p is prepareAnswer.value;
+    var refsAnswer: refs is refsAnswer.value;
     var file: libDoc is STD_NULL;
     var string: capText is "";
     var string: capUri is "file:///tmp/seed7_lsp_cap.sd7";
@@ -188,8 +203,7 @@ const proc: main is func
     checkTrue("no capability for an unhandled request",
               pos(capabilitiesJson, "diagnosticProvider") = 0);
     openDocs @:= ["file:///tmp/seed7_lsp_syms.sd7"] lsDoc.value;
-    setVersion(openDocs["file:///tmp/seed7_lsp_syms.sd7"],
-               "$ include \"seed7_05.s7i\";\nconst proc: onlyHere is func\n  begin\n  end func;\n", 1);
+    setVersion(openDocs["file:///tmp/seed7_lsp_syms.sd7"], CLEAN_TEXT, 1);
     checkTrue("an open document yields symbols",
               length(symbolsOfDocument("file:///tmp/seed7_lsp_syms.sd7")) <> 0);
     check("an unknown uri yields none",
@@ -402,5 +416,98 @@ const proc: main is func
     msg := parseMessage(initFrame(13, ",\"workspace\":{\"applyEdit\":true}"));
     handle(msg);
     checkTrue("workspace.applyEdit true is read", clientCanApplyEdits);
+    # ---- workspaceFolders (finding 2) -----------------------------------------
+    # The arm real multi-root clients use: BOTH rootUri and workspaceFolders are sent,
+    # and folders win outright. The probe established three facts: both folders captured,
+    # a child of the second (trailing-slash) folder is analysable, and rootUri is ignored.
+    msg := parseMessage(initFrame(14, ",\"rootUri\":\"file:///tmp/legacy\"," <&
+               "\"workspaceFolders\":[{\"uri\":\"file:///tmp/multi/a\"}," <&
+               "{\"uri\":\"file:///tmp/multi/b/\"}]"));
+    handle(msg);
+    check("workspaceFolders captured two roots", str(length(projectRoots)), "2");
+    check("a child of the SECOND folder is analysable (trailing-slash root)",
+          str(analysable("file:///tmp/multi/b/in.sd7")), "TRUE");
+    check("rootUri is ignored when folders are present",
+          str(analysable("file:///tmp/legacy/also.sd7")), "FALSE");
+    # Restore the rootless state initFrame(13) left, so the trust gate block below
+    # starts with rootsDeclared FALSE as it expects.
+    projectRoots := 0 times "";
+    rootsDeclared := FALSE;
+    # ---- trust gate ---------------------------------------------------------
+    # A root of / alone opens the gate with no notice: pathOf gives / which matches every
+    # path, so the openness is identical to rootless, but rootsDeclared must be FALSE so the
+    # rootless notice fires.
+    msg := parseMessage(initFrame(16, ",\"rootUri\":\"file:///\""));
+    handle(msg);
+    check("a root of / does not declare roots (all-slash is rootless in effect)",
+          str(rootsDeclared), "FALSE");
+    projectRoots := 0 times "";
+    rootsDeclared := FALSE;
+    # After initFrame(13) above, no workspaceFolders or rootUri was sent, so rootsDeclared
+    # is FALSE and the gate is open by default.
+    check("no declared roots means the gate is open",
+          str(analysable("file:///anywhere/at/all.sd7")), "TRUE");
+    # Set roots the way initialize would: one root /tmp/proj.
+    projectRoots := []("/tmp/seed7_lsp_proj");
+    rootsDeclared := TRUE;
+    check("inside the declared root: analysable",
+          str(analysable("file:///tmp/seed7_lsp_proj/src/a.sd7")), "TRUE");
+    check("outside the declared root: refused",
+          str(analysable("file:///tmp/other/b.sd7")), "FALSE");
+    check("a sibling directory of the root is refused, not half-matched",
+          str(analysable("file:///tmp/seed7_lsp_proj2/c.sd7")), "FALSE");
+    # A .s7i outside the roots: ensureAnalyzed is gated, so the driver never reads it.
+    openDoc("file:///tmp/other/lib.s7i");  # outside the roots
+    ensureAnalyzed("file:///tmp/other/lib.s7i");
+    check("a .s7i outside the roots is never analysed, so the driver never reads it",
+          str(uriInAnalysisCache("file:///tmp/other/lib.s7i")), "FALSE");
+    # A .s7i inside the roots: the driver reads it from disk and the cache fills.
+    block
+      makeDir("/tmp/seed7_lsp_proj");
+    exception
+      catch FILE_ERROR: noop;  # already exists from a previous run
+    end block;
+    libDoc := open("/tmp/seed7_lsp_proj/lib.s7i", "w");
+    write(libDoc, libText());
+    close(libDoc);
+    openDoc("file:///tmp/seed7_lsp_proj/lib.s7i");  # inside the roots
+    ensureAnalyzed("file:///tmp/seed7_lsp_proj/lib.s7i");
+    check("a .s7i INSIDE the roots is analysed, so the check above is not vacuous",
+          str(uriInAnalysisCache("file:///tmp/seed7_lsp_proj/lib.s7i")), "TRUE");
+    # An untrusted document's outline is empty and costs no analysis.
+    openDoc("file:///tmp/other/b.sd7");  # outside the roots
+    check("an untrusted document's outline is empty", documentSymbolResult(
+          symbolsOfDocument("file:///tmp/other/b.sd7"), "/tmp/other/b.sd7"), "[]");
+    check("an untrusted document cost no analysis",
+          str(uriInAnalysisCache("file:///tmp/other/b.sd7")), "FALSE");
+    # references answers with content for an untrusted buffer: the cursor resolves through
+    # the scanner, the binding is unbound (empty syms), and the answer carries unresolved TRUE.
+    refs := referencesAnswer(openDocs["file:///tmp/other/b.sd7"],
+             0 times symRec.value,
+             cursor("file:///tmp/other/b.sd7", 1, 14),
+             "file:///tmp/other/b.sd7", FALSE);
+    check("an untrusted document's references answers unresolved TRUE",
+          str(refs.unresolved), "TRUE");
+    # A trusted document costs one analysis and has a non-empty outline.
+    openDoc("file:///tmp/seed7_lsp_proj/src/a.sd7");  # inside the roots
+    ensureAnalyzed("file:///tmp/seed7_lsp_proj/src/a.sd7");
+    check("a trusted document does cost one, and its outline is not empty",
+          str(uriInAnalysisCache("file:///tmp/seed7_lsp_proj/src/a.sd7")) <& "/" <&
+          (documentSymbolResult(symbolsOfDocument("file:///tmp/seed7_lsp_proj/src/a.sd7"),
+                                "/tmp/seed7_lsp_proj/src/a.sd7") = "[]" ? "empty" : "filled"),
+          "TRUE/filled");
+    # Mixed workspaceFolders root list with / and a real root: usableRoot discards the slash,
+    # so rootsDeclared stays TRUE (no rootless notice) but the surviving root narrows the gate.
+    msg := parseMessage(initFrame(17, ",\"workspaceFolders\":[{\"uri\":\"file:///\"},{\"uri\":\"file:///tmp/seed7_lsp_proj\"}]"));
+    handle(msg);
+    check("mixed root list with / keeps rootsDeclared (no rootless notice)",
+          str(rootsDeclared), "TRUE");
+    check("mixed root list: path inside surviving root is analysable",
+          str(analysable("file:///tmp/seed7_lsp_proj/src/a.sd7")), "TRUE");
+    check("mixed root list: outside-path is refused (the narrow result)",
+          str(analysable("file:///etc/passwd")), "FALSE");
+    # Restore the gate state so no later check silently runs behind a closed gate.
+    projectRoots := 0 times "";
+    rootsDeclared := FALSE;
     report("lsp_server");
   end func;

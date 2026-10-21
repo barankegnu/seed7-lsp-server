@@ -62,14 +62,14 @@ const func string: joinSurrogates (in string: stri) is func
           if isLowSurrogate(lo) then
             # 65536 here is the astral base of the pair formula, not a width rule -- the bounds
             # above are utf8bytes', which is also what jsonw refuses to write raw.
-            out := out & str(chr(((hi - 55296) * 1024) + (lo - 56320) + 65536));
+            out &:= str(chr(((hi - 55296) * 1024) + (lo - 56320) + 65536));
             paired := TRUE;
             i := succ(i);
           end if;
         end if;
       end if;
       if not paired then
-        out := out & str(chr(hi));
+        out &:= str(chr(hi));
       end if;
       i := succ(i);
     end while;

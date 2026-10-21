@@ -10,14 +10,14 @@ doc_index.sd7                 150  +stdlib: osfiles.s7i
 doc_store.sd7                 342  scan.sd7 utf8bytes.sd7
 jsonw.sd7                     135  utf8bytes.sd7
 keywords.sd7                   73
-lsp_server.sd7                461  analysis.sd7 diagnostics.sd7 doc_store.sd7 features/completion.sd7 features/definition.sd7 features/document_symbol.sd7 features/folding_range.sd7 features/hover.sd7 features/prepare_rename.sd7 features/references.sd7 features/rename.sd7 features/selection_range.sd7 features/semantic_tokens.sd7 features/signature_help.sd7 rpc.sd7 transport.sd7 uris.sd7 +stdlib: stdio.s7i utf8.s7i
+lsp_server.sd7                541  analysis.sd7 diagnostics.sd7 doc_store.sd7 features/completion.sd7 features/definition.sd7 features/document_symbol.sd7 features/folding_range.sd7 features/hover.sd7 features/prepare_rename.sd7 features/references.sd7 features/rename.sd7 features/selection_range.sd7 features/semantic_tokens.sd7 features/signature_help.sd7 rpc.sd7 transport.sd7 uris.sd7 +stdlib: stdio.s7i utf8.s7i
 lsp_tst.sd7                    35  +stdlib: stdio.s7i
 main.sd7                       51  lsp_server.sd7
 occurrences.sd7               558  analysis.sd7 blocks.sd7 keywords.sd7 scan.sd7
 rpc.sd7                       262  jsonw.sd7 transport.sd7 utf8bytes.sd7 +stdlib: json.s7i strifile.s7i
-scan.sd7                      517  utf8bytes.sd7
+scan.sd7                      519  utf8bytes.sd7
 transport.sd7                 138  utf8bytes.sd7 +stdlib: utf8.s7i
-uris.sd7                       54  +stdlib: encoding.s7i
+uris.sd7                       83  +stdlib: encoding.s7i
 utf8bytes.sd7                  66
 features/completion.sd7       124  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 keywords.sd7
 features/definition.sd7        54  analysis.sd7 doc_store.sd7 jsonw.sd7 uris.sd7
