@@ -225,7 +225,7 @@ No editor is required to test any of this, which is the point of the module spli
 1. **Long-session memory.** Each analysis allocates a full `program`. Refcount destruction should make this a non-issue, but it is unmeasured over hours. Mitigation: `s7 -a` on a loop while watching RSS is an afternoon; if it grows, restart-on-idle is honest and invisible to the client.
 2. **Version skew with the interpreter.** `getError` fields and `errorType` names are the interface we depend on. Pinning a minimum 5.4.x and reporting the interpreter version in `serverInfo` makes mismatches visible instead of mysterious.
 3. **`globalObjects` is global to the program**, thousands of entries; per-keystroke filtering must stay cheap. Measure before optimising; a name-prefix hash is the obvious fix.
-4. **`scan.sd7` correctness** decides semanticTokens, folding, and the later reference index. **Confirmed:** 65 unit checks in `scan_test.sd7` plus 56 in `features_test.sd7` and 83 in the wire transcript, each mutation-provable branch pinned by a check that goes FAIL when its rule is mutated.
+4. **`scan.sd7` correctness** decides semanticTokens, folding, and the later reference index. **Confirmed:** 66 unit checks in `scan_test.sd7` plus 56 in `features_test.sd7` and 83 in the wire transcript, each mutation-provable branch pinned by a check that goes FAIL when its rule is mutated.
 5. **Windows untested.** Seed7 builds there; `utf8File` and `getln` framing should follow, but nobody has tried.
 
 ## 10. Seed7 language notes (learned the slow way — keep them here)

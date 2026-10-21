@@ -370,5 +370,6 @@ After the rewrite:
 
     30239 usecs, 1 calls
 
-Three orders of magnitude. The `ponytail:` lazy-fill upgrade path that lived in
-`src/doc_store.sd7`'s note is deleted: at ~30 ms over a stdlib-sized file it no longer matters.
+746×. The `ponytail:` lazy-fill upgrade path that lived in
+`src/doc_store.sd7`'s note is deleted: the ratio holds, but the absolute ~30 ms is an
+optimized-build figure (`s7c -p -O2`); the shipped interpreted server pays more per call.

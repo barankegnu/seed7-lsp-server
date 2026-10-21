@@ -132,6 +132,9 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `arguments` and `argv`) was not recognised by 5.4.10: `*** Declaration for main
   missing`, exit 0, and the probe silently never ran. The idiom the standard library uses is a plain
   `main is func` reading `for a range argv(PROGRAM) do` (`prg/echo.sd7`, verified).
+- `&` copies its whole left side, so a per-token append (`s &:= token` in a loop) is quadratic.
+  `&:=` is the in-place `STR_APPEND` — it grows the buffer, so the cost is amortised linear. The
+  evidence and the measured ratio live in *Every change — measurement provenance* in `docs/seed7-cli.md`.
 
 ## Invariants — a violation is a defect, not a style preference
 
@@ -221,6 +224,8 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `OKAY_NO_ERROR`). Both counts are right; do not "reconcile" them.
 - `#` is both the line-comment introducer and the radix marker of `16#beef`.
   The scanner decides, because it knows whether it is inside a number token.
+- `analysable` is the ONLY trust predicate. Every `analyzeAll` and every `publish` call site
+  must consult it — F1 existed because that rule was true of `analyzeAll` and not of `publish`.
 
 ## Do not "fix" these
 
