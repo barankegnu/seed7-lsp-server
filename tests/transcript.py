@@ -418,7 +418,7 @@ expect(junk == 0, "the refusal run put only frames on stdout (junk=%d)" % junk)
 # are about the SYMBOL rather than the client.
 replies, code, err, junk = run(pr_msgs(req(1, "initialize",
                                            {"capabilities": {}, "processId": None,
-                                            "rootUri": None,
+                                            "rootUri": "file:///tmp",
                                             "workspace": {"applyEdit": True}})))
 by_id = {r.get("id"): r for r in replies if "id" in r}
 expect(by_id.get(60, {}).get("result") == PR_EXPECT,
@@ -489,8 +489,8 @@ def rn_msgs(init):
             shutdown(76), exit_()]
 
 
-APPLY = req(1, "initialize", {"capabilities": {}, "processId": None, "rootUri": None,
-                              "workspace": {"applyEdit": True}})
+APPLY = req(1, "initialize", {"capabilities": {}, "processId": None,
+                              "rootUri": "file:///tmp", "workspace": {"applyEdit": True}})
 RN_RUN = rn_msgs(APPLY)
 replies, code, err, junk = run([frame(m) for m in RN_RUN])
 by_id = {r.get("id"): r for r in replies if "id" in r}
@@ -1518,11 +1518,11 @@ expect(by_id.get(4, {}).get("result") is None,
 # Block one: a client that declared file:///tmp/proj as its root opens one file inside it and
 # one outside; the outside file is never analysed, publishes nothing, and the refusal names the
 # roots. Block two: a client that declared NO root runs unguarded and still gets diagnostics.
-IN_URI = "file:///tmp/proj/in.sd7"
+IN_URI = "file:///tmp/seed7_lsp_proj/in.sd7"
 OUT_URI = "file:///tmp/outside.sd7"
 GATE_INIT = req(1, "initialize",
                   {"capabilities": {}, "processId": None,
-                   "rootUri": "file:///tmp/proj"})
+                   "rootUri": "file:///tmp/seed7_lsp_proj"})
 replies, code, err, junk = run([frame(GATE_INIT), frame(msgs[1]),
                                 frame(opened(IN_URI, BROKEN)),
                                 frame(opened(OUT_URI, BROKEN)),
@@ -1549,6 +1549,10 @@ replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
                                 frame(shutdown(2)), frame(exit_())])
 expect("analyzed " + OUT_URI in err,
        "a rootless client still analyses the document")
+expect(any(r.get("method") == "window/logMessage" and
+           "no project roots" in r.get("params", {}).get("message", "")
+           for r in replies),
+       "a rootless client is told once that it runs unguarded")
 rootless_notes = [r for r in replies if r.get("method") == "textDocument/publishDiagnostics"
                   and r["params"]["uri"] == OUT_URI]
 expect(bool(rootless_notes) and

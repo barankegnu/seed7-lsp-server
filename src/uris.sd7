@@ -25,9 +25,12 @@ const func boolean: isLibraryBufferPath (in string: path) is
   return endsWith(path, ".s7i");
 
 # underRoot answers TRUE when path equals a root or starts with root & "/";
-# "/" or "//" strips to empty — the filesystem root, contains every absolute path.
+# "/" or "//" strips to empty — the filesystem root, which matches any path.
 # An empty-string root ("") is skipped. Textual comparison after pathOf() decodes
 # — separator- and case-exact; Windows drive-letter case is untested, out of scope.
+# Deliberate limit: `..` segments are not resolved and symlinks are not followed, so
+# `/root/../secret/x.sd7` matches `/root` and a symlink escapes by name. Canonicalising
+# would need filesystem access per document and would still not stop a symlink inside a root.
 const func boolean: underRoot (in string: path, in array string: roots) is func
   result
     var boolean: found is FALSE;

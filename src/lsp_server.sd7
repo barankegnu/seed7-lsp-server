@@ -165,13 +165,8 @@ const func string: textToAnalyze (in string: uri) is func
     end if;
   end func;
 
-# The single place a document is analysed. Every reader below goes through it, so a changed
-# document costs one parseStri and a symbol request arriving after that change costs none -- the
-# change's own refresh has already filled the entry. OBLIGATION: any path that changes a
-# document's text or version must delete its entry before refreshing; validity here is presence,
-# deliberately (see `analysisCache' above for why there is no second mechanism). The
-# `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py counts, because the log is
-# the observable and no counter variable belongs in the product.
+# The gate predicate: TRUE when no roots were declared (the rootless case is open by design)
+# or the document's decoded path is inside one of them. Consulted by ensureAnalyzed and refresh.
 const func boolean: analysable (in string: uri) is func
   result
     var boolean: out is FALSE;
@@ -179,13 +174,21 @@ const func boolean: analysable (in string: uri) is func
     out := not rootsDeclared or underRoot(pathOf(uri), projectRoots);
   end func;
 
+# The single place a document is analysed. Every reader below goes through it, so a changed
+# document costs one parseStri and a symbol request arriving after that change costs none -- the
+# change's own refresh has already filled the entry. OBLIGATION: any path that changes a
+# document's text or version must delete its entry before refreshing; validity here is presence,
+# deliberately (see `analysisCache' above for why there is no second mechanism). The
+# `seed7-lsp: analyzed ' line on stderr is what tests/transcript.py counts, because the log is
+# the observable and no counter variable belongs in the product.
 const proc: ensureAnalyzed (in string: uri) is func
   local
     var docAnalysis: fresh is docAnalysis.value;
   begin
     # Scanner-backed features (foldingRange, selectionRange, semanticTokens) keep answering for
     # an untrusted buffer: they read doc.text and cannot execute code. The hover/definition/
-    # outline/rename family answers from an empty symbol list instead.
+    # outline/references/rename family answers from an empty symbol list instead -- references
+    # returns its text occurrences with an unresolved disclosure (spec 12.2's read may over-include).
     if analysable(uri) then
       if uri in openDocs and not (uri in analysisCache) then
         fresh := analyzeAll(textToAnalyze(uri), libraryDirs, pathOf(uri));
@@ -330,7 +333,7 @@ const proc: handle (in rpcMsg: msg) is func
           end if;
         end for;
       elsif category(rootUriVal) = JSON_STRING then
-        rootPath := pathOf(string(rootUriVal));
+        rootPath := pathOf(strAt(msg.params, "rootUri", ""));
         if rootPath <> "" then
           collected &:= rootPath;
         end if;
@@ -338,6 +341,12 @@ const proc: handle (in rpcMsg: msg) is func
       projectRoots := collected;
       rootsDeclared := length(collected) <> 0;
       sendResult(msg.id, initializeResultJson);
+      # A rootless client runs unguarded by design (single-file editing must not break), but
+      # the plan promises the client is told once. Sent AFTER the result so the InitializeResult
+      # is the first frame on the wire, not a logMessage.
+      if not rootsDeclared then
+        logMessage("the server will analyse every document it is given because no project roots were declared");
+      end if;
     elsif msg.method = "initialized" then
     elsif msg.method = "$/setTrace" then
     elsif msg.method = "$/cancelRequest" then

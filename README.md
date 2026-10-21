@@ -28,11 +28,14 @@ front end to point at a document, and no build flag that makes analysis inert.
 Treat opening an untrusted `.sd7` the way you would treat running it: point this server
 only at code you trust, and at one project per editor window. A trust gate now ships: the
 server analyses only documents inside the `rootUri`/`workspaceFolders` a client declared at
-`initialize`, and an untrusted `didOpen` publishes no diagnostics and logs the reason once. A
-client that declares no root runs unguarded by design — the single-file editing this
-README recommends must not break. The gate is a *containment* control on top of the rule
-above, not a sandbox: analysis still executes code inside the roots, `s7 -a` is not a
-defence, and compiling is not an escape.
+`initialize`, and an untrusted `didOpen` sends no diagnostics notification and logs the reason
+once. A client that declares no root runs unguarded by design — the single-file editing this
+README recommends must not break — and is told so at `initialize`. The gate is a
+*containment* control on top of the rule above, not a sandbox: analysis still executes
+code inside the roots, `s7 -a` is not a defence, and compiling is not an escape. The
+comparison is textual on decoded paths: `..` segments are not resolved and symlinks are
+not followed, so a path that escapes by name still matches — canonicalising would need
+filesystem access per document and would still not stop a symlink inside a root.
 
 Startup may also print two `Authorization required, but no authorization protocol
 specified` lines. Those come from the X11-linked Seed7 runtime, not from this server;
