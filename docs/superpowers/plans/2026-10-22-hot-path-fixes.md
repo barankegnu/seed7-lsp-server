@@ -29,9 +29,9 @@
 
 The spec implies these five inputs; no task's existing tests cover all of them, and each line gets its check in the named step.
 
-1. **A character column that sits behind an astral character** — the answer must still be the UTF-16 unit, not the character index. → Task 1 Step 1 (`col7`/`col8`).
-2. **A column past the end of its own line** (`lspRange(doc, 1, 99)`, and the analyzer's absurd byte columns that arrive through `lspRangeBytes`) — must clamp to the line, not read on into the next one. → Task 1 Step 1 (`past-eol clamp`, `stopNL`).
-3. **A CR-only or CRLF buffer** — `\r` is a line break for this server, so a line-local walk must stop at it too. → Task 1 Step 1 (`stopCR`).
+1. **A character column that sits behind an astral character** — the answer must still be the UTF-16 unit, not the character index. → Task 1 Step 1 (`lspRange before the astral`, `lspRange past the astral`).
+2. **A column past the end of its own line** (`lspRange(doc, 1, 99)`, and the analyzer's absurd byte columns that arrive through `lspRangeBytes`) — must clamp to the line, not read on into the next one. → Task 1 Step 1 (`col past eol clamps`, `lspRange past eol on an astral line`; note that the clamp fires first, so `lspRangeBytes` cannot reach the walk's own break tests).
+3. **A CR-only or CRLF buffer** — `\r` is a line break for this server, so a line-local walk must stop at it too. → Task 1 Step 1 (`count stops at a CR`, `count stops at the newline`).
 4. **Two positions in one `selectionRange` request that fall inside the same region** — both must get the region in their chain, in request order, from the one scan. → Task 2 Step 1.
 5. **A document that encloses nothing** (`"a  b"`) — the filter must answer the empty list, and the chain must still carry exactly token + document, which existing check (c) pins. → Task 2 Step 1 (`a held list with nothing enclosing it`).
 
@@ -101,7 +101,7 @@ unreachable from every check in the suite:
 
 | mutant (in `unitsOfPrefix` alone) | observed result |
 |---|---|
-| `n < count` → `n <= count` | **15 failed.** Reddens `line1 char0`, `line2 col1`, `line2 after 3 chars`, `line past eof clamps`, `column 0 keeps lspRange total`, `crlf second line start`, `astral counts twice`, `lspRange before the astral`, `lspRange past the astral`, `range pair`, the three byte-column pins, the ASCII-sweep equivalence. Does NOT redden `trailing b counted`, `count stops at the newline`, `count stops at a CR`, `lspRange past eol on an astral line` |
+| `n < count` → `n <= count` | **15 failed.** Reddens `line1 char0`, `line2 col1`, `line2 after 3 chars`, `line past eof clamps`, `column 0 keeps lspRange total`, `crlf second line start`, `astral counts twice`, `lspRange before the astral`, `lspRange past the astral`, `range pair`, the four byte-column pins (`byte 26 of a line with two 2-byte chars`, `a line below range still maps its byte`, `byte 26 after an astral char`, `a byte inside an astral char`), the ASCII-sweep equivalence. Does NOT redden `trailing b counted`, `count stops at the newline`, `count stops at a CR`, `lspRange past eol on an astral line` |
 | delete `i <= length(text) and` | **0 failed — reddens nothing.** No product caller can reach it: `lspRange` clamps `ch ≤ lineWidth`, so the walk cannot run off the end. Kept anyway, because its sibling `lineUnits` carries the same guard for the same reason and the two must not disagree about a line's end. This is defence, not tested behaviour; the honest statement is that no check proves it |
 | drop `text[i] <> '\n'` | **1 failed:** `count stops at the newline` |
 | drop `text[i] <> '\r'` | **1 failed:** `count stops at a CR` |
@@ -129,6 +129,11 @@ Expected, from the run behind this plan (`utf16Before` row present = before, `un
 | `diagnosticsJson`, 5 publishes on `shiftjis.s7i` (375 354 chars, 3 635 lines) | 16 697 357 µs | 3 440 µs |
 | one publish of the same | 3 339 471 µs | 688 µs |
 | a 2 004-line / 113 005-char document, 100 diagnostics | 225 355 µs / 5 | 3 477 µs / 5 |
+
+> **These are the plan-time rows.** They came from the controller's probe on a 113 005-char synthetic
+> file; the branch's committed fixture is 113 119 chars and its author measured 14 821 089 → 3 532 and
+> 209 664 → 3 732 for the same shapes, and `src/doc_store.sd7:123-126` carries those, not these. Both
+> sets are honest as measurements of their own runs; do not "fix" one to match the other.
 | `profile_out` rows for the walk | `utf16Before` 16 687 763 µs / 2 000 calls | `unitsOfPrefix` 276 µs / 1 000 calls |
 
 Delete the probe binary and `profile_out`; `git status --porcelain -uall` must be empty.
@@ -258,7 +263,7 @@ Probe: `/tmp/probe_perf/probe_sel.sd7` — `shiftjis.s7i` text, `setVersion`, 32
 awk -F'\t' '$4=="selectionResult"||$4=="blockRegions"{print $1,$2,$4}' profile_out
 ```
 
-Expected, from the runs behind this plan. All four rows come from the same probe on the same text, `profile_out` rows only; the middle row isolates the hoist by measuring after Task 1 alone, and `bytes_each` came back 5 441 on both sides of every run:
+Expected, from the runs behind this plan. All four rows come from the same probe on the same text, `profile_out` rows only; the middle row isolates the hoist by measuring after Task 1 alone, and `bytes_each` came back 5 441 on both sides of every run. That probe drives three `selectionResult` calls **and three `foldingResult` calls**, which is why its `blockRegions` count is 99 (96 from the positions, 3 from folding) rather than 96:
 
 | figure | before | after |
 |---|---|---|
@@ -266,6 +271,12 @@ Expected, from the runs behind this plan. All four rows come from the same probe
 | same, after Task 1's fix alone (the hoist's own share: 962 963 → 195 080) | 962 963 µs | 195 080 µs |
 | `selectionResult`, one 32-position request, the 2 004-line document | 788 603 µs | 126 737 µs |
 | `blockRegions` calls for 3 such requests (`shiftjis.s7i`) | 99 | 6 |
+
+> **Plan-time rows, and the branch measured its own.** A probe that drives only `selectionResult` gets
+> 96 → 3, which is what the shipped commit says; 99 → 6 is that same 96 → 3 plus the three direct
+> `foldingResult` calls this probe also makes. Neither number is wrong; they describe different probes.
+> The requested **column** also changes `bytes_each` — 5 441 for `character: 10`, 5 377 for the column the
+> branch run chose — so the claim to check is equality across the change, never the size of the number.
 
 The `bytes_each` sentinel must be identical on both sides of the change: 5 441 for the 32-position request on `shiftjis.s7i`, 5 409 for the 32-position request on the 2 004-line document (both measured). Deleting the second product caller of `enclosingRegions` is what the `blockRegions` call row proves; the answer itself is proved by the seven unchanged checks.
 
