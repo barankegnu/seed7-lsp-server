@@ -94,16 +94,24 @@ Expected: `doc_store: 77 checks, 0 failed` (72 today, +5: the two moved checks r
 
 Mutate `src/doc_store.sd7` one line at a time and revert per file. Name the check that reddens; a mutant that reddens nothing is a check that cannot fail.
 
-**Corrected after Task 1 ran (the original table here was overstated, and the implementer caught it by running the mutants).** An inclusive bound is invisible wherever the walk is already stopped by a line break or the end of the text, so two of the four rows named checks that cannot redden:
+**Corrected after Task 1 ran, then re-measured line by line (every cell below is an observed
+`make test-doc_store` result, not an inference).** An inclusive bound is invisible wherever the
+walk is already stopped by a line break or the end of the text, and one guard turned out to be
+unreachable from every check in the suite:
 
-| mutant | reddens (measured) | does NOT redden |
-|---|---|---|
-| `n < count` → `n <= count` | `astral counts twice`; `count stops at the newline` | `trailing b counted` (the text ends first), `lspRange past eol on an astral line` (the clamp stops at the break first), `lspRange before/past the astral` (both stop early too) |
-| drop the `text[i] <> '\n'` test | `count stops at the newline`, and the `lspRange` pins on a line with text after the break | |
-| drop the `text[i] <> '\r'` test | `count stops at a CR` | |
-| `i := start` → `i := succ(start)` | every `lspRange` check that asks for a non-zero column, incl. `line2 after 3 chars` | |
+| mutant (in `unitsOfPrefix` alone) | observed result |
+|---|---|
+| `n < count` → `n <= count` | **15 failed.** Reddens `line1 char0`, `line2 col1`, `line2 after 3 chars`, `line past eof clamps`, `column 0 keeps lspRange total`, `crlf second line start`, `astral counts twice`, `lspRange before the astral`, `lspRange past the astral`, `range pair`, the three byte-column pins, the ASCII-sweep equivalence. Does NOT redden `trailing b counted`, `count stops at the newline`, `count stops at a CR`, `lspRange past eol on an astral line` |
+| delete `i <= length(text) and` | **0 failed — reddens nothing.** No product caller can reach it: `lspRange` clamps `ch ≤ lineWidth`, so the walk cannot run off the end. Kept anyway, because its sibling `lineUnits` carries the same guard for the same reason and the two must not disagree about a line's end. This is defence, not tested behaviour; the honest statement is that no check proves it |
+| drop `text[i] <> '\n'` | **1 failed:** `count stops at the newline` |
+| drop `text[i] <> '\r'` | **1 failed:** `count stops at a CR` |
+| helper's `i := start` → `i := succ(start)` | **9 failed**, incl. `lspRange before the astral`, `trailing b counted`, both break checks, `col past eol clamps` |
 
-The honest requirement is only that each mutant reddens **at least one named check**, and the first row needs the two `count stops at …` boundary checks to carry it — which is why they exist. Do not add a check to rescue a weaker row: if a mutant reddens nothing, the row goes, not the code.
+Two traps this table cost, both worth carrying into Task 2: an edit can fail to apply and still
+report a clean run, so assert the file actually changed before trusting a green (`sed` with nested
+escaping did exactly that here, three times); and `i := start` appears in more than one line-walker
+in this file, so a mutant must be aimed at the helper's own line or it proves something else. Do not
+add a check to rescue a weak row: if a mutant reddens nothing, say so, as the second row does.
 
 - [ ] **Step 6: Measure it, the way this repo measures**
 
