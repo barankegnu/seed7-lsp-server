@@ -193,7 +193,7 @@ suite runs: `project_graph.sh` and `agents_gate.sh`.
 methods advertised, suites and the module each is named after. Regenerate with `make graph`.
 
 - `AGENTS.md` — constraints for anyone editing this code: the Seed7 traps, the invariants, and
-  the recipe for performance claims (profile a compiled, optimized build with `s7c -p -O2 -l src`
+  the recipe for performance claims (profile a compiled, optimized build with `s7c -p -l src`
   and read `profile_out`; never `time` the interpreter. Every flag there is cited to the Seed7 FAQ
   in section *Seed7 traps*).
 
