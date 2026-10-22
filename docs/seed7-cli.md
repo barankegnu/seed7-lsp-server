@@ -435,7 +435,7 @@ made stale there now prints MISSING.
 used `&`, which copies its whole left side per token, making it quadratic in document size. The
 rewrite to `&:=` (`STR_APPEND`, grows in place) is what makes `didChange` cheap.
 
-Profiled, optimized build: `s7c -p -O2 -l src /tmp/mask_cost.sd7` then run `/tmp/mask_cost`,
+Profiled, optimized build: `s7c -p -l src /tmp/mask_cost.sd7` then run `/tmp/mask_cost`,
 reading `profile_out` with `awk -F'\t' '$4=="maskOf"{print $1" usecs, "$2" calls"}'`.
 The probe calls `maskOf` once on the text of `~/seed7/lib/shiftjis.s7i` (375 352 characters,
 read with a `readln` loop — `gets(f, -1)` raises `RANGE_ERROR`).
@@ -450,7 +450,7 @@ After the rewrite:
 
 746×. The `ponytail:` lazy-fill upgrade path that lived in
 `src/doc_store.sd7`'s note is deleted: the ratio holds, but the absolute ~30 ms is an
-optimized-build figure (`s7c -p -O2`); the shipped interpreted server pays more per call.
+optimized-build figure (`s7c -p`); the shipped interpreted server pays more per call.
 
 ## Every change — the two hot paths, measured
 
@@ -466,7 +466,7 @@ Command, on the committed code, both sides of each pair — `50833bb` for before
 each built as its own binary from its own tree so the comparison is binary-vs-binary:
 
     git worktree add -f --detach /tmp/rm/base 50833bb
-    for L in <the two src dirs>; do s7c -p -O2 -l $L /tmp/rm/d1.sd7; done   # then run each
+    for L in <the two src dirs>; do s7c -p -l $L /tmp/rm/d1.sd7; done   # then run each
     awk -F'\t' '$4=="diagnosticsJson"{print $1, $2, $4}' profile_out
 
 Probes are `/tmp/rm/d1.sd7` (`lib/shiftjis.s7i`, 375 354 characters, 100 diagnostics placed at
