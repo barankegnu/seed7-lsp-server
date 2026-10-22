@@ -92,14 +92,18 @@ Expected: `doc_store: 77 checks, 0 failed` (72 today, +5: the two moved checks r
 
 - [ ] **Step 5: Prove the new checks can fail**
 
-Mutate `src/doc_store.sd7` one line at a time and revert each by file (`git checkout -- src/doc_store.sd7` restores from the index, so commit nothing yet or revert per hunk). Name the check that reddens; a mutant that reddens nothing is a check that cannot fail:
+Mutate `src/doc_store.sd7` one line at a time and revert per file. Name the check that reddens; a mutant that reddens nothing is a check that cannot fail.
 
-| mutant | must redden |
-|---|---|
-| `n < count` → `n <= count` | `astral counts twice`, `trailing b counted`, and the three `lspRange …` pins |
-| drop the `text[i] <> '\n'` test | `count stops at the newline` |
-| drop the `text[i] <> '\r'` test | `count stops at a CR` |
-| `i := start` → `i := succ(start)` | `lspRange before the astral` |
+**Corrected after Task 1 ran (the original table here was overstated, and the implementer caught it by running the mutants).** An inclusive bound is invisible wherever the walk is already stopped by a line break or the end of the text, so two of the four rows named checks that cannot redden:
+
+| mutant | reddens (measured) | does NOT redden |
+|---|---|---|
+| `n < count` → `n <= count` | `astral counts twice`; `count stops at the newline` | `trailing b counted` (the text ends first), `lspRange past eol on an astral line` (the clamp stops at the break first), `lspRange before/past the astral` (both stop early too) |
+| drop the `text[i] <> '\n'` test | `count stops at the newline`, and the `lspRange` pins on a line with text after the break | |
+| drop the `text[i] <> '\r'` test | `count stops at a CR` | |
+| `i := start` → `i := succ(start)` | every `lspRange` check that asks for a non-zero column, incl. `line2 after 3 chars` | |
+
+The honest requirement is only that each mutant reddens **at least one named check**, and the first row needs the two `count stops at …` boundary checks to carry it — which is why they exist. Do not add a check to rescue a weaker row: if a mutant reddens nothing, the row goes, not the code.
 
 - [ ] **Step 6: Measure it, the way this repo measures**
 
@@ -168,6 +172,10 @@ Both expected strings below were printed by running `blockRegions`/`enclosingReg
     rs := blockRegions(text, pred(linesIn(text)));
     check("filter of a held list, innermost first",
           chainOfRegions(rs, 3), "2-4 1-4");
+    # A line that IS a region's last line: both regions still contain it. This is the
+    # row that proves the end-line test is inclusive -- at line 3 it is not observable.
+    check("a region's own end line is inside it",
+          chainOfRegions(rs, 4), "2-4 1-4");
     check("a held list with nothing enclosing it",
           chainOfRegions(blockRegions("a  b", pred(linesIn("a  b"))), 0), "");
 ```
@@ -212,15 +220,18 @@ Move `enclosingRegions`' filter-and-sort body under the new name, taking the alr
 - [ ] **Step 5: Run both suites and confirm they pass**
 
 Run: `make test-blocks && make test-selection_range`
-Expected: `blocks: 70 checks, 0 failed` and `selection_range: 8 checks, 0 failed`
+Expected: `blocks: 71 checks, 0 failed` and `selection_range: 8 checks, 0 failed`
 
 - [ ] **Step 6: Prove the new checks can fail**
 
-| mutant (one at a time, then revert) | must redden |
-|---|---|
-| sort comparator `<` → `>` in `enclosingRegionsFrom` (outermost first) | `filter of a held list, innermost first`, and `two positions yield answers in request order` (existing check (d)) |
-| `line0 <= all[i].endLine` → `line0 < all[i].endLine` | `filter of a held list, innermost first` |
-| pass an empty `allRegions` from `selectionResult` | `two positions in one region share the chain, in order` and (b), (d), (f) |
+Six steps above said 70 for `blocks`; it is 71 now, because the end-line check below was
+added when the first mutant row here was found to name a check that could not redden.
+
+| mutant (one at a time, then revert) | must redden | why that one |
+|---|---|---|
+| sort comparator `<` → `>` in `enclosingRegionsFrom` | `filter of a held list, innermost first`, and existing selection_range check (d) | order is the whole contract |
+| `line0 <= all[i].endLine` → `line0 < all[i].endLine` | `a region's own end line is inside it` — and NOT `filter of a held list` (line 3 sits inside both regions either way) | measured: `chainFrom(all, 4)` is `2-4 1-4` inclusive, empty exclusive |
+| pass an empty `allRegions` from `selectionResult` | `two positions in one region share the chain, in order`, and (b), (d), (f) | the parents vanish |
 
 - [ ] **Step 7: Measure the hoist the same way**
 
