@@ -278,8 +278,7 @@ const proc: main is func
     # A line that IS a region's last line: both regions still contain it. This is the
     # row that proves the end-line test is inclusive -- at line 3 it is not observable.
     check("a region's own end line is inside it", chainOfRegions(rs, 4), "2-4 1-4");
-    check("a held list with nothing enclosing it",
-          chainOfRegions(blockRegions("a  b", pred(linesIn("a  b"))), 0), "");
+    check("a held list with nothing enclosing it", chainOfRegions(rs, 0), "");
 
     # ---- which region is a routine, and where does it end ----
     # Aggregate over the fixture: exactly the four routine bodies carry a closer. Sections,

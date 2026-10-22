@@ -342,8 +342,9 @@ const func array blockRef: blockRegions (in string: text,
   end func;
 
 # The chain containing a position, innermost first, out of an ALREADY SCANNED region list. Not a
-# second machine: a chain is a FILTER over regions, and blockRegions returns them in document
-# order, which is what makes the descending sort below correct. The list comes from the caller
+# second machine: a chain is a FILTER over regions. blockRegions returns them in document order,
+# which settles only the tie between regions sharing a startLine -- the descending sort below is
+# correct for any input order and is what puts the innermost first. The list comes from the caller
 # because a request that asks about SEVERAL positions must pay one scan, not one per position --
 # the same rule routineRegionFor states for several declarations, and the reason
 # features/selection_range.sd7 hoists blockRegions out of chainForPosition. A region contains
