@@ -171,6 +171,16 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
    path that emits `\8364;` for `€` — invalid JSON.
    `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty. The greps are
    recursive (`src/`, not `src/*.sd7`) because M3 put feature code in `src/features/`.
+8. A position conversion walks **its own line**, never the document. `doc_store.lspRange` counts a
+   column with `unitsOfPrefix(doc.text, start, ch)` — `start` is `doc.lineStart[lineIdx]` — and
+   `lspRangeUnits` counts with `lineUnits`; a helper that instead sums widths from index 1 is
+   `utf16Before`, which this branch deleted because two of its callers were on the `didChange` path.
+   Same rule one level up: `blockRegions` is scanned once per request, and `enclosingRegionsFrom`
+   filters the list the caller holds — `enclosingRegions` was deleted for doing the scan per position.
+   Cost of violating it is not a wrong answer but an unmeasurable one: the fix that walked from index 1
+   cost 3.46 s per diagnostics publish on `lib/shiftjis.s7i` against 997 µs for the line-bounded one.
+   Figures, commands and the equivalence sweep: *Every change — the two hot paths, measured* in
+   `docs/seed7-cli.md`.
 
 ## Protocol decisions that are easy to undo by accident
 

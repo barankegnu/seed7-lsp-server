@@ -130,10 +130,14 @@ Expected, from the run behind this plan (`utf16Before` row present = before, `un
 | one publish of the same | 3 339 471 µs | 688 µs |
 | a 2 004-line / 113 005-char document, 100 diagnostics | 225 355 µs / 5 | 3 477 µs / 5 |
 
-> **These are the plan-time rows.** They came from the controller's probe on a 113 005-char synthetic
+> **These are the plan-time rows, superseded.** They came from the controller's probe on a 113 005-char synthetic
 > file; the branch's committed fixture is 113 119 chars and its author measured 14 821 089 → 3 532 and
-> 209 664 → 3 732 for the same shapes, and `src/doc_store.sd7:123-126` carries those, not these. Both
-> sets are honest as measurements of their own runs; do not "fix" one to match the other.
+> 209 664 → 3 732 for the same shapes. The authoritative pair is the re-measurement on the committed code —
+> `50833bb` against `2f37da4`, each built as its own binary: **17 277 011 µs → 4 986 µs** for five publishes of
+> 100 diagnostics on `lib/shiftjis.s7i` (3.46 s against 997 µs per publish) and **272 654 µs → 4 535 µs** on
+> the 2 004-line document, published bytes identical on both sides of each. Command, probe shapes and the
+> three-set discrepancy are recorded in *Every change — the two hot paths, measured* in `docs/seed7-cli.md`;
+> quote those rows, not these.
 | `profile_out` rows for the walk | `utf16Before` 16 687 763 µs / 2 000 calls | `unitsOfPrefix` 276 µs / 1 000 calls |
 
 Delete the probe binary and `profile_out`; `git status --porcelain -uall` must be empty.
@@ -272,11 +276,14 @@ Expected, from the runs behind this plan. All four rows come from the same probe
 | `selectionResult`, one 32-position request, the 2 004-line document | 788 603 µs | 126 737 µs |
 | `blockRegions` calls for 3 such requests (`shiftjis.s7i`) | 99 | 6 |
 
-> **Plan-time rows, and the branch measured its own.** A probe that drives only `selectionResult` gets
+> **Plan-time rows, superseded by the re-measurement.** A probe that drives only `selectionResult` gets
 > 96 → 3, which is what the shipped commit says; 99 → 6 is that same 96 → 3 plus the three direct
-> `foldingResult` calls this probe also makes. Neither number is wrong; they describe different probes.
-> The requested **column** also changes `bytes_each` — 5 441 for `character: 10`, 5 377 for the column the
-> branch run chose — so the claim to check is equality across the change, never the size of the number.
+> `foldingResult` calls this probe also makes. On the committed code, `s.sd7` (32 positions at
+> `character: 10`, lines `500 + i * 12`, three requests, one document) measured **6 864 122 µs → 668 029 µs**
+> for `selectionResult` — 2.29 s against 223 ms per request, 10.3× — with `blockRegions` **96 calls → 3** and
+> the sentinel frame identical at 5 441 bytes on both sides. The requested **column** changes `bytes_each`
+> (5 441 for `character: 10`, 5 377 for the column the branch run chose), so the claim to check is equality
+> across the change, never the magnitude of the number.
 
 The `bytes_each` sentinel must be identical on both sides of the change: 5 441 for the 32-position request on `shiftjis.s7i`, 5 409 for the 32-position request on the 2 004-line document (both measured). Deleting the second product caller of `enclosingRegions` is what the `blockRegions` call row proves; the answer itself is proved by the seven unchanged checks.
 
