@@ -451,3 +451,73 @@ After the rewrite:
 746×. The `ponytail:` lazy-fill upgrade path that lived in
 `src/doc_store.sd7`'s note is deleted: the ratio holds, but the absolute ~30 ms is an
 optimized-build figure (`s7c -p -O2`); the shipped interpreted server pays more per call.
+
+## Every change — the two hot paths, measured
+
+Two conversions walked the whole document where a line would do, and both were on the keystroke
+path. `doc_store.lspRange` turned the analyzer's byte column into a character column with
+`utf16Before(start + ch) - utf16Before(start)` — two walks from index 1, so a publish of N
+diagnostics cost O(N × document) — and `features/selection_range.sd7` called `blocks.blockRegions`
+inside `chainForPosition`, so one request with P positions paid P full-document scans. The fixes are
+`unitsOfPrefix` (walk the line, stop at `count` or a break) and `enclosingRegionsFrom` (filter the
+list the caller already holds). `utf16Before` and `enclosingRegions` are gone; neither has a caller.
+
+Command, on the committed code, both sides of each pair — `50833bb` for before, `2f37da4` for after,
+each built as its own binary from its own tree so the comparison is binary-vs-binary:
+
+    git worktree add -f --detach /tmp/rm/base 50833bb
+    for L in <the two src dirs>; do s7c -p -O2 -l $L /tmp/rm/d1.sd7; done   # then run each
+    awk -F'\t' '$4=="diagnosticsJson"{print $1, $2, $4}' profile_out
+
+Probes are `/tmp/rm/d1.sd7` (`lib/shiftjis.s7i`, 375 354 characters, 100 diagnostics placed at
+`line1 := 30 + i * 36`, five `diagnosticsJson` calls), `/tmp/rm/d2.sd7` (a synthetic 2 004-line /
+113 005-character document, those diagnostics on its first hundred lines) and `/tmp/rm/s.sd7`
+(`shiftjis.s7i` again, 32 positions on lines `500 + i * 12`, `character: 10`, three
+`selectionResult` calls). Every one prints a `SENTINEL` line with the document size and the published
+frame's byte length before any timing row is read, and `profile_out` is the only source of the µs.
+
+| probe | `50833bb` | `2f37da4` | published bytes |
+|---|---|---|---|
+| `d1` `diagnosticsJson`, 5 publishes on `shiftjis.s7i` | 17 277 011 µs | 4 986 µs | 13 684 both sides |
+| per publish | 3.46 s | 997 µs | 3 464× |
+| `d2` `diagnosticsJson`, 5 publishes on the 2 004-line document | 272 654 µs | 4 535 µs | 13 322 both sides |
+| per publish | 54.5 ms | 907 µs | 60× |
+| `s` `selectionResult`, 3 requests of 32 positions | 6 864 122 µs | 668 029 µs | 5 441 both sides |
+| per request | 2.29 s | 223 ms | 10.3× |
+| `s` `blockRegions` calls for those 3 requests | 96 | 3 | — |
+
+The published bytes matching on every probe is the point of the exercise, not a footnote: both changes
+claim to move no answer, and a byte-equal frame from `d1`/`d2`/`s` is what makes that claim observed
+rather than argued. It is also what the equivalence sweep covers more broadly — `lspRange` old against
+new over 3 674 148 line-and-column positions (every line, every column, out-of-range lines included,
+across `shiftjis.s7i`, a document mixing astral and 2-byte characters with lone `\r`, `\r\n` and `\n`,
+a final line with no terminator, and the empty document) returned 0 disagreements, and 375 464 when
+the off-by-one `n <= count` was injected into the new helper. A comparison that has never failed is
+not evidence.
+
+Three caveats, all of them this file's own kind of honesty:
+
+- **Absolute µs move between runs of identical binaries.** This branch has three sets of rows for the
+  same fix: 16 697 357 / 3 440 (measured in a scratch copy while the plan was being written, quoted in
+  the plan), 14 821 089 / 3 532 (measured by the implementing agent, and what
+  `src/doc_store.sd7`'s comment and commit `3a6c8ef` carry), and the 17 277 011 / 4 986 above
+  (measured on the committed code). All three agree on shape and disagree on magnitude by up to ~2.5×,
+  because the earlier two ran on trees that were being edited under the probe and against fixtures whose
+  synthetic document differs by 114 characters. The rows above are the ones to quote; the older pairs
+  stay where they are because they are the evidence for claims already committed, and rewriting a
+  commit's numbers would make the commit describe a run nobody did.
+- **`99 → 6` in the plan is a different probe, not a different truth.** That probe drove three
+  `selectionResult` calls *and* three `foldingResult` calls, so `blockRegions` was called 96 + 3 times
+  before the fix and 3 + 3 after. The `s` probe above drives only `selectionResult`: 96 → 3. Both
+  counts are correct for the probe that printed them, which is the whole reason each row here names its
+  probe.
+- **These are optimized-build figures.** The server ships interpreted (`s7 -q -l src src/main.sd7`), so
+  the shipped cost per call is higher on both sides of every row; the ratios are the part that
+  transfers.
+
+One semantic question two reviews declined is settled here rather than assumed: whether
+`out &:= all[i]` in `enclosingRegionsFrom` copies a record or shares it. A standalone probe
+(`/tmp/alias/a.sd7`, a struct with two integers, append four into a second array, then write a field of
+one appended element) reported `src[2].a=2 dst[2].a=999` — copied. So the held region list a request
+reuses across positions cannot be corrupted by a future field write inside the filter, which is a
+stronger statement than the one the diff supported.

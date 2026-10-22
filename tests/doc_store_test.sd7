@@ -61,6 +61,7 @@ const proc: main is func
     var lsDoc: two is lsDoc.value;
     var lsDoc: op is lsDoc.value;
     var lsDoc: masked is lsDoc.value;
+    var lsDoc: astral is lsDoc.value;
     var wordRef: w is wordRef.value;
     var string: bLine is "";
   begin
@@ -75,8 +76,22 @@ const proc: main is func
     check("column 0 keeps lspRange total", lspRange(doc, 0, 0), "{\"line\":0,\"character\":0}");
     setVersion(crlf, "ab\r\ncd", 1);
     check("crlf second line start", lspRange(crlf, 2, 1), "{\"line\":1,\"character\":0}");
-    check("astral counts twice", str(utf16Before("a𐐀b", 3) - utf16Before("a𐐀b", 1)), "3");
-    check("trailing b counted", str(utf16Before("a𐐀b", 4) - utf16Before("a𐐀b", 1)), "4");
+    # (was) utf16Before's two astral checks, re-aimed at the line-local helper.
+    check("astral counts twice", str(unitsOfPrefix("a\128512;b", 1, 2)), "3");
+    check("trailing b counted", str(unitsOfPrefix("a\128512;b", 1, 3)), "4");
+    # The guard the caller's clamp cannot reach: the walk stops at its own line break.
+    check("count stops at the newline",  str(unitsOfPrefix("ab\ncd", 1, 4)), "2");
+    check("count stops at a CR",         str(unitsOfPrefix("a\r\nb", 1, 4)), "1");
+    # Equivalence pins through the product function, on a line holding an astral
+    # character ahead of the column, and the past-the-end clamp of the same line.
+    setVersion(astral, "u := " <& chr(34) <& chr(128512) <& chr(34) <&
+                       "; v := 1;" <& chr(10), 1);
+    check("lspRange before the astral", lspRange(astral, 1, 7),
+          "{\"line\":0,\"character\":6}");
+    check("lspRange past the astral",   lspRange(astral, 1, 8),
+          "{\"line\":0,\"character\":8}");
+    check("lspRange past eol on an astral line", lspRange(astral, 1, 99),
+          "{\"line\":0,\"character\":18}");
     check("version stored", str(crlf.version), "1");
     setVersion(two, "  const proc: main is func\n    writeln(x);\n", 1);
     w := wordAt(two, 1, 6);

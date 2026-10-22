@@ -131,5 +131,22 @@ const proc: main is func
           selOf(text, "[{\"line\":0,\"character\":8},{\"line\":0,\"character\":10}]"),
           expected);
 
+    # (h) two cursors inside the SAME `begin ... end func' region: identical parents, and only
+    # the innermost token range differs. It passes on BASE too -- this is the equivalence pin for
+    # hoisting blockRegions out of chainForPosition: the answers must not move. (d) asks columns 4
+    # and 13; this one asks 4 and 12, so the second token is the `(' at column 11 of writeln(1);.
+    text := "$ include \"seed7_05.s7i\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;";
+    expected := "[{\"range\":{\"start\":{\"line\":3,\"character\":4},\"end\":{\"line\":3,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":4,\"character\":11}}}}}}," <&
+                "{\"range\":{\"start\":{\"line\":3,\"character\":11},\"end\":{\"line\":3,\"character\":12}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":4,\"character\":11}}," <&
+                "\"parent\":{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":4,\"character\":11}}}}}}]";
+    check("two positions in one region share the chain, in order",
+          selOf(text, "[{\"line\":3,\"character\":4},{\"line\":3,\"character\":12}]"),
+          expected);
+
     report("selection_range");
   end func;

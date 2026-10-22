@@ -161,7 +161,7 @@ Resolution, for the token at the request position:
 
 | the name at the cursor is… | binding | scope of that symbol |
 |---|---|---|
-| a `locals`/`params`/`results` name of the enclosing declaration | that local | the enclosing declaration's `blockRef` region from `blocks.enclosingRegions` |
+| a `locals`/`params`/`results` name of the enclosing declaration | that local | the enclosing declaration's `blockRef` region from `blocks.routineRegionFor` over a `blocks.blockRegions` list |
 | the name of a declaration whose `file` is this buffer | that global | whole document **minus the regions of any local, parameter or result variable of the same name** |
 | neither, but some `symRec` carries it | the library's | not renameable; references answers for this file |
 | nothing (unresolvable, or the buffer's analysis is incomplete) | **unknown** | every occurrence of the name in the file, plus the log line |

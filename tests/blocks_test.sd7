@@ -43,20 +43,29 @@ const func string: regionsOf (in string: text) is func
     end for;
   end func;
 
-const func string: chainOf (in string: text, in integer: line0) is func
+# The chain of a list the CALLER holds -- the filter and the rendering, without the scan.
+# Named for its parameter so a reader sees which half it exercises.
+const func string: chainOfRegions (in array blockRef: all, in integer: line0) is func
   result
     var string: out is "";
   local
     var array blockRef: rs is 0 times blockRef.value;
     var integer: i is 0;
   begin
-    rs := enclosingRegions(text, line0, pred(linesIn(text)));
+    rs := enclosingRegionsFrom(all, line0);
     for i range 1 to length(rs) do
       if out <> "" then
         out := out & " ";
       end if;
       out := out & str(rs[i].startLine) & "-" & str(rs[i].endLine);
     end for;
+  end func;
+
+const func string: chainOf (in string: text, in integer: line0) is func
+  result
+    var string: out is "";
+  begin
+    out := chainOfRegions(blockRegions(text, pred(linesIn(text))), line0);
   end func;
 
 # The routine fixture, one array element per source line: element succ(N) is line0 N, so a
@@ -117,7 +126,7 @@ const func string: closerAt (in string: text, in integer: line0) is func
   local
     var array blockRef: rs is 0 times blockRef.value;
   begin
-    rs := enclosingRegions(text, line0, pred(linesIn(text)));
+    rs := enclosingRegionsFrom(blockRegions(text, pred(linesIn(text))), line0);
     out := "";
     if length(rs) > 0 then
       out := rs[1].closer;
@@ -239,6 +248,8 @@ const proc: main is func
     var lsDoc: doc is lsDoc.value;
     var integer: i is 0;
     var string: violation is "";
+    var string: text is "";
+    var array blockRef: rs is 0 times blockRef.value;
   begin
     fixtures := allFixtures;
     # Exact-output checks and property checks from the same list.
@@ -257,6 +268,17 @@ const proc: main is func
                   3), "2-4 1-5 0-5");
     check("a line outside every construct has no chain",
           chainOf("writeln(1);\n", 0), "");
+
+    # ---- the filter applied to a list the caller holds, which is what selectionRange pays ----
+    # blockRegions(text, 4) holds exactly two regions, 1-4 and 2-4; line0 3 sits in both.
+    text := "$ include \"seed7_05.s7i\";" <& chr(10) <& "const proc: main is func" <& chr(10)
+            <& "  begin" <& chr(10) <& "    writeln(1);" <& chr(10) <& "  end func;";
+    rs := blockRegions(text, pred(linesIn(text)));
+    check("filter of a held list, innermost first", chainOfRegions(rs, 3), "2-4 1-4");
+    # A line that IS a region's last line: both regions still contain it. This is the
+    # row that proves the end-line test is inclusive -- at line 3 it is not observable.
+    check("a region's own end line is inside it", chainOfRegions(rs, 4), "2-4 1-4");
+    check("a held list with nothing enclosing it", chainOfRegions(rs, 0), "");
 
     # ---- which region is a routine, and where does it end ----
     # Aggregate over the fixture: exactly the four routine bodies carry a closer. Sections,

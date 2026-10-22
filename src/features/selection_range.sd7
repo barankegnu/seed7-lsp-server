@@ -5,8 +5,8 @@ $ include "seed7_05.s7i";
   include "rpc.sd7";
 
 # Ponytail: cap at 32 positions per request, the way folding_range caps regions.
-# A client that sends more is asking for a quadratic chain build; the cap keeps
-# the response bounded.
+# The scan is shared now, so what each position still costs is one chain build -- the cap
+# bounds that per-position work and the response size, not the region pass.
 const integer: MAX_SELECT_POSITIONS is 32;
 
 # Builds a SelectionRange JSON node: {"range":<rangeJson>,"parent":<parentJson>}
@@ -30,7 +30,8 @@ const func string: wrapRange (in string: parentJson, in string: rangeJson) is fu
 
 # The SelectionRange chain for one position.
 const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
-                                      in integer: lastLine) is func
+                                      in integer: lastLine,
+                                      in array blockRef: allRegions) is func
   result
     var string: out is "";
   local
@@ -68,7 +69,7 @@ const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
     end if;
 
     # Get enclosing regions (innermost first).
-    regions := enclosingRegions(doc.text, line0, lastLine);
+    regions := enclosingRegionsFrom(allRegions, line0);
 
     # Start with the document range (outermost, no parent). docEndCol1 is a CHARACTER count
     # from lineWidth, so it belongs on the converting side -- lspRange, not lspRangeUnits.
@@ -80,7 +81,7 @@ const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
                  ",\"end\":" <& lspRange(doc, docEndLine1, docEndCol1) <& "}";
     chain := wrapRange("", rangeJson);
 
-    # Iterate backwards (outermost first from enclosingRegions) and wrap each region.
+    # Iterate backwards (outermost first from enclosingRegionsFrom) and wrap each region.
     for i range length(regions) downto 1 do
       endLine1 := succ(regions[i].endLine);
       endCol1 := lineWidth(doc.text, doc.lineStart[endLine1]) + 1;
@@ -103,6 +104,7 @@ const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is f
     var integer: n is 0;
     var integer: i is 0;
     var integer: lastLine is 0;
+    var array blockRef: allRegions is 0 times blockRef.value;
     var jsonValue: posItem is jsonValue.value;
     var string: chain is "";
   begin
@@ -114,10 +116,11 @@ const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is f
         n := MAX_SELECT_POSITIONS;
       end if;
       lastLine := pred(lineCount(doc));
+      allRegions := blockRegions(doc.text, lastLine);
       openArray(w);
       for i range 1 to n do
         posItem := itemAt(positions, i);
-        chain := chainForPosition(doc, posItem, lastLine);
+        chain := chainForPosition(doc, posItem, lastLine, allRegions);
         raw(w, chain);
       end for;
       closeArray(w);
