@@ -239,7 +239,16 @@ added when the first mutant row here was found to name a check that could not re
 |---|---|---|
 | sort comparator `<` → `>` in `enclosingRegionsFrom` | `filter of a held list, innermost first`, and existing selection_range check (d) | order is the whole contract |
 | `line0 <= all[i].endLine` → `line0 < all[i].endLine` | `a region's own end line is inside it` — and NOT `filter of a held list` (line 3 sits inside both regions either way) | measured: `chainFrom(all, 4)` is `2-4 1-4` inclusive, empty exclusive |
-| pass an empty `allRegions` from `selectionResult` | `two positions in one region share the chain, in order`, and (b), (d), (f) | the parents vanish |
+| pass an empty `allRegions` from `selectionResult` | `two positions in one region share the chain, in order` (h), and (b), (d) — NOT (f) | the parents vanish |
+
+**Corrected after Task 2 ran the mutation.** This row claimed (f) reddens too; it does not, and the
+implementer measured that: (f)'s expected chain is token + document only, so an empty region list
+cannot change it. A row naming an unaffected check is a row that cannot fail.
+
+Also found by that run: the `expected` literal this brief spelled out for (h) was not valid JSON —
+one `}` short per answer. The implementer pinned HEAD's measured answer instead, which is the right
+call for a regression pin, and the lesson generalises: a pinned value must come from the code,
+never from typing it out by hand.
 
 - [ ] **Step 7: Measure the hoist the same way**
 
