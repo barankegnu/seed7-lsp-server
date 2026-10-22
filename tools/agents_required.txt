@@ -37,8 +37,8 @@ s7 -a
 s7 -p FILE
 s7 [options] sourcefile [parameters]
 s7c -p
-s7c -p -O2 -l src <file>
-s7c -p -O2 -l src tests/occurrences_test.sd7
+s7c -p -l src <file>
+s7c -p -l src tests/occurrences_test.sd7
 s7c -s x
 s7c -t
 usecs / calls / place / name
