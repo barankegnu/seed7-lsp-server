@@ -21,7 +21,7 @@ rules file wins and the disagreement is a defect to fix in one of them.
 ## Every change — profiling
 
 Performance numbers are never `time`-ed off the interpreter. Build a profiled, optimized binary —
-`s7c -p -O2 -l src <file>`, run it, and read `profile_out`, which the program writes when it
+`s7c -p -l src <file>`, run it, and read `profile_out`, which the program writes when it
 finishes (`-p` activates simple function profiling, <https://seed7.net/faq.htm#profile_programs>;
 `-p` on `s7` is a different flag — its trace-protocol file). The table is
 `usecs / calls / place / name`, tab-separated and ordered by time consumed, so the rows at the top
@@ -39,7 +39,7 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   and it writes `profile_out` — a tab-separated table of microseconds, call count, `file(line)` and
   function name, ordered by the time each function consumes
   (<https://seed7.net/faq.htm#profile_programs>; a binary may also be profiled with external tools
-  such as Valgrind). Measured here as `s7c -p -O2 -l src tests/occurrences_test.sd7`, running it
+  such as Valgrind). Measured here as `s7c -p -l src tests/occurrences_test.sd7`, running it
   gave 194 700 µs in `main`, of which 164 211 µs was 7 `analysisOf` calls (`src/analysis.sd7:333`
   `analyzeAll`, then `collectSyms` at 78 441 µs) — i.e. analysis and the symbol walk dominate, which
   is the evidence behind "one analysis per version" and the buffered-only `locals` guard. Compiled
