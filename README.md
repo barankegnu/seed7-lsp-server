@@ -61,6 +61,20 @@ variant, safe because it traces with `-tfs`; `make clean-build` removes the arti
 leaves in `src/`. The flag sets and the measurements are in *Build — the two flag sets* in
 `docs/seed7-cli.md`.
 
+The two flag lines, for a compile by hand instead of through `make` — `s7c` takes no `-o`, so the
+executable lands beside its source (`src/main`) and `profile_out` lands in the cwd:
+
+    release: -O3 -flto -oc3 -w2
+    debug:   -O3 -flto -oc3 -w2 -e -g-debug_c -p -tefs
+
+The debug line is a probe you run by hand to find a crash, and it is the line as handed down by
+`~/seed7/doc/s7c.1`. Do not serve it: its `-te` writes every **caught** exception to stdout, and
+`rpc.sd7` catches exceptions on the request path deliberately, so measured on this tree the stream
+began with 642 bytes of non-frame text before the first frame. The traced build that may serve is
+this one, which is what `make build-debug` runs:
+
+    -O3 -flto -oc3 -w2 -e -g-debug_c -p -tfs
+
 * **Emacs (eglot)** — real API, works today:
 
       (add-to-list 'eglot-server-programs
