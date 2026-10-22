@@ -46,7 +46,7 @@
 # gap: its only literals, `s7c` (1 occurrence outside the moved text) and
 # https://seed7.net/faq.htm#compile (1 outside), already pass on text nobody moved, and a prose
 # fragment as a token is a check that cannot fail. And 44 checks are not 44 independent risks:
-# `s7c -p` is implied by the two longer `s7c -p -O2 ...` tokens, so it can only go MISSING when all
+# `s7c -p` is implied by the two longer `s7c -p ...` tokens, so it can only go MISSING when all
 # three do.
 # Each token in the list is one check: `grep -qF` over the union of AGENTS.md and
 # docs/seed7-cli.md, in that order, whichever of them exist. A file named in the list that does not
