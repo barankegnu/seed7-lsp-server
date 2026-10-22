@@ -4,7 +4,7 @@
 ## modules (own name -> the src modules it includes)
 
 analysis.sd7                  355  +stdlib: progs.s7i ref_list.s7i
-blocks.sd7                    415  scan.sd7
+blocks.sd7                    417  scan.sd7
 diagnostics.sd7                83  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
 doc_index.sd7                 150  +stdlib: osfiles.s7i
 doc_store.sd7                 358  scan.sd7 utf8bytes.sd7
@@ -28,7 +28,7 @@ features/kinds.sd7             88
 features/prepare_rename.sd7   240  analysis.sd7 doc_store.sd7 jsonw.sd7 occurrences.sd7 uris.sd7
 features/references.sd7       172  analysis.sd7 doc_store.sd7 jsonw.sd7 occurrences.sd7 uris.sd7
 features/rename.sd7           254  analysis.sd7 doc_store.sd7 features/kinds.sd7 features/prepare_rename.sd7 jsonw.sd7 keywords.sd7 occurrences.sd7 scan.sd7 uris.sd7
-features/selection_range.sd7  126  blocks.sd7 doc_store.sd7 rpc.sd7 +stdlib: json.s7i
+features/selection_range.sd7  129  blocks.sd7 doc_store.sd7 rpc.sd7 +stdlib: json.s7i
 features/semantic_tokens.sd7  150  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 scan.sd7
 features/signature_help.sd7   114  analysis.sd7 doc_store.sd7 jsonw.sd7
 
