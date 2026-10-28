@@ -27,7 +27,7 @@ features/hover.sd7             76  analysis.sd7 doc_index.sd7 doc_store.sd7 json
 features/kinds.sd7             88
 features/prepare_rename.sd7   240  analysis.sd7 doc_store.sd7 jsonw.sd7 occurrences.sd7 uris.sd7
 features/references.sd7       172  analysis.sd7 doc_store.sd7 jsonw.sd7 occurrences.sd7 uris.sd7
-features/rename.sd7           254  analysis.sd7 doc_store.sd7 features/kinds.sd7 features/prepare_rename.sd7 jsonw.sd7 keywords.sd7 occurrences.sd7 scan.sd7 uris.sd7
+features/rename.sd7           256  analysis.sd7 doc_store.sd7 features/kinds.sd7 features/prepare_rename.sd7 jsonw.sd7 keywords.sd7 occurrences.sd7 scan.sd7 uris.sd7
 features/selection_range.sd7  129  blocks.sd7 doc_store.sd7 rpc.sd7 +stdlib: json.s7i
 features/semantic_tokens.sd7  160  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 scan.sd7
 features/signature_help.sd7   117  analysis.sd7 doc_store.sd7 jsonw.sd7

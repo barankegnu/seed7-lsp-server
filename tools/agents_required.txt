@@ -26,7 +26,7 @@ profile_out
 scan.sd7:95
 seed7_05.s7i:280-294
 ## Seed7 traps
-src/analysis.sd7:333
+src/analysis.sd7:354
 tests/occurrences_test
 tests/occurrences_test.sd7
 utf8.s7i:132

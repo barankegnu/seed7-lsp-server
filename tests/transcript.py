@@ -281,7 +281,7 @@ replies, code, err, junk = run([frame(m) for m in [
     opened("file:///tmp/tt_ownrank.sd7", OWN_RANK),
     req(61, "textDocument/definition", pos("file:///tmp/tt_ownrank.sd7", 12, 18)),
     shutdown(62), exit_()]])
-defs = {r.get("id"): r for r in replies}.get(61, {}).get("result") or []
+defs = {r.get("id"): r for r in replies if "id" in r}.get(61, {}).get("result") or []
 expect(isinstance(defs, list) and bool(defs) and
        defs[0].get("uri") == "file:///tmp/tt_ownrank.sd7",
        "definition on an own overload of a stdlib name lists the buffer first")

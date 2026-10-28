@@ -40,8 +40,8 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   function name, ordered by the time each function consumes
   (<https://seed7.net/faq.htm#profile_programs>; a binary may also be profiled with external tools
   such as Valgrind). Measured here as `s7c -p -l src tests/occurrences_test.sd7`, running it
-  gave 194 700 µs in `main`, of which 164 211 µs was 7 `analysisOf` calls (`src/analysis.sd7:333`
-  `analyzeAll`, then `collectSyms` at 78 441 µs) — i.e. analysis and the symbol walk dominate, which
+  gave 194 700 µs in `main`, of which 164 211 µs was 7 `analysisOf` calls (`analyzeAll`, now at
+  `src/analysis.sd7:354`, then `collectSyms` at 78 441 µs) — analysis and the symbol walk dominate, which
   is the evidence behind "one analysis per version" and the buffered-only `locals` guard. Compiled
   probes write a binary next to their source (`tests/occurrences_test`) plus `profile_out` in
   the cwd — delete both; `git status --porcelain -uall` must be empty afterwards.
@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1060 checks: `scan` 66, `features` 189, `lsp_server` 79, `transcript` 194 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed) | `make test` |
+| suite totals | 21 suites, 1061 checks: `scan` 66, `features` 190, `lsp_server` 79, `transcript` 194 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 

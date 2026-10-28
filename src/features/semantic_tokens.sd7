@@ -32,8 +32,8 @@ const func integer: literalType (in integer: kind) is func
 # name -> class index, name -> declaration line and name -> library flag for the two modifiers.
 # isBufferFile decides the own/library choice; the guard `not (name in classes)' then lets the
 # first record of that group in, so list order still decides within a group, never across one.
-# 3 048 inserts (one per name, by the guard) and 15 000 lookups measured free beside one parseStri
-# -- a unit cost, not a pass count: the split doubles the walk over syms and adds no insert.
+# Nothing new lands in the hashes: the guard admits one insert per name however many records carry
+# it, so the split doubles the walk over syms and adds no insert -- a unit cost, not a pass count.
 const proc: fillClasses (in array symRec: syms, in string: ownPath,
                          inout classHash: classes, inout classHash: declLines,
                          inout classHash: fromLib, in boolean: wantOwn) is func
