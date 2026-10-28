@@ -20,7 +20,7 @@ transport.sd7                 138  utf8bytes.sd7 +stdlib: utf8.s7i
 uris.sd7                       83  +stdlib: encoding.s7i
 utf8bytes.sd7                  66
 features/completion.sd7       124  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 keywords.sd7
-features/definition.sd7        54  analysis.sd7 doc_store.sd7 jsonw.sd7 uris.sd7
+features/definition.sd7        80  analysis.sd7 doc_store.sd7 jsonw.sd7 uris.sd7
 features/document_symbol.sd7   34  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7
 features/folding_range.sd7     38  blocks.sd7 doc_store.sd7 jsonw.sd7
 features/hover.sd7             73  analysis.sd7 doc_index.sd7 doc_store.sd7 jsonw.sd7
