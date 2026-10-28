@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status:** executed 2026-10-28 — Tasks 1-4 and the final fix wave are on this branch, so Facts 1 and 2 below describe the PRE-fix state the branch deleted. They are the reproduction each task starts from, not the behaviour of the merged tree.
+> **Status:** executed 2026-10-28 — Tasks 1-4 and the final fix wave are on this branch, so Facts 1 and 2 below describe the PRE-fix state the branch deleted. They are the reproduction each task starts from, not the behaviour of the merged tree. Facts 3-5 are pre-wave too: the three inlined copies Fact 3 lists were replaced by Task 3, and the `tests/features_test.sd7` line numbers it cites shifted when the new fixtures were added, so locate those checks by title.
 
 **Goal:** Make every feature that truncates a symbol list, or takes the first record for a name, answer about the analysed document's own declarations before the standard library's.
 
@@ -74,7 +74,7 @@ The spec is silent on these; each line gets its test in the named task.
 
 **Interfaces:**
 - Consumes: `analysis.isBufferFile` (`:53`), `analysis.BUFFER_FILE` (`:45`), the loop-carried `rec` in `collectSyms`, and the existing dedupe hash `seen` keyed `name <& "|" <& file <& "|" <& str(line1)`.
-- Produces: a contract on `analyzeAll(...).syms` (`:333`) — *every record for which `isBufferFile(rec.file, docPath)` holds precedes every record for which it does not; relative order inside each group is unchanged.* Consumers in Tasks 2-4 and `lsp_server.sd7` rely on this sentence; it is also what `hoverText` and `signatureHelpResult` rely on through the `shortcut:` note added here.
+- Produces: a contract on `analyzeAll(...).syms` — *every record for which `isBufferFile(rec.file, docPath)` holds precedes every record for which it does not; relative order inside each group is unchanged.* Consumers in Tasks 2-4 and `lsp_server.sd7` rely on this sentence; it is also what `hoverText` and `signatureHelpResult` rely on through the `shortcut:` note added here. No line number is quoted for `analyzeAll`, because this branch moved it once already and a citation with no gate behind it goes stale silently.
 
 - [ ] **Step 1: Write the failing record-order checks.** In `tests/analysis_test.sd7`, after `:260` (`stdlib writeln is listed with an absolute path`), analyse the buffer fixture — this exact text, proven to analyse with 0 diagnostics through the real server:
 
