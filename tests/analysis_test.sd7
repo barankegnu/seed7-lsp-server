@@ -201,6 +201,46 @@ const func string: scopeLeak (in array symRec: syms, in string: docPath) is func
     out := str(filled) <& "|" <& str(leaked);
   end func;
 
+# Test-only: the ranking contract as ONE aggregate string, "<own->library boundaries>|<first
+# three own names>|<first three library names>", all read in array order. Aggregated rather
+# than pinned to one named record for the reason `scopeLeak' above states: the contract has a
+# second half no per-record assertion can see -- a group appended in reverse still puts the
+# buffer's own record of a stdlib name first, so the three ranking checks stay green while the
+# order INSIDE a group is broken. The boundary count catches a group that interleaves.
+const func string: rankShape (in array symRec: syms, in string: docPath) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+    var integer: boundaries is 0;
+    var integer: ownCount is 0;
+    var integer: otherCount is 0;
+    var string: ownNames is "";
+    var string: otherNames is "";
+    var boolean: own is FALSE;
+    var boolean: prevOwn is FALSE;
+  begin
+    for i range 1 to length(syms) do
+      own := isBufferFile(syms[i].file, docPath);
+      if own then
+        ownCount +:= 1;
+        if ownCount <= 3 then
+          ownNames &:= syms[i].name <& ",";
+        end if;
+      else
+        otherCount +:= 1;
+        if otherCount <= 3 then
+          otherNames &:= syms[i].name <& ",";
+        end if;
+        if prevOwn then
+          boundaries +:= 1;
+        end if;
+      end if;
+      prevOwn := own;
+    end for;
+    out := str(boundaries) <& "|" <& ownNames <& "|" <& otherNames;
+  end func;
+
 const proc: main is func
   local
     var analysisResult: a is analysisResult.value;
@@ -286,6 +326,10 @@ const proc: main is func
           symsNamed(syms, "length")[1].file, BUFFER_FILE);
     checkTrue("the library records of that name still follow it",
               startsWith(symsNamed(syms, "length")[2].file, "/"));
+    # One own->library boundary (own first, no interleaving) and both group heads in
+    # globalObjects order. Reversing either group's append reads the other names first.
+    check("the order inside each group survives the own-first split",
+          rankShape(syms, ""), "1|Widget,length,main,|type,void,proc,");
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than
     # a name; buildSign must not paste that marker into text the user reads.
     syms := symsOf("$ include \"seed7_05.s7i\";\n" <&

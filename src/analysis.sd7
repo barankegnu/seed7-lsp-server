@@ -268,10 +268,11 @@ const func boolean: listed (in array string: texts, in string: one) is func
 const type: symSeen is hash [string] integer;
 
 # The symbol half of an already-parsed `program`, appended to `syms`. Same reason as
-# collectDiags: one parseStri, both answers. Contract every consumer may rely on: every
-# record for which isBufferFile(rec.file, docPath) holds precedes every record for which
-# it does not, and the relative order inside each group is globalObjects order unchanged
-# -- a buffer that overloads a stdlib name must win a first-record-wins lookup.
+# collectDiags: one parseStri, both answers. Requires an EMPTY `syms': the two bulk appends
+# below put everything this proc produced AFTER whatever the caller already holds, so the
+# ranking is a property of a list collectSyms started itself. analyzeAll is the only caller
+# and always starts one empty; the contract consumers read is stated there, since that is
+# the list they are handed.
 const proc: collectSyms (in program: prog, inout array symRec: syms,
                          in string: docPath) is func
   local
@@ -280,6 +281,7 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
     var symSeen: seen is symSeen.EMPTY_HASH;
     var string: keyStr is "";
     var symRec: rec is symRec.value;
+    var boolean: own is FALSE;
     var array symRec: ownAdds is 0 times symRec.value;
     var array symRec: otherAdds is 0 times symRec.value;
   begin
@@ -292,12 +294,15 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
         rec.ty := safeType(obj);
         rec.line1 := line(obj);
         rec.params := paramsOf(obj);
+        # One decision, both uses: whether this record was declared in the document also
+        # fills its scope here and ranks it first at the append below.
+        own := isBufferFile(rec.file, docPath);
         # Buffer declarations only. A library local can shadow nothing visible in this
         # document, and four accessor walks per record is not free: filling every one of the
         # 3 328 globalObjects the symbols fixture parses to measured 52 ms per analyzeAll
         # against 43 ms guarded, calc7 140 against 130, shiftjis 71 against 64 -- medians of
         # three runs of nine analyses each, the same harness and text on both sides.
-        if isBufferFile(rec.file, docPath) then
+        if own then
           rec.locals := localsOf(obj);
         else
           # `rec' is loop-carried and this is the only field the guard does not re-stamp,
@@ -310,7 +315,7 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
         keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
         if keyStr not in seen then
           seen @:= [keyStr] 1;
-          if isBufferFile(rec.file, docPath) then
+          if own then
             ownAdds &:= rec;
           else
             otherAdds &:= rec;
@@ -341,6 +346,11 @@ const type: docAnalysis is new struct
     var array symRec: syms is 0 times symRec.value;
   end struct;
 
+# The `syms' handed out below are ranked own-first, which is the contract collectSyms builds:
+# every record for which isBufferFile(rec.file, docPath) holds precedes every record for which
+# it does not, and the relative order inside each group is the analyzer's globalObjects order
+# unchanged. A consumer that takes the first record for a name, or truncates the list, then
+# answers about the document's own declaration before the library's overloads of it.
 const func docAnalysis: analyzeAll (in string: text,
                                     in array string: libraryDirs,
                                     in string: docPath) is func

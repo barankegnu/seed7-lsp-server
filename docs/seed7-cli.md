@@ -521,3 +521,16 @@ One semantic question two reviews declined is settled here rather than assumed: 
 one appended element) reported `src[2].a=2 dst[2].a=999` — copied. So the held region list a request
 reuses across positions cannot be corrupted by a future field write inside the filter, which is a
 stronger statement than the one the diff supported.
+
+One correction to the reasoning above, bought by the own-first ranking (`5fe718c`). The plan's
+Architecture paragraph said the producer-side reorder costs "at zero extra cost"; that sentence is
+retracted, and it has been removed from the plan. Every record that survives the dedupe in
+`analysis.collectSyms` is now copied TWICE — once into its group array (`ownAdds &:= rec` /
+`otherAdds &:= rec`) and once again by the two bulk appends that close the proc in
+`src/analysis.sd7` — where one append into `syms` used to do. The copy, not a share, is what the
+`/tmp/alias/a.sd7` probe just above establishes. No figure is recorded here, because the only probe
+run was an interpreted throwaway with no sentinel and no compiled pair, and the first caveat above
+is precisely why such a run cannot be quoted; the structural fact is what stops "zero" being
+restated. The two-array shape is kept on purpose: the library group must be buffered either way, and
+appending the buffer's own records straight into `syms` would spare only the second copy of one group
+while deleting the pair of arrays the mutation proof targets.
