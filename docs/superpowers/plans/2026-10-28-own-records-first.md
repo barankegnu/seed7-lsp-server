@@ -255,15 +255,17 @@ Expected: FAIL — `the document's own overload is the first definition` and `th
 ## Task 3: One buffer-trust predicate, three call sites
 
 **Files:**
-- Modify: `src/features/document_symbol.sd7:22`, `src/features/semantic_tokens.sd7:49`, `src/features/completion.sd7:68`, `src/features/hover.sd7:29`
+- Modify: `src/features/document_symbol.sd7:22`, `src/features/semantic_tokens.sd7:49`, `src/features/completion.sd7:68`
 - Test: no new checks; the existing suites are the net.
-- Modify: `src/features/hover.sd7:29` — a fourth copy of the same rule, which `buildClasses` now depends on for its own-first answer (this plan originally counted three).
+- Modify: `src/features/hover.sd7:29` — NOT a substitution: see the note in Step 1.
 
 **Interfaces:**
 - Consumes: `analysis.isBufferFile(fname, docPath)`.
-- Produces: four fewer copies of the rule. No signature changes; no behaviour changes. `hover.sd7`'s copy is the one that matters after Task 4: `buildClasses` now answers from the buffer's own record, and a consumer that re-derives the test in only one arm silently diverges if `isBufferFile` ever widens.
+- Produces: three fewer copies of the rule, plus a note that `hover.sd7`'s BUFFER_FILE test is a different question. No signature changes; no behaviour changes.
 
-- [ ] **Step 1: Replace each inlined test** with `isBufferFile(syms[i].file, <the path the function already takes>)` — `path` in `documentSymbolResult`, `ownPath` in `buildClasses`, `ownFile` in `emitSyms`, and the `syms[i].file = BUFFER_FILE` arm in `hoverText`. All four files already include `analysis.sd7`, so no include list changes (check with `make test-graph`, which fails on a changed include set).
+- [ ] **Step 1: Replace each inlined test** with `isBufferFile(syms[i].file, <the path the function already takes>)` — `path` in `documentSymbolResult`, `ownPath` in `buildClasses`, `ownFile` in `emitSyms`. All three files already include `analysis.sd7`, so no include list changes (check with `make test-graph`, which fails on a changed include set).
+
+  `hover.sd7:29` is **not** one of these copies and must keep its narrower test. It asks `syms[i].file = BUFFER_FILE` to decide *where to read the `(** … *)` prose from* — the buffer's own text, or the file on disk — which is a different question from "did this document declare it", and `hoverText` has no `docPath` to pass. Rewriting it as `isBufferFile` would change behaviour for an open `.s7i` buffer (prose would come from the buffer instead of from disk, while R-F10 still analyses that buffer from disk). Add one comment line at `hover.sd7:29` naming the deliberate narrowness and the fact that `isBufferFile` is wider, so a future widening cannot silently diverge.
 
 - [ ] **Step 2: Run the full suite and compare every count.**
 
