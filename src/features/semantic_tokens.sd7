@@ -45,10 +45,7 @@ const proc: buildClasses (in array symRec: syms, in string: ownPath,
       if not (syms[i].name in classes) then
         classes @:= [syms[i].name] idx;
         declLines @:= [syms[i].name] syms[i].line1;
-        own := FALSE;
-        if syms[i].file = ownPath or syms[i].file = BUFFER_FILE then
-          own := TRUE;
-        end if;
+        own := isBufferFile(syms[i].file, ownPath);
         if own then
           fromLib @:= [syms[i].name] 0;
         else
