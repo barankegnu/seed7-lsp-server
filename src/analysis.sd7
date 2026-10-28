@@ -268,7 +268,10 @@ const func boolean: listed (in array string: texts, in string: one) is func
 const type: symSeen is hash [string] integer;
 
 # The symbol half of an already-parsed `program`, appended to `syms`. Same reason as
-# collectDiags: one parseStri, both answers.
+# collectDiags: one parseStri, both answers. Contract every consumer may rely on: every
+# record for which isBufferFile(rec.file, docPath) holds precedes every record for which
+# it does not, and the relative order inside each group is globalObjects order unchanged
+# -- a buffer that overloads a stdlib name must win a first-record-wins lookup.
 const proc: collectSyms (in program: prog, inout array symRec: syms,
                          in string: docPath) is func
   local
@@ -277,6 +280,8 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
     var symSeen: seen is symSeen.EMPTY_HASH;
     var string: keyStr is "";
     var symRec: rec is symRec.value;
+    var array symRec: ownAdds is 0 times symRec.value;
+    var array symRec: otherAdds is 0 times symRec.value;
   begin
     objs := globalObjects(prog);
     for obj range objs do
@@ -305,10 +310,16 @@ const proc: collectSyms (in program: prog, inout array symRec: syms,
         keyStr := rec.name <& "|" <& rec.file <& "|" <& str(rec.line1);
         if keyStr not in seen then
           seen @:= [keyStr] 1;
-          syms &:= rec;
+          if isBufferFile(rec.file, docPath) then
+            ownAdds &:= rec;
+          else
+            otherAdds &:= rec;
+          end if;
         end if;
       end if;
     end for;
+    syms &:= ownAdds;
+    syms &:= otherAdds;
   end func;
 
 # Diagnostics and symbols from ONE parse, and the only analysis entry point this server has: the

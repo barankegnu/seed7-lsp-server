@@ -61,6 +61,9 @@ const func string: callContextOf (in lsDoc: doc, in integer: line0,
 # SignatureHelp for one name: every overload, deduped by signature text. activeParameter
 # is clamped only at the bottom -- an argument index past the last parameter is reported as
 # typed, because that is the state the editor is in and dropping it would hide it.
+# shortcut: relies on analysis.collectSyms ranking own records first; a caller that builds
+#           syms another way shows library overloads first. Upgrade when a consumer needs
+#           order-independence.
 const func string: signatureHelpResult (in array symRec: syms, in string: callee,
                                         in integer: active) is func
   result

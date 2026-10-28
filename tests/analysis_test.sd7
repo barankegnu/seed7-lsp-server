@@ -206,6 +206,7 @@ const proc: main is func
     var analysisResult: a is analysisResult.value;
     var array string: dirs is 0 times "";
     var string: libPath is "/tmp/seed7_lsp_probe.s7i";
+    var string: lib2Path is "/tmp/seed7_lsp_probe2.s7i";
     var string: latePath is "/tmp/seed7_lsp_late.s7i";
     var string: lateFix is "";
     var array symRec: syms is 0 times symRec.value;
@@ -270,6 +271,21 @@ const proc: main is func
     check("a library routine's locals are not filled",
           str(length(lib.locals)), "0");
     checkTrue("nothing keeps the ? file", pos(allFiles(syms), "?") = 0);
+    # Own-first: the buffer overloads a stdlib name, so its record must precede the library's.
+    syms := symsOf("$ include \"seed7_05.s7i\";\n" <&
+                   "const type: Widget is new struct\n" <&
+                   "  var integer: size is 0;\n" <&
+                   "end struct;\n" <&
+                   "const func integer: length (in Widget: w) is func\n" <&
+                   "  result\n    var integer: out is 0;\n" <&
+                   "  begin\n    out := w.size;\n  end func;\n" <&
+                   "const proc: main is func\n" <&
+                   "  begin\n    writeln(length(Widget.value));\n  end func;\n",
+                   dirs, "");
+    check("the document's own record of a stdlib name ranks first",
+          symsNamed(syms, "length")[1].file, BUFFER_FILE);
+    checkTrue("the library records of that name still follow it",
+              startsWith(symsNamed(syms, "length")[2].file, "/"));
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than
     # a name; buildSign must not paste that marker into text the user reads.
     syms := symsOf("$ include \"seed7_05.s7i\";\n" <&
@@ -341,6 +357,14 @@ const proc: main is func
     syms := symsOf(driverFor(libPath), dirs, "");
     check("without docPath those same declarations stay unfilled",
           str(length(symsNamed(syms, "probeDouble")[1].locals)), "0");
+    # The .s7i case: its own records carry the FILE path, not BUFFER_FILE, so a ranking
+    # written as `file = BUFFER_FILE' would miss them.
+    out := open(lib2Path, "w");
+    write(out, "const func integer: length (in integer: n) is\n  return n + 1;\n");
+    close(out);
+    syms := symsOf(driverFor(lib2Path), dirs, lib2Path);
+    check("an .s7i buffer's own record of a stdlib name ranks first",
+          symsNamed(syms, "length")[1].file, lib2Path);
     # `rec' in collectSyms is loop-carried, so a library record that follows a filled
     # buffer record inherits that routine's scope unless the non-buffer path resets the
     # field. The witness is a LATE-LOADED include placed after a buffer declaration: the

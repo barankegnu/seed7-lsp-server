@@ -269,6 +269,23 @@ expect(isinstance(lib, list) and bool(lib) and
        "definition into the library returns .s7i locations, got %d" % len(lib or []))
 expect(by_id.get(32, {}).get("result") is None, "definition on punctuation is null")
 
+# --- Task 1: the analysed buffer's own overload of a stdlib name ranks first ---
+OWN_RANK = '$ include "seed7_05.s7i";\nconst type: Widget is new struct\n'
+OWN_RANK += '  var integer: size is 0;\nend struct;\n'
+OWN_RANK += 'const func integer: length (in Widget: w) is func\n  result\n'
+OWN_RANK += '    var integer: out is 0;\n  begin\n    out := w.size;\n  end func;\n'
+OWN_RANK += 'const proc: main is func\n  begin\n'
+OWN_RANK += '    writeln(length(Widget.value));\n  end func;\n'
+replies, code, err, junk = run([frame(m) for m in [
+    initialize(),
+    opened("file:///tmp/tt_ownrank.sd7", OWN_RANK),
+    req(61, "textDocument/definition", pos("file:///tmp/tt_ownrank.sd7", 12, 18)),
+    shutdown(62), exit_()]])
+defs = {r.get("id"): r for r in replies}.get(61, {}).get("result") or []
+expect(bool(defs) and defs[0]["uri"] == "file:///tmp/tt_ownrank.sd7",
+       "definition on an own overload of a stdlib name lists the buffer first")
+expect(junk == 0, "the own-rank session put only frames on stdout")
+
 # --- M5: references, and the log line an unproved binding owes the client ---
 # The cursor is on the struct field declaration `var integer: pix is 0;', whose name no
 # declaration source reaches (spec 11.10), so the binding is unproved: the answer is every

@@ -9,6 +9,9 @@ const integer: MAX_HOVER_OVERLOADS is 5;
 # Up to MAX_HOVER_OVERLOADS distinct signatures for the token, then the prose above the
 # first declaration that has any. Deduped by signature because the analyzer repeats an
 # overload that reaches the program through two include paths.
+# shortcut: relies on analysis.collectSyms ranking own records first; a caller that builds
+#           syms another way shows library overloads first. Upgrade when a consumer needs
+#           order-independence.
 const func string: hoverText (in array symRec: syms, in wordRef: word,
                               in lsDoc: doc) is func
   result
