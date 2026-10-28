@@ -46,6 +46,42 @@ const func array symRec: twoWriteln is func
     out &:= second;
   end func;
 
+# The order globalObjects really yields: the library's record first, the buffer's own last.
+# The own declaration is a data name, so the tokenType itself must move, not only the
+# modifiers. A Seed7 routine name and a data name live in different overload spaces
+# (features/rename.sd7), so a func and a var both named length is a legal fixture.
+const func array symRec: libThenOwn is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+  begin
+    rec.name := "length";
+    rec.cat := "ACTOBJECT"; rec.ty := "func integer";
+    rec.file := "/home/user/seed7/lib/string.s7i"; rec.line1 := 336;
+    out &:= rec;
+    rec.cat := "VAROBJECT"; rec.ty := "integer";
+    rec.file := BUFFER_FILE; rec.line1 := 1;
+    out &:= rec;
+  end func;
+
+# The same set for a buffer whose own declarations arrive with the document's path instead of
+# BUFFER_FILE, which is what an open .s7i produces (lsp_server drives it with a synthetic main).
+const func array symRec: pathThenOwn is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+  begin
+    rec.name := "length";
+    rec.cat := "ACTOBJECT"; rec.ty := "func integer";
+    rec.file := "/home/user/seed7/lib/string.s7i"; rec.line1 := 336;
+    out &:= rec;
+    rec.cat := "VAROBJECT"; rec.ty := "integer";
+    rec.file := "/p/a.sd7"; rec.line1 := 1;
+    out &:= rec;
+  end func;
+
 const proc: main is func
   begin
     check("the legend is the seven types and two modifiers, in index order",
@@ -71,6 +107,12 @@ const proc: main is func
     check("a name declared twice takes the first declaration's class",
           tokensIn(docOf("writeln\n"), twoWriteln, "/p/a.sd7", 0, 0),
           "{\"data\":[0,0,7,4,1]}");
+    check("an own declaration of a library name keeps its own class and marker",
+          tokensIn(docOf("length"), libThenOwn, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,0,6,5,1]}");
+    check("an .s7i buffer's own declaration wins the class tables too",
+          tokensIn(docOf("length"), pathThenOwn, "/p/a.sd7", 0, 0),
+          "{\"data\":[0,0,6,5,1]}");
     # The fixture is the test: x is undeclared so it is not emitted, which starts the first
     # emitted token at column 2. In a fixture whose first token is at column 0, prevCol is 0
     # and the delta is relative to nothing, so the subtraction cannot be observed.

@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1040 checks: `scan` 66, `features` 186, `lsp_server` 79, `transcript` 192 | `make test` |
+| suite totals | 21 suites, 1060 checks: `scan` 66, `features` 189, `lsp_server` 79, `transcript` 194 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 

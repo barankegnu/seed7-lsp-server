@@ -48,8 +48,8 @@ const string: BUFFER_FILE is "STRING";
 # One spelling of "declared in the document being edited": BUFFER_FILE for text handed to
 # parseStri, and the document's OWN PATH for an open .s7i, which lsp_server analyses through
 # driverFor(pathOf(uri)) with that same path as docPath -- so its declarations arrive with `file'
-# equal to the path, never BUFFER_FILE (measured by analysis_test's probeDouble checks). The
-# collectSyms guard below and occurrences' binding rows both ask through this one function.
+# equal to the path, never BUFFER_FILE (measured by analysis_test's probeDouble checks). Every
+# consumer that asks "did this document declare it" asks through this one function.
 const func boolean: isBufferFile (in string: fname, in string: docPath) is func
   result
     var boolean: out is FALSE;
