@@ -284,8 +284,9 @@ Expected: FAIL — the outline and scope checks that pass a real `docPath` go re
 ## Task 4: Make `buildClasses` prefer the document's own record
 
 **Files:**
-- Modify: `src/features/semantic_tokens.sd7:35-58`
-- Test: `tests/semantic_tokens_test.sd7` (fixture beside `twoWriteln` at `:26`, check beside `:71`)
+- Modify: `src/features/semantic_tokens.sd7:35-58` (the `wantOwn` two passes)
+- Test: `tests/semantic_tokens_test.sd7` (fixtures beside `twoWriteln` at `:26`, checks beside `:71`)
+- Modify: `src/analysis.sd7:51-52` — one comment line: the predicate's own doc sentence says "the collectSyms guard below and occurrences' binding rows **both** ask through this one function", which under-reports its reach now that eight sites in six files do. Replace with a sentence that names no count and no file: every consumer that asks "did this document declare it" asks through this one function. (Carried in from the Task 3 review as a controller ruling; it is a comment, so no check moves, but `docs/PROJECT_GRAPH.md`'s `analysis.sd7` line count changes and must be regenerated with the rest.)
 - Modify: `docs/seed7-cli.md:394` (suite totals)
 
 **Interfaces:**
@@ -321,6 +322,31 @@ check("an own declaration of a library name keeps its own class and marker",
 
   Expected-by-construction: tokenType `variable` (legend index 5) and tokenModifiers `declaration` (bit 0) only. `A Seed7 routine name and a data name live in different overload spaces` — that measurement is `src/features/rename.sd7:88-97`, so a `var` and a `func` both named `length` is a legal fixture, and it makes the tokenType itself move rather than only the modifiers.
 
+- [ ] **Step 1b: Write the second failing check — the `docPath` arm of the rule.** The Task 3 review verified that the `file = docPath` arm of `isBufferFile` is discriminated for `documentSymbolResult`, `collectSyms` and occurrences, but NOT for `buildClasses` or `emitSyms`. Since this task makes `buildClasses` depend on that arm, it must pin it here: the same fixture, except the own record carries the document's path rather than `BUFFER_FILE`, which is exactly what an open `.s7i` produces.
+
+```seed7
+const func array symRec: pathThenOwn is func
+  result
+    var array symRec: out is 0 times symRec.value;
+  local
+    var symRec: rec is symRec.value;
+  begin
+    rec.name := "length";
+    rec.cat := "ACTOBJECT"; rec.ty := "func integer";
+    rec.file := "/home/user/seed7/lib/string.s7i"; rec.line1 := 336;
+    out &:= rec;
+    rec.cat := "VAROBJECT"; rec.ty := "integer";
+    rec.file := "/p/a.sd7"; rec.line1 := 1;
+    out &:= rec;
+  end func;
+
+check("an .s7i buffer's own declaration wins the class tables too",
+      tokensIn(docOf("length"), pathThenOwn, "/p/a.sd7", 0, 0),
+      "{\"data\":[0,0,6,5,1]}");
+```
+
+  Both checks fail before Step 3 for the same reason and both must pass after it. `emitSyms`' identical gap is NOT this task's: a mixed own/library set there would re-derive pinned outputs, so it goes to the final review as a deferred finding.
+
 - [ ] **Step 2: Run and confirm it fails.**
 
 Run: `make test-semantic_tokens`
@@ -345,10 +371,12 @@ grep -E '^(scan|features|lsp_server|transcript):' /tmp/totals.txt
 
 - [ ] **Step 6: Commit** Tasks 4's code and docs together, message naming the measured `got:` value from Step 2 as the reason the check was written first.
 
-- [ ] **Step 7: Prove the check.** Collapse the two passes into one.
+- [ ] **Step 7: Prove the checks.** Three mutations, each with the named checks that go FAIL, restored per file:
+  1. Collapse the two passes into one list-order call — both new checks must redden.
+  2. Drop the `docPath` arm at the selection site (`isBufferFile(syms[i].file, ownPath)` → `syms[i].file = BUFFER_FILE`) — `an .s7i buffer's own declaration wins the class tables too` must redden while the `BUFFER_FILE` check stays green. That difference is the proof the second check is not a copy of the first.
+  3. Reverse the own pass's iteration (`for i range length(syms) downto 1`) — the pre-existing `a name declared twice takes the first declaration's class` must redden. Task 1's lesson is that within-group order is already user-visible here, and that check is the only thing pinning it.
 
-Run: `make test-semantic_tokens`
-Expected: FAIL — `an own declaration of a library name keeps its own class and marker`. Then `git checkout -- src/features/semantic_tokens.sd7`, `make test` green.
+Run: `make test-semantic_tokens` for each, then `git checkout -- src/features/semantic_tokens.sd7` and confirm `make test` green again.
 
 ---
 
