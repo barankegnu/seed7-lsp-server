@@ -127,7 +127,7 @@ which makes a request "a message whose id is echoable" — the same set as `inte
 make test-rpc
 ```
 
-Expected: `rpc: 42 checks, 0 failed` (31 + the 11 new checks above; if the run says a different N, the run wins — correct the number in this line and say so in the commit body). `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` must be rewritten to `check("id", m.idJson, "7")` in the same commit — it reads the deleted field.
+Expected: `rpc: 43 checks, 0 failed` (31 + the 12 new checks above; if the run says a different N, the run wins — correct the number in this line and say so in the commit body). `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` must be rewritten to `check("id", m.idJson, "7")` in the same commit — it reads the deleted field.
 
 - [ ] **Step 6: Prove the checks can fail**
 
@@ -214,7 +214,7 @@ Expected: 27 changed lines, nothing else. Then `handlerFailed`: add `in rpcMsg: 
 make test-rpc && make test-lsp_server && make transcript
 ```
 
-Expected: `rpc: 42 checks, 0 failed`, `lsp_server: 79 checks, 0 failed` (Task 2 adds no unit check), `transcript: 202 checks, 0 failed` (196 baseline + the 6 checks in Step 1). If this branch also carries the R-F10 plan, that baseline is 200 and the total is 206 — take the number from the run, not from this line.
+Expected: `rpc: 43 checks, 0 failed`, `lsp_server: 79 checks, 0 failed` (Task 2 adds no unit check), `transcript: 202 checks, 0 failed` (196 baseline + the 6 checks in Step 1). If this branch also carries the R-F10 plan, that baseline is 200 and the total is 206 — take the number from the run, not from this line.
 
 - [ ] **Step 5: Prove the wire checks can fail**
 
