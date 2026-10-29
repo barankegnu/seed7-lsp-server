@@ -338,7 +338,9 @@ git commit -m "docs: record the R-F10 disclosure and the measured reason driverF
 product. `src/doc_index.sd7:14-16` reads a library with `open(path, "r")`, so `(** … *)` documentation
 holding non-ASCII reaches hover as latin-1 decompositions. Measured on real input: `proseFor` of
 `/home/username/seed7/lib/asn1.s7i` line 372 (the comment above `genAsn1String`) returns 314
-characters containing the runs `U+00E2 U+0082 U+00AC` and `U+00C3 U+00A2` — the bytes of an
+characters containing the runs `U+00E2 U+0082 U+00AC` and `U+00C3 U+00A2` — the same probe on a
+two-character fixture (`¡` and `€` in a `(** … *)` comment) answers `34/5` where the honest answer is
+`31/2` — the bytes of an
 `–` and a `¢` read one per character. Five libraries carry non-ASCII inside a `(** … *)` comment:
 `asn1.s7i`, `bytedata.s7i`, `lzma.s7i`, `scanjson.s7i`, `unicode.s7i`.
 
@@ -366,11 +368,14 @@ check("prose keeps a non-ASCII character as one character",
       str(countCharsAbove127(proseFor(nonAsciiPath, declLine1))), "<N>/1");
 ```
 
-`<N>` is the length the fixture's prose actually has — count it from the fixture text rather than
-copying a number, and write the number you measured into the check. `countCharsAbove127` is a
-suite-local loop, one comparison per character (`AGENTS.md`: a long `and`/`or` chain can fail to match).
-The buggy build answers `2` for that count (three bytes become three characters, two of them in
-`U+0080`–`U+00BF`), so the check is the one that distinguishes the readers.
+Both numbers are measured, on the fixture above: the buggy reader answers **`34/5`** and the fixed
+reader answers **`31/2`** — `€` is three bytes, so the broken read contributes three characters in
+`U+0080`–`U+00BF` where the fixed read contributes one, and `¡` contributes two where it should
+contribute one. `countCharsAbove127` is a suite-local loop, one comparison per character (`AGENTS.md`:
+a long `and`/`or` chain can fail to match). Note the line number the fixture needs: with the four-line
+body above, the declaration is line **4**, and `proseFor(path, 5)` answers `""` because line 5 is past
+it — the empty answer would make the check pass for the wrong reason, so assert the fixed pair, never
+merely "no non-ASCII".
 
 - [ ] **Step 2: Run it and confirm the reason**
 
@@ -378,8 +383,7 @@ The buggy build answers `2` for that count (three bytes become three characters,
 make test-doc_index
 ```
 
-Expected: `doc_index: 11 checks, 1 failed` (10 baseline + 1), the new check's `got:` showing the
-inflated count. If the suite prints no graded line, the fixture write or the helper does not compile —
+Expected: `doc_index: 11 checks, 1 failed` (10 baseline + 1), the new check's `got:` reading `34/5`. If the suite prints no graded line, the fixture write or the helper does not compile —
 fix that before claiming the red.
 
 - [ ] **Step 3: Implement, then run the whole gate**
