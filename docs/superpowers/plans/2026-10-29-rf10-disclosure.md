@@ -324,8 +324,8 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 
 `docs/seed7-cli.md:394` is one row carrying four per-suite figures *and* a total: `21 suites, 1064 checks:
 scan 66, features 191, lsp_server 79, transcript 196`. This branch moves three of them — `lsp_server` 79 →
-**82** (Task 2), `transcript` 196 → **202** (Task 3), `doc_index` 10 → **11** (Task 5) — and the total
-1064 → **1074**. Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
+**82** (Task 2), `transcript` 196 → **202** (Task 3), `doc_index` 10 → **12** (Task 5) — and the total
+1064 → **1076**. Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
 parenthetical explaining that the older `1040`/`1061` figures measured an earlier tree: that sentence is
 what a reader needs when the numbers do not add up to memory. Re-read the row afterwards — a totals row
 disagreeing with its own per-suite list is the class of wrong number this file already documents twice.
@@ -340,7 +340,7 @@ disagreeing with its own per-suite list is the class of wrong number this file a
 make test
 ```
 
-Expected: 21 graded lines, each `0 failed`, totalling **1 074** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks and Task 5's one `doc_index` check. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
+Expected: 21 graded lines, each `0 failed`, totalling **1 074** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks and Task 5's two `doc_index` checks. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
 
 - [ ] **Step 6: Commit**
 
@@ -444,7 +444,25 @@ make test-doc_index && make graph && make test-graph && make test
 Expected: `doc_index: 11 checks, 0 failed`, `graph: 21 checks, 0 failed`, 21 graded lines each
 `0 failed` — and check `docs/PROJECT_GRAPH.md`'s `doc_index.sd7` row carries the new line count.
 
-- [ ] **Step 4: Prove the check can fail, both ways**
+- [ ] **Step 3b: Do not let the new reader raise on a file that is not valid UTF-8**
+
+Measured, this machine: `readln` on a file opened by `openUtf8` raises `RANGE_ERROR` at the first byte
+sequence that is not valid UTF-8 (one line read, then the raise). Exactly one file in the corpus the
+server is pointed at is like that — `~/seed7/prg/err.sd7`, byte `0xC0` at offset 5672 — so without a
+handler, hovering a symbol declared there turns the task that removes mojibake into a task that costs the
+request a `-32603`, and `AGENTS.md`'s "the `-32603` containment net in `main.sd7` is still unreachable"
+becomes false in a path the product can reach. Catch `RANGE_ERROR` in `readLinesOf` beside `FILE_ERROR`,
+answer the empty list (hover then shows the signature with no prose, which is what an unreadable comment
+already does), and pin it with a twelfth check built from a fixture the suite writes itself: a plain
+`open(path,"w")` write of `chr(192) <& chr(128)` puts the bytes `C0 80` — an overlong encoding, invalid
+UTF-8 — in a real file, because a plain Seed7 write emits one byte per character.
+
+```seed7
+check("a file that is not valid UTF-8 yields no prose and no raise",
+      proseFor(invalidPath, 2), "");
+```
+
+- [ ] **Step 4: Prove the checks can fail, both ways**
 
 1. Revert the reader to `open(path, "r")` with the UTF-8 fixture: the new check FAILs on its count.
    Revert per file with `git checkout HEAD -- src/doc_index.sd7`.
