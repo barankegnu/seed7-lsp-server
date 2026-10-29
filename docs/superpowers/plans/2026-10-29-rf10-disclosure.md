@@ -328,7 +328,7 @@ the total, and re-read the row after the edit to confirm it does not contradict 
 make test
 ```
 
-Expected: 21 graded lines, each `0 failed`, totalling **1 071** checks — the 1 064 recorded at `docs/seed7-cli.md:394` plus Task 2's three unit checks and Task 3's six wire checks. If the run disagrees with that arithmetic, the run wins: correct this line, not the suites, and say so in the commit body.
+Expected: 21 graded lines, each `0 failed`, totalling **1 074** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks and Task 5's one `doc_index` check. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
 
 - [ ] **Step 6: Commit**
 
