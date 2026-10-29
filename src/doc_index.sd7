@@ -1,9 +1,14 @@
 $ include "seed7_05.s7i";
   include "osfiles.s7i";
+  include "utf8.s7i";
 
 # The (** ... *) comment above a declaration, which is the only documentation Seed7
 # libraries carry. Hover asks for it by (file, declaration line) -- both come straight out
 # of reflection -- and gets "" when there is none.
+#
+# readLinesOf opens with openUtf8: the .s7i files hold UTF-8 and plain open() yields one
+# character per byte, which is how the euro sign in lib/asn1.s7i's own comment for
+# genAsn1String reached hover as U+00E2 U+0082 U+00AC (310 characters became 314).
 
 const func array string: readLinesOf (in string: path) is func
   result
@@ -13,7 +18,7 @@ const func array string: readLinesOf (in string: path) is func
     var string: one is "";
   begin
     block
-      f := open(path, "r");
+      f := openUtf8(path, "r");
       while not eof(f) do
         readln(f, one);
         lines &:= one;
