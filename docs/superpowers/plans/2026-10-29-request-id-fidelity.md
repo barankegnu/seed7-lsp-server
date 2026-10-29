@@ -216,11 +216,11 @@ The fourth check is the one that catches Task 1 Step 7's mutant 4 class of error
 make transcript
 ```
 
-Expected: `transcript: 206 checks, 0 failed` (200 after this branch's R-F10 Task 3, else 196, plus the 6 here). If the first check reports `[1, 0, 0, 0, 0]` instead, Task 1 did not land — that is the shape of the bug, not a failure of this check.
+Expected: `transcript: 208 checks, 0 failed` — the measured baseline on this branch is **202** after R-F10's Task 3 (`transcript: 202 checks, 0 failed`, commit `0f06491`), plus the 6 here. Do not re-derive it from 196: that figure predates two merged tasks. If the first check reports `[1, 0, 0, 0, 0]` instead, Task 1 did not land — that is the shape of the bug, not a failure of this check.
 
 - [ ] **Step 3: Prove the wire checks can fail**
 
-Restore `raw(w, msg.idJson)` to `addInt(w, msg.id)` in `sendResult` alone and keep everything else: `make transcript` → `transcript: 206 checks, 3 failed` (the `ids ==` check, the borrowed-id check, and `one_answer_per_request`), while `code == 0 and junk == 0` **stays green**. That is the finding to record: a wrong id is invisible to every safety net the harness has except the id comparison itself — no stray byte, no short frame, no nonzero exit. Revert with `git checkout HEAD -- src/rpc.sd7`.
+Restore `raw(w, msg.idJson)` to `addInt(w, msg.id)` in `sendResult` alone and keep everything else: `make transcript` → `transcript: 208 checks, 3 failed` (the `ids ==` check, the borrowed-id check, and `one_answer_per_request`), while `code == 0 and junk == 0` **stays green**. That is the finding to record: a wrong id is invisible to every safety net the harness has except the id comparison itself — no stray byte, no short frame, no nonzero exit. Revert with `git checkout HEAD -- src/rpc.sd7`.
 
 Then the second mutant: widen `isRequest` back to `category(idValue) = JSON_NUMBER` and rerun — the `ids ==` check and `-32601` check go red, because the unknown string-id request is once again dropped without a reply. That is the hang this plan exists to remove.
 
