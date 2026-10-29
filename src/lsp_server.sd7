@@ -273,6 +273,38 @@ const func array symRec: symbolsOfDocument (in string: uri) is func
     end if;
   end func;
 
+# The one sentence R-F10 owes the user. analysis.sd7's driverFor(path) is how a library
+# gets analysed, because the interpreter will not take a library's own text once that
+# library is inside seed7_05.s7i's include closure -- measured in docs/rf10-measurement.md:
+# 184 of the 214 top-level libraries analyse clean from text and 29 redeclare (basearray 2
+# names, null_file 44); the 30th, multiscr.s7i, is NOISY on either route, so it is not a split.
+# So the symbols, ranges and prose an open .s7i shows are the
+# FILE's, and an unsaved edit is invisible -- including when the buffer already matches disk,
+# which is why no comparison is made and no second read is paid per keystroke. The write path
+# already refuses on this same predicate.
+const string: LIB_STALE_MESSAGE is
+  "unsaved edits in this library are not analysed: the outline, hover, completion"
+  <& " and the diagnostics come from the file on disk";
+
+# Pure, not inlined into `refresh`: a unit suite grades this decision and cannot capture the
+# protocol channel.
+const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
+                                                in string: uri) is func
+  result
+    var array lspDiag: out is 0 times lspDiag.value;
+  local
+    var lspDiag: stale is lspDiag.value;
+  begin
+    out := mapped;
+    if isLibraryBufferPath(pathOf(uri)) then
+      stale.line1 := 1;
+      stale.column1 := 0;
+      stale.message := LIB_STALE_MESSAGE;
+      stale.severity := SEV_INFORMATION;
+      out &:= stale;
+    end if;
+  end func;
+
 const proc: refresh (in string: uri) is func
   local
     var analysisResult: a is analysisResult.value;
@@ -283,7 +315,7 @@ const proc: refresh (in string: uri) is func
     if analysable(uri) then
       a := analyzeDocument(uri);
       mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
-      publish(uri, openDocs[uri], mapped);
+      publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri));
     end if;
   end func;
 

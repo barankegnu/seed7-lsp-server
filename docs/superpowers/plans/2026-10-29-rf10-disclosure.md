@@ -113,7 +113,7 @@ Say in the body that these are measurements of code that already works, taken af
 
 - [ ] **Step 1: Write the checks**
 
-In `tests/lsp_server_test.sd7`, near the existing `.s7i` block (`libPath`/`libUri` at `:183-184`). Helpers are suite-local: `describe` renders an `array lspDiag` as `severity|` + the first TWO words of each message joined by `|`; `oneError()` is one `lspDiag` with `severity := SEV_ERROR` and `message := "syntax error and more"`.
+In `tests/lsp_server_test.sd7`, near the existing `.s7i` block (`libPath`/`libUri` at `:183-184`). Helpers are suite-local: `describe` renders an `array lspDiag` as `severity|` + the first TWO words of each message joined by `|`; `oneError()` is a ONE-RECORD `array lspDiag` — one row with `severity := SEV_ERROR` and `message := "syntax error and more"` — not a bare `lspDiag`, because Seed7 converts no scalar to an array and the parameter is `in array lspDiag: mapped`. Measured with a ten-line probe (a `const func integer: take (in array rec: rows)` called with a single `rec`): `*** p1.sd7(24):57: Match for take(one) failed`, then `Declaration of "main" failed`; `take([](one))` returns 1. `tests/diagnostics_test.sd7:11-13` is the house precedent for a one-record list. Found while implementing Task 2, which is why the brief's original gloss ("one `lspDiag`") is corrected here rather than in the code.
 
 Two words, because `lsp_tst.sd7:11-16` prints on plain `stdout` and a longer excerpt — or the analyzer's own quote-bearing text — can hold a byte Seed7's writer refuses, which would cost the suite its graded line rather than name one FAIL. No check indexes the returned array, for the same reason: a mutant that drops the append would raise `INDEX_ERROR` on stdout instead of failing a check.
 

@@ -116,6 +116,58 @@ const func string: libText is func
            "  end func;\n";
   end func;
 
+# A diagnostic list as the disclosure decides it: "severity|" plus the FIRST TWO WORDS of
+# the message, one row per record, rows joined by "|". Two words because lsp_tst.sd7:11-16
+# prints expected:/got: on plain stdout, and a longer excerpt -- or the analyzer's own
+# quote-bearing text -- can hold a byte Seed7's writer refuses, which would cost the suite
+# its graded line instead of naming one FAIL. Nothing here indexes the array it is handed,
+# for the same reason: a mutant that drops the append would raise INDEX_ERROR on stdout
+# rather than fail a check.
+const func string: describe (in array lspDiag: diags) is func
+  result
+    var string: out is "";
+  local
+    var integer: i is 0;
+    var integer: j is 0;
+    var integer: blanks is 0;
+    var string: row is "";
+  begin
+    for i range 1 to length(diags) do
+      if i <> 1 then
+        out &:= "|";
+      end if;
+      out &:= str(diags[i].severity);
+      out &:= "|";
+      row := diags[i].message;
+      blanks := 0;
+      for j range 1 to length(row) do
+        if row[j .. j] = " " then
+          blanks +:= 1;
+        end if;
+        if blanks < 2 then
+          out &:= row[j .. j];
+        end if;
+      end for;
+    end for;
+  end func;
+
+# The list `refresh` is about to publish, one record deep -- an ARRAY, because
+# discloseStaleLibrary appends to what it is handed and Seed7 converts no scalar to an array:
+# measured, passing a single struct to `in array rec:' gives "Match for take(one) failed",
+# and `[](one)' returns 1. Same shape as tests/diagnostics_test.sd7:11-13. ASCII-only, and
+# the message keeps a third word so a check can tell "the row is unchanged" from "the row
+# is gone".
+const func array lspDiag: oneError is func
+  result
+    var array lspDiag: out is 0 times lspDiag.value;
+  local
+    var lspDiag: row is lspDiag.value;
+  begin
+    row.severity := SEV_ERROR;
+    row.message := "syntax error and more";
+    out &:= row;
+  end func;
+
 # A buffer caught mid-typing: `tally' is used and declared nowhere, and the program has no
 # `end func;'. The unanalysable state IS what is pinned, because it is the normal state.
 const func string: truncText is func
@@ -364,6 +416,16 @@ const proc: main is func
     check("and names the debt", p.why,
           "prepareRename: " <& libPath <& " is a library buffer whose symbols come from disk" <&
           " while R-F10 stands, so an edit could land on the wrong line");
+    # The disclosure half of the same debt: the write path refuses, and now the read path
+    # says so. Pure function, pure inputs -- refresh writes to the protocol channel, which
+    # a unit suite cannot capture.
+    check("a .s7i buffer gains exactly the disclosure",
+          describe(discloseStaleLibrary(oneError(), libUri)), "1|syntax error|3|unsaved edits");
+    check("a .sd7 document gains nothing",
+          describe(discloseStaleLibrary(oneError(), "file:///tmp/seed7_lsp_syms.sd7")),
+          "1|syntax error");
+    check("and the disclosure is Information, not Error",
+          describe(discloseStaleLibrary(0 times lspDiag.value, libUri)), "3|unsaved edits");
     # ---- past the occurrence cap ------------------------------------------------
     # 2 002 statements, so occurrencesOf stops at its 2 001st record and the cursor on the LAST
     # line has no record to find. The refusal is right and so is `refused'; only the old sentence
