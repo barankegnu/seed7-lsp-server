@@ -217,10 +217,19 @@ The unit suite proves the decision. The wire proves the notification: that the d
 - Produces: the six check titles Step 2 prints. `LIB_STALE` is the module-level constant holding the
   full sentence, verbatim as `src/lsp_server.sd7` spells it: `"unsaved edits in this library are not
   analysed: the outline, hover, completion and the diagnostics come from the file on disk"`. Define it
-  once beside `RN_LIB_TEXT`; a substring check would let the tail of the sentence rot unnoticed, and
-  this is the only place the whole text can be asserted — the Seed7 suite must print ASCII and
+  once beside `RN_LIB_TEXT`, measured value:
+  `"unsaved edits in this library are not analysed: the outline, hover, completion and the diagnostics
+  come from the file on disk"`. A substring check would let the tail of the sentence rot unnoticed,
+  and this is the only place the whole text can be asserted — the Seed7 suite must print ASCII and
   therefore compares two words, and `tools/agents_gate.sh` greps only `AGENTS.md` and
   `docs/seed7-cli.md`, so quoting the sentence in Task 4 pins nothing against the constant.
+
+  The range is measured, not assumed: `line1 := 1` / `column1 := 0` reach `diagnosticsJson`, whose
+  zero-column arm asks `lspRangeBytes` for `2147483647` and lets it clamp, so the published range is
+  `{"start":{"line":0,"character":0},"end":{"line":0,"character":33}}` for this fixture — `RL[0]` is
+  `const type: Counter is new struct`, 33 ASCII characters. Do not write `{"line":1,"character":0}`
+  here: that is what a whole-line *range* looks like in `lspWholeLine`, and this row does not go
+  through `lspWholeLine`.
 
 - [ ] **Step 1: Add the close frame and the checks**
 
@@ -241,9 +250,9 @@ expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        "and it is the whole sentence the user reads, not a prefix of it (%s)"
        % [d["message"] for x in RN_DIS for d in x])
 expect(all(d["range"] == {"start": {"line": 0, "character": 0},
-                         "end": {"line": 1, "character": 0}}
+                          "end": {"line": 0, "character": len(RL[0])}}
            for x in RN_DIS for d in x),
-       "and its range is the whole first line, because line1/column1 are the struct defaults (%s)"
+       "and its range is the whole first line of the buffer (%s)"
        % [d["range"] for x in RN_DIS for d in x])
 expect(RN_PUBS and RN_PUBS[-1] == [],
        "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
