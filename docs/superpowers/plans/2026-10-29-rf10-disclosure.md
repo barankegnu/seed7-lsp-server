@@ -145,10 +145,9 @@ Add the signature with the body `out := mapped;` and nothing else, then `make te
 # The one sentence R-F10 owes the user. analysis.sd7's driverFor(path) is how a library
 # gets analysed, because the interpreter will not take a library's own text once that
 # library is inside seed7_05.s7i's include closure -- measured in docs/rf10-measurement.md:
-# 184 of the 214 top-level libraries analyse clean from text, 29 redeclare (basearray 2
-# names, null_file 44) and the last fails on either route, and the two routes report the same
-# record count for 213 of 214 -- the 178 this line once carried was a scratch probe's string
-# compare, not a measurement. So the symbols, ranges and prose an open .s7i shows are the
+# 184 of the 214 top-level libraries analyse clean from text and 29 redeclare (basearray 2
+# names, null_file 44); the 30th, multiscr.s7i, is NOISY on either route, so it is not a split.
+# So the symbols, ranges and prose an open .s7i shows are the
 # FILE's, and an unsaved edit is invisible -- including when the buffer already matches disk,
 # which is why no comparison is made and no second read is paid per keystroke. The write path
 # already refuses on this same predicate.
