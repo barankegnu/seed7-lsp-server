@@ -27,10 +27,11 @@ const func array string: readLinesOf (in string: path) is func
       catch FILE_ERROR:
         lines := 0 times "";
       # readln on a utf8File raises RANGE_ERROR at the first byte sequence that is not valid
-      # UTF-8 (measured: FF FE, C3 28, a lone 80; ut8_rtl.c(771)). The empty list is what an
-      # unreadable comment already answers, so hover keeps the signature and loses the prose
-      # instead of costing the request a -32603. Do not fall back to open() here -- that is
-      # the one byte per character read whose mojibake the reader above exists to remove.
+      # UTF-8 (measured raising at ut8_rtl.c(771): a lone FF, the pair FF FE, C3 28, a lone
+      # 80; the overlong pair C0 80 does NOT raise, it decodes to chr(0)). The empty list is
+      # what an unreadable comment already answers, so hover keeps the signature and loses the
+      # prose instead of costing the request a -32603. Do not fall back to open() here -- that
+      # is the one byte per character read whose mojibake the reader above exists to remove.
       catch RANGE_ERROR:
         lines := 0 times "";
     end block;

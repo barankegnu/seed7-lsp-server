@@ -30,8 +30,9 @@ const proc: main is func
     var string: nonAsciiPath is "/tmp/seed7_lsp_docindex_utf8.sd7";
     var file: utfOut is STD_NULL;
     var integer: declLine1 is 4;
-    # A third fixture, with the bytes FF FE -- not valid UTF-8 -- on the line below the
-    # comment opener, written plain because one byte per character is what puts them there.
+    # A third fixture, with the byte FF -- a lone UTF-8 start byte, so not valid UTF-8 -- on
+    # the line below the comment opener, written plain because a plain Seed7 write emits that
+    # one byte. (The overlong pair C0 80 would NOT do: this decoder reads it as chr(0).)
     var string: invalidPath is "/tmp/seed7_lsp_docindex_invalid.sd7";
     var file: rawOut is STD_NULL;
   begin
@@ -62,7 +63,7 @@ const proc: main is func
     close(utfOut);
     rawOut := open(invalidPath, "w");
     write(rawOut, "(**\n");
-    write(rawOut, " *  Bad bytes " <& chr(255) <& chr(254) <& " here.\n");
+    write(rawOut, " *  Bad bytes " <& chr(255) <& " here.\n");
     write(rawOut, " *)\n");
     write(rawOut, "const proc: eight is func\n");
     close(rawOut);
