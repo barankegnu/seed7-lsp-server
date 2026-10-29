@@ -227,7 +227,9 @@ The unit suite proves the decision. The wire proves the notification: that the d
   The range is measured, not assumed: `line1 := 1` / `column1 := 0` reach `diagnosticsJson`, whose
   zero-column arm asks `lspRangeBytes` for `2147483647` and lets it clamp, so the published range is
   `{"start":{"line":0,"character":0},"end":{"line":0,"character":33}}` for this fixture — `RL[0]` is
-  `const type: Counter is new struct`, 33 ASCII characters. Do not write `{"line":1,"character":0}`
+  `const type: Counter is new struct`, 33 ASCII characters. `u16()` (`transcript.py:728`) is the
+  harness's own UTF-16 counter — the file already warns at `:771-773` that "the width is a UTF-16 count,
+  not `len()`", and `len()` only agrees because this fixture is ASCII. Do not write `{"line":1,"character":0}`
   here: that is what a whole-line *range* looks like in `lspWholeLine`, and this row does not go
   through `lspWholeLine`.
 
@@ -250,7 +252,7 @@ expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        "and it is the whole sentence the user reads, not a prefix of it (%s)"
        % [d["message"] for x in RN_DIS for d in x])
 expect(all(d["range"] == {"start": {"line": 0, "character": 0},
-                          "end": {"line": 0, "character": len(RL[0])}}
+                          "end": {"line": 0, "character": u16(RL[0])}}
            for x in RN_DIS for d in x),
        "and its range is the whole first line of the buffer (%s)"
        % [d["range"] for x in RN_DIS for d in x])
@@ -286,7 +288,7 @@ Three mutants, one at a time, each reverted with `git checkout HEAD -- <file>`:
 
 (`didClose` cannot be given the disclosure as a fourth mutant without editing the close path, which is out of scope here; the `RN_PUBS[-1] == []` check is what stands guard over it.)
 
-Read the totals as the harness prints them: `transcript.py:1656` prints the count of **passing** checks, so a 202-check run with one failure reads `201 checks, 1 failed`. `make transcript` gates on the exit code, not on the number.
+Read the totals as the harness prints them: `transcript.py:1657` prints the count of **passing** checks, so a 202-check run with one failure reads `201 checks, 1 failed`. `make transcript` gates on the exit code, not on the number.
 
 - [ ] **Step 4: Commit**
 
