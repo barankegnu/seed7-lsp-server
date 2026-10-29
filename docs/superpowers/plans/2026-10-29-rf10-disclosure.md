@@ -334,7 +334,8 @@ escapes `RANGE_ERROR` with the handler absent. Do not restate the bullet's exist
 `docs/seed7-cli.md:394` is one row carrying four per-suite figures *and* a total: `21 suites, 1064 checks:
 scan 66, features 191, lsp_server 79, transcript 196`. This branch moves three of them — `lsp_server` 79 →
 **82** (Task 2), `transcript` 196 → **202** (Task 3), `doc_index` 10 → **12** (Task 5) — and the total
-1064 → **1076**. Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
+1064 → **1075** (`doc_index` gains two checks, not one: the mojibake pair and the invalid-UTF-8
+raise). Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
 parenthetical explaining that the older `1040`/`1061` figures measured an earlier tree: that sentence is
 what a reader needs when the numbers do not add up to memory. Re-read the row afterwards — a totals row
 disagreeing with its own per-suite list is the class of wrong number this file already documents twice.
