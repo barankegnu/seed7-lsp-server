@@ -227,9 +227,11 @@ The unit suite proves the decision. The wire proves the notification: that the d
   The range is measured, not assumed: `line1 := 1` / `column1 := 0` reach `diagnosticsJson`, whose
   zero-column arm asks `lspRangeBytes` for `2147483647` and lets it clamp, so the published range is
   `{"start":{"line":0,"character":0},"end":{"line":0,"character":33}}` for this fixture — `RL[0]` is
-  `const type: Counter is new struct`, 33 ASCII characters. `u16()` (`transcript.py:728`) is the
-  harness's own UTF-16 counter — the file already warns at `:771-773` that "the width is a UTF-16 count,
-  not `len()`", and `len()` only agrees because this fixture is ASCII. Do not write `{"line":1,"character":0}`
+  `const type: Counter is new struct`, 33 ASCII characters. Prefer the harness's own UTF-16 counter
+  `u16(RL[0])` (`transcript.py:728`) over `len(RL[0])`: the file warns at `:771-773` that "the width is a
+  UTF-16 count, not `len()`", and the two agree here only because the fixture is ASCII. The shipped line
+  uses `len(RL[0])` and is correct today; moving it to `u16` is ledger-tracked, not a blocker.
+  Do not write `{"line":1,"character":0}`
   here: that is what a whole-line *range* looks like in `lspWholeLine`, and this row does not go
   through `lspWholeLine`.
 
