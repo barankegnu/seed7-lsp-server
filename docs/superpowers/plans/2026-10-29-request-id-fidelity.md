@@ -99,7 +99,7 @@ check("a surrogate-pair id escapes both halves", str(length(m.idJson)), "14");
 
 - [ ] **Step 4: Stub `idJsonOf`, so the checks run on values**
 
-Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 45 checks, 4 failed`: the two length checks and the number/string echo checks that the stub answers `"null"`. Step 5's guard mutant then kills the notification checks.
+Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 46 checks, 4 failed`: the two length checks plus `a number id echoes its own text` and `a string id echoes quoted` — the four the stub answers `"null"`. Step 5's guard mutant then kills the notification checks.
 
 - [ ] **Step 5: Implement**
 
@@ -140,7 +140,7 @@ const func string: idJsonOf (in jsonValue: idValue) is func
 make test-rpc && make graph && make test-graph
 ```
 
-Expected: `rpc: 45 checks, 0 failed`, `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` is rewritten to `check("id", m.idJson, "7")` in this commit — it reads the deleted field.
+Expected: `rpc: 46 checks, 0 failed` (31 baseline + 13 in Step 1 + 2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` is rewritten to `check("id", m.idJson, "7")` in this commit — it reads the deleted field.
 
 - [ ] **Step 7: Prove the checks can fail**
 
@@ -268,7 +268,7 @@ Expected: 21 graded lines each `0 failed`, `git status --porcelain -uall` empty 
 - `{"id":"42"}` is answered `"id":"42"`, at every method including `initialize`; `{"id":10.5}` is answered `10.5`, not `10` and not `0`.
 - A request with no usable id (`true`, `null`, `[1]`, absent) produces **no** frame, and a notification for a method that has a response produces no frame.
 - An unknown method asked with a string id produces `-32601`.
-- Eleven unit checks and six wire checks exist; four named mutants in Task 1 Step 7 and two in Task 2 Step 3 each redden a named check, and Task 2 Step 3 records that `junk == 0` cannot see a wrong id.
+- Fifteen unit checks and six wire checks exist; four named mutants in Task 1 Step 7 and two in Task 2 Step 3 each redden a named check, and Task 2 Step 3 records that `junk == 0` cannot see a wrong id.
 - The `ponytail:` note at `src/rpc.sd7:8-11` is gone and `grep -rn 'integers only' src/ tests/ README.md AGENTS.md docs/` prints nothing.
 - `make test` green; `git status --porcelain -uall` empty.
 
