@@ -74,7 +74,7 @@ Expected `SENTINEL`, and these rows among the output (all measured 2026-10-29 ag
 | `lib/bigint.s7i` | 0 errors | 0 errors, 66 `STRING` |
 | `lib/basearray.s7i` | 0 errors | **2** errors, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
 | `lib/null_file.s7i` | 0 errors | **44** errors, first `Redeclaration of "null_file"` |
-| aggregate over the 214 top-level libraries | — | **168 clean / 46 noisy**, records agree for 178 |
+| aggregate over the 214 top-level libraries | — | **168 clean / 46 noisy**, records agree for 213 [the 178 was a position-relative string compare in a scratch probe, not a measurement; the re-run committed as `docs/rf10-measurement.md` replaced it] |
 
 If the new run disagrees, the new run wins: put the fresh numbers in `docs/seed7-cli.md` (Task 4) and correct the table above in the same commit.
 
@@ -141,10 +141,12 @@ Add the signature with the body `out := mapped;` and nothing else, then `make te
 # gets analysed, because the interpreter will not take a library's own text once that
 # library is inside seed7_05.s7i's include closure -- measured in docs/rf10-measurement.md:
 # 168 of the 214 top-level libraries analyse clean from text, 46 redeclare (basearray 2
-# names, null_file 44), and records agree for only 178. So the symbols, ranges and prose
-# an open .s7i shows are the FILE's, and an unsaved edit is invisible -- including when
-# the buffer already matches disk, which is why no comparison is made and no second read
-# is paid per keystroke. The write path already refuses on this same predicate.
+# names, null_file 44), and the two routes report the same record count for 213 of 214 --
+# the 178 this line once carried was a scratch probe's string compare, not a measurement.
+# So the symbols, ranges and prose an open .s7i shows are the FILE's, and an unsaved edit is
+# invisible -- including when the buffer already matches disk, which is why no comparison is
+# made and no second read is paid per keystroke. The write path already refuses on this same
+# predicate.
 const string: LIB_STALE_MESSAGE is
   "unsaved edits in this library are not analysed: the outline, hover, completion"
   <& " and the diagnostics come from the file on disk";
