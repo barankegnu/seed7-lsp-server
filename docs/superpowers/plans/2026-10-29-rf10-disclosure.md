@@ -214,7 +214,13 @@ The unit suite proves the decision. The wire proves the notification: that the d
 
 **Interfaces:**
 - Consumes: `replies` / `split_frames` (`junk == 0`), `RN_LIB_URI`, `expect`, `one_answer_per_request` (`:405-413`), `closed(uri)` (`:108-109`, which sends `textDocument/didClose` with `td(uri)`), `lib_log()` (`:924-937`).
-- Produces: the four check titles Step 2 prints.
+- Produces: the six check titles Step 2 prints. `LIB_STALE` is the module-level constant holding the
+  full sentence, verbatim as `src/lsp_server.sd7` spells it: `"unsaved edits in this library are not
+  analysed: the outline, hover, completion and the diagnostics come from the file on disk"`. Define it
+  once beside `RN_LIB_TEXT`; a substring check would let the tail of the sentence rot unnoticed, and
+  this is the only place the whole text can be asserted — the Seed7 suite must print ASCII and
+  therefore compares two words, and `tools/agents_gate.sh` greps only `AGENTS.md` and
+  `docs/seed7-cli.md`, so quoting the sentence in Task 4 pins nothing against the constant.
 
 - [ ] **Step 1: Add the close frame and the checks**
 
@@ -231,6 +237,14 @@ expect(len(RN_PUBS) >= 2 and all(len(x) == 1 for x in RN_DIS[:-1]),
        % [len(x) for x in RN_DIS])
 expect(all(d["severity"] == 3 for x in RN_DIS for d in x),
        "and the disclosure is Information, so a client does not badge it as a code error")
+expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
+       "and it is the whole sentence the user reads, not a prefix of it (%s)"
+       % [d["message"] for x in RN_DIS for d in x])
+expect(all(d["range"] == {"start": {"line": 0, "character": 0},
+                         "end": {"line": 1, "character": 0}}
+           for x in RN_DIS for d in x),
+       "and its range is the whole first line, because line1/column1 are the struct defaults (%s)"
+       % [d["range"] for x in RN_DIS for d in x])
 expect(RN_PUBS and RN_PUBS[-1] == [],
        "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
 expect(all("unsaved edits" not in d.get("message", "")
@@ -247,15 +261,19 @@ The fourth check is the load-bearing one: `S7I_MSGS` opens `RN_LIB_URI` in a ses
 make transcript
 ```
 
-Expected: `transcript: 200 checks, 0 failed` (196 + 4), `code == 0` (the scenario still shuts down before `exit`), and `junk == 0` on every scenario — the astral and surrogate ones included, because a new byte on the protocol channel is the failure class those checks exist to catch.
+Expected: `transcript: 202 checks, 0 failed` (196 + 6), `code == 0` (the scenario still shuts down before `exit`), and `junk == 0` on every scenario — the astral and surrogate ones included, because a new byte on the protocol channel is the failure class those checks exist to catch.
 
 - [ ] **Step 3: Prove the wire checks can fail**
 
 Three mutants, one at a time, reverted with `git checkout HEAD -- <file>`:
 
-1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call): `transcript: 200 checks, 1 failed` — the once-per-publish check — **and** `make test-lsp_server` red in the same run, all three. If only the wire reddens, the two suites grade different things and the wire check is not pinning the product.
-2. Guard → `if TRUE then`: the "no other document" check FAILs, the first two stay green.
-3. Route `didClose`'s empty publish through `discloseStaleLibrary`: the "didClose still clears" check FAILs. This mutant is the reason that check exists — folding the disclosure into the close path would look like an improvement.
+Three mutants, one at a time, each reverted with `git checkout HEAD -- <file>`:
+
+1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call): `transcript: 202 checks, 1 failed` — the once-per-publish check — **and** `make test-lsp_server` red in the same run, all three. If only the wire reddens, the two suites grade different things and the wire check is not pinning the product.
+2. Guard → `if TRUE then`: the "no other document" check FAILs, the rest stay green.
+3. `stale.column1 := 0` → `stale.column1 := 7`. Nothing in the Seed7 suite can see it — `describe` prints severity and two words — so this is the mutant that justifies the range assertion above: the range check FAILs, `transcript: 202 checks, 1 failed`. Revert per file; anchor any `sed` you use, because an unanchored pattern has already matched `textToAnalyze` once in this branch's history.
+
+(`didClose` cannot be given the disclosure as a fourth mutant without editing the close path, which is out of scope here; the `RN_PUBS[-1] == []` check is what stands guard over it.)
 
 - [ ] **Step 4: Commit**
 
@@ -285,19 +303,25 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 
 `AGENTS.md` § *Do not "fix" these*, the R-F10 bullet: keep the sentence, and add that `refresh` publishes one `Information` diagnostic saying it, plus the measured reason the route stays — `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text; 184 of the 214 libraries are clean and 30 are not, of which 29 are the redeclaration split. `README.md` § *What does not work yet*: the `.s7i` staleness clause gains "and the server says so in the buffer". § *What works*: the diagnostics sentence gains one clause naming the disclosure. The limitation stays open; only the silence closes.
 
-- [ ] **Step 3: The provenance section**
+- [ ] **Step 3: The per-suite figure in the same row**
+
+`docs/seed7-cli.md:394`'s totals row names both `1064 checks` and `lsp_server` 79. Task 2 moved that
+suite to 82, so the row's own two halves now disagree. Correct the per-suite figure in the same edit as
+the total, and re-read the row after the edit to confirm it does not contradict itself.
+
+- [ ] **Step 4: The provenance section**
 
 `docs/seed7-cli.md`: `R-F10 — the two routes, measured`, holding the `sh tools/rf10_probe.sh` command, the six rows of Task 1's table, the `SENTINEL` line as it came out of the committed `docs/rf10-measurement.md`, and the temp-copy result — a scratch path holding the buffer text gives the same `2` and `44`, because the real library is already inside `seed7_05.s7i`'s closure.
 
-- [ ] **Step 4: Run everything**
+- [ ] **Step 5: Run everything**
 
 ```bash
 make test
 ```
 
-Expected: 21 graded lines, each `0 failed`, totalling **1 071** checks — the 1 064 recorded at `docs/seed7-cli.md:394` plus Task 2's three unit checks and Task 3's four wire checks. If the run disagrees with that arithmetic, the run wins: correct this line, not the suites, and say so in the commit body.
+Expected: 21 graded lines, each `0 failed`, totalling **1 071** checks — the 1 064 recorded at `docs/seed7-cli.md:394` plus Task 2's three unit checks and Task 3's six wire checks. If the run disagrees with that arithmetic, the run wins: correct this line, not the suites, and say so in the commit body.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add README.md AGENTS.md docs/seed7-cli.md
