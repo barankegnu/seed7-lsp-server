@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1064 checks: `scan` 66, `features` 191, `lsp_server` 79, `transcript` 196 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin) | `make test` |
+| suite totals | 21 suites, 1075 checks: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 202, `doc_index` 12 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -558,3 +558,110 @@ with `defaultLibrary` and no `declaration`, i.e. `{"data":[0,0,6,3,2]}` where th
 — `didOpen`, then `definition` at `{"line": 12, "character": 18}` (one past the token; `wordAt` is
 left-of-character) and `semanticTokens/full` — or read the same two answers as green pins in
 `tests/transcript.py` and `tests/semantic_tokens_test.sd7`.
+
+## R-F10 — the two routes, measured
+
+AGENTS.md's *Do not "fix" these* keeps the rule: an open `.s7i` is analysed through `analysis.sd7`'s
+`driverFor(path)`, which reads the file back from disk; `refresh` discloses that with one `Information`
+diagnostic per publish; the staleness itself stays open. This is the evidence for the figures in that
+bullet, and the way to take them again — the measurement behind the first version of the claim was a
+`/tmp` scratch, which made it unciteable.
+
+    sh tools/rf10_probe.sh                    # $1 overrides the default /home/username/seed7
+
+One Seed7 program, compiled `s7c -O2 -l "$SEED7/lib" -l "$SRC"` (`$SRC` is this repo's `src`, so the
+probe reads the working tree's `analysis.sd7`), run over the 214 top-level `lib/*.s7i`
+plus `prg/hello.sd7` as a labelled `CONTROL` row outside the aggregate. Per library it prints two rows
+of the same analysis: `DRIVER` — the text `driverFor(path)` builds, taken from `analysis.sd7` rather
+than retyped, so the probe cannot drift from the server — and `LEAD` —
+`$ include "seed7_05.s7i";` then the file's own text, what a buffer would be. Each row carries
+`CLEAN`/`NOISY`, `errorCount`, `length(globalObjects(prog))`, the records whose `file(obj)` is
+`BUFFER_FILE`, and the first error message. Deliberately not in `make test`: one analyze phase per
+route per library.
+
+The committed artifact is `docs/rf10-measurement.md` (434 lines, header
+`# seed7 tree: /home/username/seed7 c93282a6`, three consecutive runs byte-identical). Five named rows
+and the aggregate, taken from the artifact (`string=` there counts the records whose `file(obj)` is
+`BUFFER_FILE`, and it is 0 for the two `NOISY` libraries — nothing was attributed to the buffer):
+
+| file | `DRIVER` | `LEAD` |
+|---|---|---|
+| `lib/strifile.s7i` | `CLEAN errors=0 records=3132` | `CLEAN errors=0 records=3132`, 17 records report `STRING` |
+| `lib/json.s7i` | `CLEAN errors=0 records=4903` | `CLEAN errors=0 records=4903`, 92 `STRING` |
+| `lib/bigint.s7i` | `CLEAN errors=0 records=3472` | `CLEAN errors=0 records=3472`, 66 `STRING` |
+| `lib/basearray.s7i` | `CLEAN errors=0 records=3060` | `NOISY errors=2 records=3060`, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
+| `lib/null_file.s7i` | `CLEAN errors=0 records=3060` | `NOISY errors=44 records=3060`, first `Redeclaration of "null_file"` |
+| the 214 top-level libraries | — | **184 `CLEAN` / 30 `NOISY`**; records agree for 213 |
+
+    SENTINEL files=214 leadClean=184 leadNoisy=30 recordsSame=213
+
+Two caveats a sentinel cannot carry, both readable in the artifact. 29 of the 30 `NOISY` rows begin
+`Redeclaration of …`; the 30th is `lib/multiscr.s7i` (`errors=2 records=4094 string=5 first=Match for
+openWindow(SCR, 2, 2, 10, 78) failed`), which is `NOISY` on **both** routes — `SCR` is `var file:` at
+`multiscr.s7i:41` while `window.s7i:57` wants `ref text: outText`, so the no-match belongs to the
+library and not to the route — and so it is not a route split: the count of libraries whose own text is
+not analysable while the driver route is clean is 29. And the record counts agree for 213 of 214: the
+one disagreement gets its own row, `RECORDS-DIFF …/lib/seed7_05.s7i driver=3060 lead=3061`.
+
+Two figures were refuted on the way and must not be restated: `recordsSame=178` came from comparing the
+two formatted rows at a fixed byte position, so it read "different" whenever the two error counts had
+different digit widths; and the first run's `leadNoisy=46` counted 16 rows the probe's own reader had
+contaminated — a plain `open(path, "r")` yields one character per byte, and the C1 characters that
+produces inside string and char literals are what the analyzer then refused. `readAll` now uses
+`openUtf8` and `requireDecoded` fails the run on any character in U+0080..U+009F rather than grading it:
+that is where 46 became 30.
+
+**The probe grades the route, not the file list.** Re-measured on this tree by mutating one line
+(`led := grade(own, dirs)` — `LEAD` loses the essential include), writing the output outside the repo
+and restoring the script from a saved copy:
+
+    SENTINEL files=214 leadClean=1 leadNoisy=213 recordsSame=1
+    LEAD /home/username/seed7/lib/strifile.s7i NOISY errors=1731 records=0 string=0 first=Expression expected found const
+    CONTROL /home/username/seed7/prg/hello.sd7 CLEAN errors=0 records=3061 string=1 first=
+
+A library is not a whole program: stripped of the include, `LEAD` parses nothing — the `strifile.s7i`
+row above answers `records=0`, so nothing is attributed to the buffer — and 213 of the 214 go `NOISY`,
+while the program control stays `CLEAN` with its one `STRING` record. Restoring the include returns the
+sentinel to `184 / 30 / 213`.
+
+**A scratch path is not an escape.** The tempting fix for the staleness — write the buffer's text to a
+temp file and analyse *that* path — was measured with the same probe over two copies placed outside
+`lib/`, in a scratch directory, nothing written into the repo. Each gave the `DRIVER` route the same
+counts as `LEAD`, and the same first messages as the real paths: `basearray.s7i` **2** errors
+(`Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"`) and `null_file.s7i`
+**44** (`Redeclaration of "null_file"`), where the identical `DRIVER` route on the real `lib/` path is
+`CLEAN`. The reason is the closure: `seed7_05.s7i` has already read `lib/basearray.s7i`, so a second
+path carrying the same declarations is a second declaration set rather than a way around the driver.
+The driver route is clean for a library only when the path is the one the closure already read — which
+is R-F10 in one sentence, and why the temp-file route, like comparing buffer to disk, buys nothing.
+
+**The disclosure, and what pins it.** `src/lsp_server.sd7`'s `LIB_STALE_MESSAGE` is the whole sentence
+the user reads, quoted verbatim in `README.md`'s *What does not work yet*. It is appended after
+`mapDiagnostics`, so a document capped at `MAX_DIAGNOSTICS` still sees it; it fires on `uris.sd7`'s
+`isLibraryBufferPath` and on no other document, and inside `analysable(uri)`, so an untrusted buffer
+still publishes nothing. The record is `SEV_INFORMATION` at `line1 := 1, column1 := 0`, which the
+publish path lands on the buffer's whole first line, and `didClose` publishes the empty list that
+clears it. Three `lsp_server` checks grade the decision (a `.s7i` gains exactly one, a `.sd7` gains
+nothing, the severity is `Information`) and six `transcript` checks pin it on frames — once per publish,
+`severity` 3, the whole sentence (the Seed7 unit suite prints ASCII, so only two words of it are
+comparable there), the range, the `didClose` clear, and that no other document in the run receives it.
+
+**Why the `-32603` bullet is conditional.** `doc_index.readLinesOf` reads library prose with `openUtf8`
+— the plain `open` was the mojibake: `lib/asn1.s7i`'s euro sign in its own `(** … *)` comment reached
+hover as three characters — and `readln` on a `utf8File` raises `RANGE_ERROR` at the first byte sequence
+that is not valid UTF-8. Re-measured here with no handler, reading `~/seed7/prg/err.sd7` the way
+`readLinesOf` does: 88 lines, then `Uncaught exception RANGE_ERROR raised at ut8_rtl.c(771)`. The raiser
+is therefore **line 89**, whose bytes are `ED 80 41` — a lead byte whose second continuation is missing,
+which is that line's own labelled case (`*UTF-8 continuation byte expected found "A"*`). It is **not**
+the `C0 80` at line 86, and the 88 clean lines cover lines 87 and 88 (`ED A0 80`, `F4 90 80 80`) too:
+this decoder reads the overlong pair as `chr(0)` and does not raise on any of those three. No
+library is like that — `iconv -f UTF-8 -t UTF-8` over all 265 `lib/*.s7i` (recursive) fails on none of
+them — but one `prg/*.sd7` of 129 does, `err.sd7`, and a client may open anything inside its root. So
+without `doc_index.sd7`'s `catch RANGE_ERROR` the hover of a symbol declared in such a file costs the
+request a `-32603` (`main.sd7:33` catches `RANGE_ERROR` into `handlerFailed("range", body)`, which is
+the observed answer), and AGENTS.md's "still unreachable" would be false; with it, hover keeps the signature and
+loses the prose, which is what an unreadable comment already answers. The check that reaches the arm is
+`doc_index`'s twelfth: a scratch file holding one `FF` byte, a lone UTF-8 start byte, asked at the line
+the decoder raises on — neutralize the arm and the raise escapes, the suite prints no graded line, and
+`make test` cannot pass. That is why AGENTS.md now records the unreachability as conditional rather than
+plain.

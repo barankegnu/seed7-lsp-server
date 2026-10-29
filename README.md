@@ -103,8 +103,10 @@ text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from th
 analyzer: deduplicated, landed on characters even when the line ahead of it holds
 non-ASCII text, and with a based literal in the line no longer hiding what follows
 it; whole-line where the analyzer reports no column, capped, and with
-truncation-during-typing downgraded to Information instead of a wall of red. Error
-handling is spec-shaped: `-32002` before initialize, `-32600` after shutdown, `-32700`
+truncation-during-typing downgraded to Information instead of a wall of red; and one
+extra `Information` diagnostic, appended once per publish, telling an open `.s7i` buffer
+that its analysis comes from the file on disk. Error handling is spec-shaped: `-32002`
+before initialize, `-32600` after shutdown, `-32700`
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
 a frame whose `Content-Length` cannot be trusted.
 
@@ -170,7 +172,11 @@ completion of local variables, pull diagnostics, formatting, `.s7i`
 staleness (R-F10: an unsaved library edit reports a stale outline, hover and completion
 as well as stale diagnostics, because a library is analysed through a driver that reads
 the file back from disk, which also breaks the spec's rule that an open document must not
-be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer)),
+be read through its uri (and `rename`/`prepareRename` therefore refuse inside a `.s7i` buffer),
+and the server says so in the buffer: one `Information` diagnostic per publish,
+"unsaved edits in this library are not analysed: the outline, hover, completion and the
+diagnostics come from the file on disk", which `didClose` clears — the silence closes, the
+staleness does not),
 `utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` in
 `src/lsp_server.sd7`'s `capabilitiesJson` and honours no client preference), `workspace/configuration`, and
 Windows. Asking for an unimplemented method returns `-32601 Method not found`, which

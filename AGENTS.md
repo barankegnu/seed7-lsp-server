@@ -268,13 +268,26 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   analysis still executes code inside the roots.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
-  scheduled for M3 and split into its own plan, so it is still open.
+  scheduled for M3 and split into its own plan, so it is still open — what closes is the
+  silence, not the staleness: `refresh` appends one `Information` diagnostic per publish,
+  `src/lsp_server.sd7`'s `LIB_STALE_MESSAGE`, for a `.s7i` buffer and for no other document,
+  and `didClose` publishes the empty list. The route stays because the interpreter will not
+  take a library's own text once that library sits inside `seed7_05.s7i`'s include closure:
+  184 of the 214 top-level libraries analyse clean from text and 29 redeclare
+  (`basearray.s7i` 2 names, `null_file.s7i` 44); the 30th NOISY row, `multiscr.s7i`, is NOISY
+  on either route, so it is not a route split. Probe, figures and the scratch-path control:
+  *R-F10 — the two routes, measured* in `docs/seed7-cli.md`.
 - The `-32603` containment net in `main.sd7` is still unreachable: `parseStri` does not
   raise on any input the server can receive (a truncated buffer is the normal state while
   typing, and the scanner terminates at EOF without raising), and the reflection walk is
   wrapped in a guard that catches `RANGE_ERROR`, `INDEX_ERROR`, and `ILLEGAL_ACTION`. The
   `parseStri` call is deliberately outside the guard — wrapping it would turn a raise into
-  an empty diagnostic list, which publishes a falsely clean document. Keep the net. When
+  an empty diagnostic list, which publishes a falsely clean document. Keep the net — and keep
+  it understood as conditional: `doc_index.sd7`'s `openUtf8` reader raises `RANGE_ERROR` on a
+  file whose bytes are not valid UTF-8 (the measured raiser is `prg/err.sd7:89`), and the
+  `catch` beside that open is what stops it reaching the request path, so it is not dead code.
+  The byte sequence, the refuted `C0 80` claim and the command:
+  *R-F10 — the two routes, measured* in `docs/seed7-cli.md`. When
   you add a handler that can raise, add the check that reaches it — and never let the
   raise find stdout.
 
