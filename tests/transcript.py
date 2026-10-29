@@ -928,7 +928,9 @@ expect(answered_null(by_id, 122),
        "and rename refuses it too, so no edit can land on a stale line (%r)" % by_id.get(122, {}))
 
 # Graded from the frames, not from LIB_MSGS, which holds log text only. Grouped per publish
-# notification, so "once" means once per publish rather than once per session.
+# notification, so "once" means once per publish rather than once per session. The three checks
+# below that grade RN_DIS use all(), which is TRUE over an empty list, so they say nothing until
+# the >= 2 / == 1 holds -- the same vacuity the astral fixture's guard names for its own checks.
 RN_PUBS = [r["params"]["diagnostics"] for r in replies
            if r.get("method") == "textDocument/publishDiagnostics"
            and r["params"]["uri"] == RN_LIB_URI]
@@ -943,7 +945,7 @@ expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        "and it is the whole sentence the user reads, not a prefix of it (%s)"
        % [d["message"] for x in RN_DIS for d in x])
 expect(all(d["range"] == {"start": {"line": 0, "character": 0},
-                          "end": {"line": 0, "character": len(RL[0])}}
+                          "end": {"line": 0, "character": u16(RL[0])}}
            for x in RN_DIS for d in x),
        "and its range is the whole first line of the buffer (%s)"
        % [d["range"] for x in RN_DIS for d in x])
@@ -995,6 +997,42 @@ expect(LIB_RENAME_LOG is not None and LIB_RENAME_ANS is not None and
        % (LIB_RENAME_LOG, LIB_RENAME_ANS, LIB_MSGS))
 expect(junk == 0, "the library-buffer run put only frames on stdout (junk=%d)" % junk)
 one_answer_per_request(S7I_MSGS, replies, "the library-buffer run")
+
+# --- Task 5's reader, on the wire: a library comment's non-ASCII arrives whole ----------------
+# The defect was in a DISK read, not in a request body, so no frame this suite can send carries a
+# `€' the server would then degrade: `frame' escapes non-ASCII on the way IN and jsonw escapes it
+# on the way OUT. So the pin goes on the DECODED value of a hover whose prose comes from a real
+# library -- lib/asn1.s7i's own `(** ... *)' comment above `genAsn1String' (line 372) holds a euro
+# sign at line 369, and this buffer only has to include the library and call the func. It is the
+# single end-to-end cover for reader -> prose -> jsonw -> Content-Length. Decoded, the euro is one
+# character (U+20AC); read one byte per character it becomes three (U+00E2 U+0082 U+00AC) and no
+# U+20AC survives, while U+0082 -- which no decoded Seed7 source holds -- appears. Measured, the
+# decoded value is 372 characters with three above U+007F; the byte read is 376 with seven.
+ASN1_URI = "file:///tmp/tt_asn1_prose.sd7"
+ASN1_TEXT = ('$ include "seed7_05.s7i";\n  include "asn1.s7i";\n\n'
+             'const proc: main is func\n  begin\n'
+             '    writeln(genAsn1String("abc"));\n  end func;\n')
+ASN1_LINES = ASN1_TEXT.split("\n")
+ASN1_USE = ASN1_LINES.index('    writeln(genAsn1String("abc"));')
+ASN1_MSGS = [initialize(), opened(ASN1_URI, ASN1_TEXT),
+             req(170, "textDocument/hover",
+                 pos(ASN1_URI, ASN1_USE,
+                     ASN1_LINES[ASN1_USE].index("genAsn1String") + len("genAsn1String"))),
+             shutdown(171), exit_()]
+replies, code, err, junk = run([frame(m) for m in ASN1_MSGS])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+ASN1_HOVER = (by_id.get(170, {}).get("result") or {}).get("contents", {}).get("value", "")
+# The column is the token's END, computed from the fixture: `wordAt' is left-of-character, so on
+# this text genAsn1String occupies 0-based columns 12..24 and 25 is the cursor that names it --
+# measured, 12 and 26 answer null. Hard-code 26 as "one past the end" and the hover is null, which
+# would make this check pass by reading nothing; hence index + len(word), as the other hovers here.
+ASN1_ABOVE127 = sum(1 for ch in ASN1_HOVER if ord(ch) > 127)
+expect("\u20ac" in ASN1_HOVER and ASN1_ABOVE127 == 3 and "\u0082" not in ASN1_HOVER,
+       "hover prose read from lib/asn1.s7i arrives as characters, not bytes: the euro sign is ONE "
+       "character, the comment's three above-U+007F codepoints (U+20AC, U+00E2, U+00AC) are three, "
+       "and no C1 decomposition appears (%d chars, above-U+007F %d, U+20AC x%d, U+0082 x%d)"
+       % (len(ASN1_HOVER), ASN1_ABOVE127, ASN1_HOVER.count("\u20ac"),
+          ASN1_HOVER.count("\u0082")))
 
 # --- M5 Task 10 gap 3: the two lifecycle edges, per method --------------------------
 # main.sd7 gates before handle(), so it cannot tell a new method from an old one -- and a pin

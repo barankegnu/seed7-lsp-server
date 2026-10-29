@@ -18,7 +18,7 @@
 - `AGENTS.md` invariant 7: outbound text goes through `jsonw.sd7`. The message is ASCII and reaches the writer as `addStr(w, LIB_STALE_MESSAGE)`, which `diagnosticsJson` already does for every message.
 - Nothing new may raise on the request path; no raise may reach stdout.
 - `docs/PROJECT_GRAPH.md` is generated and byte-compared by `tests/graph_test.sh`, so any `src/` line-count change regenerates it in the same commit.
-- `tools/agents_required.txt` freezes 44 tokens grepped over `AGENTS.md` + `docs/seed7-cli.md`; tokens whose host sentence is reworded print MISSING — and `## `-prefixed tokens are checked in `AGENTS.md` alone.
+- `tools/agents_required.txt` freezes 44 tokens at authoring time, 45 now, grepped over `AGENTS.md` + `docs/seed7-cli.md`; tokens whose host sentence is reworded print MISSING — and `## `-prefixed tokens are checked in `AGENTS.md` alone.
 - Do not run `make -j`: `tests/graph_test.sh:17-19` uses fixed `/tmp/g1`, `/tmp/s1`.
 
 ## Review Focus
@@ -353,7 +353,12 @@ disagreeing with its own per-suite list is the class of wrong number this file a
 make test
 ```
 
-Expected: 21 graded lines, each `0 failed`, totalling **1 076** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks, Task 5's two `doc_index` checks and the one gate token Task 4 appends. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
+Expected: 21 graded lines, each `0 failed`, totalling **1 077** checks — the 1 076 this plan delivered
+(the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire
+checks, Task 5's two `doc_index` checks and the one gate token Task 4 appends), plus the one `transcript`
+wire check the final fix wave adds. This task runs **last**, after Task 5, which is why its arithmetic
+includes a check from a task that comes after it in the file. If the run disagrees with that number, the
+run wins: correct this line, not the suites, and say so in the commit body.
 
 - [ ] **Step 6: Commit**
 

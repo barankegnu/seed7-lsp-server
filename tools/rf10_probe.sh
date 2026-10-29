@@ -39,6 +39,12 @@
 #   SENTINEL files=<libraries counted> leadClean=<N> leadNoisy=<N> recordsSame=<N>
 set -eu
 
+# The artifact is quoted row by row and `cmp`-ed against a re-run, and the row order is the
+# shell's collation of the `lib/*.s7i' glob at the bottom -- not the probe's. LC_ALL=C makes that
+# order the byte order, which is what `tools/project_graph.sh:43` does for the same reason.
+LC_ALL=C
+export LC_ALL
+
 SEED7=${1:-/home/username/seed7}
 SRC=$(cd "$(dirname "$0")/.." && pwd)/src
 WORK=$(mktemp -d)
@@ -123,6 +129,11 @@ const func string: readAll (in string: path) is func
       close(f);
     exception
       catch FILE_ERROR:
+        # Not proven reachable, and not to be read as such: measured, `openUtf8' of an absent path
+        # answers STD_NULL and raises nothing, so the trigger that really fires for an unreadable or
+        # empty file is probeFile's empty read. This arm is for a mid-read I/O error, which no input
+        # here constructs; it stays because an uncaught Seed7 exception writes to stdout, and stdout
+        # is the artifact's stream.
         fatal("cannot read " & path);
     end block;
   end func;

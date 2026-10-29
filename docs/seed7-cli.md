@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1076 checks: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 202, `doc_index` 12, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions) | `make test` |
+| suite totals | 21 suites, 1077 checks — these six are the suites that moved, not an enumeration of the 21: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 203, `doc_index` 12, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -590,7 +590,12 @@ than retyped, so the probe cannot drift from the server — and `LEAD` —
 route per library.
 
 The committed artifact is `docs/rf10-measurement.md` (434 lines, header
-`# seed7 tree: /home/username/seed7 c93282a6`, three consecutive runs byte-identical). Five named rows
+`# seed7 tree: /home/username/seed7 c93282a6`, three consecutive runs byte-identical — a claim that now
+carries its condition: `LC_ALL=C`, which `tools/rf10_probe.sh` exports itself before the `lib/*.s7i`
+glob, because the row order is the shell's collation of that glob and not anything the probe decides.
+Four consecutive runs under `C` are byte-identical; the artifact was regenerated under it, and the
+regeneration moved 44 lines of position with no row and no figure changed — the visible difference
+being `aes.s7i` before `aes_gcm.s7i`). Five named rows
 and the aggregate, taken from the artifact (`string=` there counts the records whose `file(obj)` is
 `BUFFER_FILE`, and it is 0 for the two `NOISY` libraries — nothing was attributed to the buffer):
 
@@ -662,8 +667,15 @@ hover as three characters — and `readln` on a `utf8File` raises `RANGE_ERROR` 
 that is not valid UTF-8. Re-measured here with no handler, reading `~/seed7/prg/err.sd7` the way
 `readLinesOf` does: 88 lines, then `Uncaught exception RANGE_ERROR raised at ut8_rtl.c(771)`. The raiser
 is therefore **line 89**, whose bytes are `ED 80 41` — a lead byte whose second continuation is missing,
-which is that line's own labelled case (`*UTF-8 continuation byte expected found "A"*`). It is **not**
-the `C0 80` at line 86, and the 88 clean lines cover lines 87 and 88 (`ED A0 80`, `F4 90 80 80`) too:
+which is that line's own labelled case (`*UTF-8 continuation byte expected found "A"*`). Re-take the
+bytes:
+
+    sed -n '86,89p' ~/seed7/prg/err.sd7 | od -An -tx1
+
+The first group holds `c0 80` (line 86) and the last two hold `ed 80` then `41` (line 89, split across
+`od`'s 16-byte rows); `~/seed7/src/striutl.c:850-930` — `utf8_to_stri` — is the decoder that decides
+which of the two raises. It is **not** the `C0 80` at line 86, and the 88 clean lines cover lines 87 and
+88 (`ED A0 80`, `F4 90 80 80`) too:
 this decoder reads the overlong pair as `chr(0)` and does not raise on any of those three. No
 library is like that — `iconv -f UTF-8 -t UTF-8` over all 265 `lib/*.s7i` (recursive) fails on none of
 them — but one `prg/*.sd7` of 129 does, `err.sd7`, and a client may open anything inside its root. So

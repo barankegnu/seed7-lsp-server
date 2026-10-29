@@ -154,9 +154,7 @@ const func string: describe (in array lspDiag: diags) is func
 # The list `refresh` is about to publish, one record deep -- an ARRAY, because
 # discloseStaleLibrary appends to what it is handed and Seed7 converts no scalar to an array:
 # measured, passing a single struct to `in array rec:' gives "Match for take(one) failed",
-# and `[](one)' returns 1. Same shape as tests/diagnostics_test.sd7:11-13. ASCII-only, and
-# the message keeps a third word so a check can tell "the row is unchanged" from "the row
-# is gone".
+# and `[](one)' returns 1. Same shape as tests/diagnostics_test.sd7:11-13. ASCII-only.
 const func array lspDiag: oneError is func
   result
     var array lspDiag: out is 0 times lspDiag.value;

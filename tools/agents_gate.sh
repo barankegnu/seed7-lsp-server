@@ -40,14 +40,14 @@
 #
 # Proof of the net: deleting each of the six cut units from docs/seed7-cli.md alone gives 2, 5, 4,
 # none, 2, 2 MISSING, and deleting the single host line of each late token gives 1, 2, 1. Lines 26
-# and 49 were GREEN under the 41-token list and are RED under the 44, so those two reach clauses
-# the unit-level tokens never could, while line 42 already reddened on -ocN, so `s7 -a` is
-# redundancy there, nothing more. The `s7c` IS-the-analyze-phase bullet stays a declared permanent
-# gap: its only literals, `s7c` (1 occurrence outside the moved text) and
+# and 49 were GREEN under the 41-token list and were RED under the 44-token list as it stood then, so
+# those two reach clauses the unit-level tokens never could, while line 42 already reddened on -ocN,
+# so `s7 -a` is redundancy there, nothing more. The `s7c` IS-the-analyze-phase bullet stays a declared
+# permanent gap: its only literals, `s7c` (1 occurrence outside the moved text) and
 # https://seed7.net/faq.htm#compile (1 outside), already pass on text nobody moved, and a prose
-# fragment as a token is a check that cannot fail. And 44 checks are not 44 independent risks:
-# `s7c -p` is implied by the two longer `s7c -p ...` tokens, so it can only go MISSING when all
-# three do.
+# fragment as a token is a check that cannot fail. And the 44 checks of that frozen list were not 44
+# independent risks: `s7c -p` is implied by the two longer `s7c -p ...` tokens, so it can only go
+# MISSING when all three do.
 # Each token in the list is one check: `grep -qF` over the union of AGENTS.md and
 # docs/seed7-cli.md, in that order, whichever of them exist. A file named in the list that does not
 # exist yet counts as empty, not fatal. One check per token, so N is the list length and M counts
