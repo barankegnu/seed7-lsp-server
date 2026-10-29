@@ -32,7 +32,13 @@ const func array string: readLinesOf (in string: path) is func
       # what an unreadable comment already answers, so hover keeps the signature and loses the
       # prose instead of costing the request a -32603. Do not fall back to open() here -- that
       # is the one byte per character read whose mojibake the reader above exists to remove.
+      # The close below is hygiene, not an outage, and it must not be read as either: 5 000
+      # raising calls under `ulimit -n 64' exhausted nothing, never grew the kernel's fd table
+      # (/proc/self/status FDSize stayed 64), and asn1.s7i's prose still measured 310 characters
+      # afterwards. It bounds the descriptor held at one time -- the raise skips the in-block
+      # close, and close(f) here was measured to raise nothing -- and it changes no answer.
       catch RANGE_ERROR:
+        close(f);
         lines := 0 times "";
     end block;
   end func;
