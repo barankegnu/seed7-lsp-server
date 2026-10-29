@@ -4,7 +4,7 @@
 
 **Goal:** Say, in the open `.s7i` buffer itself, that its outline / hover / completion / diagnostics come from the file on disk — so an unsaved library edit stops reading as a clean document.
 
-**Architecture:** The analysis route for libraries does not change: `analysis.sd7`'s `driverFor(path)` stays, because the interpreter re-declares a library's names when its text is pasted into an analysed string (measured: 46 of the 214 top-level libraries). One pure function in `lsp_server.sd7` decides whether the disclosure is due, `refresh` calls it on the way to `publish`, and `tools/rf10_probe.sh` makes the measurement re-runnable from the repo.
+**Architecture:** The analysis route for libraries does not change: `analysis.sd7`'s `driverFor(path)` stays, because the interpreter re-declares a library's names when its text is pasted into an analysed string (measured: 29 of the 214 top-level libraries redeclare, and `multiscr.s7i` fails on both routes). One pure function in `lsp_server.sd7` decides whether the disclosure is due, `refresh` calls it on the way to `publish`, and `tools/rf10_probe.sh` makes the measurement re-runnable from the repo.
 
 **Tech Stack:** Seed7 5.4.10 (`s7`, `s7c`), the 18 unit suites in `tests/` graded from their `N checks, M failed` line, and `tests/transcript.py` driving the real process over real frames.
 
@@ -74,7 +74,12 @@ Expected `SENTINEL`, the `CONTROL` row, and these rows among the output (all mea
 | `lib/bigint.s7i` | 0 errors | 0 errors, 66 `STRING` |
 | `lib/basearray.s7i` | 0 errors | **2** errors, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
 | `lib/null_file.s7i` | 0 errors | **44** errors, first `Redeclaration of "null_file"` |
-| aggregate over the 214 top-level libraries | — | **184 clean / 30 noisy**, records agree for 213 (the one disagreement is `seed7_05.s7i`: 3060 against 3061) [the 178 was a position-relative string compare in a scratch probe, not a measurement; the 46 noisy before it counted 16 rows the probe's own byte-per-character read produced, which `openUtf8` cleared — 29 of the 30 are the `Redeclaration` route split and `multiscr.s7i` fails on both routes] |
+| aggregate over the 214 top-level libraries | — | **184 clean / 30 noisy**, of which **29 are the `Redeclaration` split**; records agree for 213 (the disagreement is `seed7_05.s7i`: 3060 against 3061) |
+
+Two figures were refuted on the way here and must not be re-restated: the scratch probe's
+`recordsSame=178` came from comparing formatted rows at a fixed byte position, and the first UTF-8
+run's `leadNoisy=46` counted 16 rows the probe's own byte-per-character file read produced. Both are
+in `docs/rf10-measurement.md`'s history, not in its current numbers. |
 
 If the new run disagrees, the new run wins: put the fresh numbers in `docs/seed7-cli.md` (Task 4) and correct the table above in the same commit.
 
@@ -279,7 +284,7 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 
 - [ ] **Step 2: The two rule sentences**
 
-`AGENTS.md` § *Do not "fix" these*, the R-F10 bullet: keep the sentence, and add that `refresh` publishes one `Information` diagnostic saying it, plus the measured reason the route stays — `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text, 168 of 214 libraries clean. `README.md` § *What does not work yet*: the `.s7i` staleness clause gains "and the server says so in the buffer". § *What works*: the diagnostics sentence gains one clause naming the disclosure. The limitation stays open; only the silence closes.
+`AGENTS.md` § *Do not "fix" these*, the R-F10 bullet: keep the sentence, and add that `refresh` publishes one `Information` diagnostic saying it, plus the measured reason the route stays — `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text; 184 of the 214 libraries are clean and 30 are not, of which 29 are the redeclaration split. `README.md` § *What does not work yet*: the `.s7i` staleness clause gains "and the server says so in the buffer". § *What works*: the diagnostics sentence gains one clause naming the disclosure. The limitation stays open; only the silence closes.
 
 - [ ] **Step 3: The provenance section**
 
@@ -319,7 +324,7 @@ git commit -m "docs: record the R-F10 disclosure and the measured reason driverF
 ## Measured, and therefore NOT planned
 
 - **The reachable `-32603`.** A review claimed a float in an integer slot costs the request because `integer(str(v))` raises `NUMERIC_ERROR`. Refuted by measurement: `readJson` keeps a number's **source text** (`str(jsonValue)` of `10.5` is `"10.5"`, not `"10.500000"`), and `integer("10.5")` raises `RANGE_ERROR` — the one `intAt` already catches. Against the real process: 24 well-framed hostile bodies (`"character":10.5`, `"line":"3"`, `"line":1e999`, ids `0.5/true/null/[1]/"42"`, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as an object, bodies that are a number/string/`null`/array/bool, a 5-deep nest) and 12 hostile request shapes (positions past EOF, negative positions, `semanticTokens/range` to line 100000, an empty document, an unclosed `if` with no trailing newline, `http:` and `untitled:` uris, no `rootUri`) → **`-32603` in none of them**, `junk == 0` in all, exit status always 0. `AGENTS.md`'s "keep the net, it is unreachable" stands as written.
-- **Analysing an open library from its own text.** Task 1 measures it and 46 of 214 libraries say no.
+- **Analysing an open library from its own text.** Task 1 measures it and 29 of 214 libraries say no, `null_file.s7i` among them with 44 redeclarations.
 - **Hovering the character after an identifier.** `wordAt` is left-of-character and `transcript.py` pins it; probing eglot's exact bounds produced correct answers, so there is nothing to fix and no task here.
 
 ## Start here
