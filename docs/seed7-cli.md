@@ -546,3 +546,15 @@ the staged checkout just wrote and restores the mutant. On this tree that same m
 not three: `rankShape`'s group-order pin joined the analysis set at
 `got: 0|Widget,length,main,|type,`, and the wire `definition` check dropped out because
 `definitionResult`'s own-first pass (Task 2) no longer depends on the order the producer handed it.
+
+The defect the own-records-first rule in `AGENTS.md` exists to prevent, measured on the pre-branch tree.
+A buffer declaring `const func integer: length (in Widget: w)` and calling it answered
+`textDocument/definition` with 10 locations, the buffer's own `st2.sd7:4` LAST, behind
+`string.s7i:336`, `ref_list.s7i:191`, `basearray.s7i:196`, `struct.s7i:37`, `array.s7i:228`,
+`file.s7i:195`, `null_file.s7i:274`, `clib_file.s7i:247` and `external_file.s7i:266`; and
+`textDocument/semanticTokens/full` marked that own declaration tokenType `function` (legend index 3)
+with `defaultLibrary` and no `declaration`, i.e. `{"data":[0,0,6,3,2]}` where the rule makes it
+`[0,0,6,5,1]`. Reproduce by driving `s7 -q -l src src/main.sd7` over real frames with that fixture
+— `didOpen`, then `definition` at `{"line": 12, "character": 18}` (one past the token; `wordAt` is
+left-of-character) and `semanticTokens/full` — or read the same two answers as green pins in
+`tests/transcript.py` and `tests/semantic_tokens_test.sd7`.

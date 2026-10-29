@@ -1,10 +1,13 @@
 # AGENTS.md
 
 Work here as a careful maintainer of a language server, not an author of Seed7
-tutorials. This file holds what no config confesses. The commands are in the `Makefile`, and
-the design authority is
-`docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md` — read it before
-changing behaviour, since the plan argues from it and conflicts resolve in its favour.
+tutorials. This file holds what no config confesses. The commands are in the `Makefile`.
+The design authority once named here,
+`docs/superpowers/specs/2026-09-10-seed7-lsp-server-design.md`, was deleted in `fca09be`
+and has no successor: behaviour is answered by this file, by the evidence in
+`docs/seed7-cli.md`, and by the interpreter — measure rather than invent an authority.
+Executed plans sit in `docs/superpowers/plans/` and describe the tree as it was when they
+were written, not as it is.
 
 The module/method/suite shape is generated at `docs/PROJECT_GRAPH.md` — read it before walking
 `src/`, and regenerate it with `make graph` when `src/` changes.
@@ -241,6 +244,17 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   The scanner decides, because it knows whether it is inside a number token.
 - `analysable` is the ONLY trust predicate. Every `analyzeAll` and every `publish` call site
   must consult it — F1 existed because that rule was true of `analyzeAll` and not of `publish`.
+- The document's own records come first. `analyzeAll(...).syms` is ordered by `collectSyms` in
+  `src/analysis.sd7`, and every consumer that *truncates* or takes the first record for a name
+  re-ranks it in its own passes with `isBufferFile`: `definitionResult`, `emitSyms`,
+  `buildClasses`. `hoverText` and `signatureHelpResult` do not — they answer from the producer's
+  order and carry a `shortcut:` note saying so, which is why the ranking's user-visible guard is
+  the pair of `hover`/`signatureHelp` pins in `tests/transcript.py` plus `rankShape` in
+  `tests/analysis_test.sd7`. Give either of those two a `wantOwn` pass and no wire input can
+  redden the ranking any more: `rankShape` is all that is left, so re-check that claim in the
+  wire suite before re-sorting anything. Overloading a stdlib name is ordinary Seed7, and before
+  this rule held `definition` listed nine library overloads of `length` ahead of the user's own
+  and `semanticTokens` marked the user's declaration `defaultLibrary`.
 
 ## Do not "fix" these
 

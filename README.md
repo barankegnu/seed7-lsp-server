@@ -114,7 +114,11 @@ into the standard library, because reflection reports an absolute path and decla
 line for every library object — `hover`, which shows the reconstructed signature of every
 overload plus the `(** … *)` comment the library author wrote, `completion` for
 declarations and the base keywords, and `signatureHelp` with the active parameter counted
-from the call site.
+from the call site. Where a name exists both in the open file and in the library — overloading
+a stdlib name is ordinary Seed7 — these answer about *your* declaration: reflection yields the
+library's records first, so the server ranks the document's own ahead of them and the features
+that truncate a list (definition's 20 locations, completion's 100 items, the semantic-token
+class tables) re-rank in their own passes.
 
 Cross-reference features, all answered by one occurrence pass over the open document:
 `references` — every location of the symbol under the cursor inside that file, with exact
@@ -197,5 +201,8 @@ methods advertised, suites and the module each is named after. Regenerate with `
   and read `profile_out`; never `time` the interpreter. Every flag there is cited to the Seed7 FAQ
   in section *Seed7 traps*).
 
-- `docs/superpowers/specs/` — the design, its measurements, and its risk register.
-- `docs/superpowers/plans/` — the task-by-task plan this branch implements.
+- `docs/superpowers/specs/` — held the design, its measurements, and its risk register. Deleted
+  in `fca09be`, with no successor: `AGENTS.md` keeps the rules and `docs/seed7-cli.md` keeps the
+  figures, citations and decision history.
+- `docs/superpowers/plans/` — the task-by-task plans as they were executed; each describes the
+  tree before it landed, so read its status line first.
