@@ -889,20 +889,29 @@ RN_LIB_TEXT = ('const type: Counter is new struct\n'
 with open(RN_LIB_PATH, "w") as f:
     f.write(RN_LIB_TEXT)
 RN_LIB_URI = "file://" + RN_LIB_PATH
+# The whole sentence the user reads, verbatim as src/lsp_server.sd7's LIB_STALE_MESSAGE spells it.
+# The Seed7 unit suite prints ASCII, so it can only compare two words of it; this is the one place
+# the tail is pinned.
+LIB_STALE = ("unsaved edits in this library are not analysed: the outline, hover, completion"
+             " and the diagnostics come from the file on disk")
 RL = RN_LIB_TEXT.split("\n")
 RN_LIB_DECL = RL.index("var integer: ticks is 0;")
 RN_LIB_USE = RL.index("    ticks +:= 1;")
 RN_LIB_DECL_COL = u16(RL[RN_LIB_DECL][:RL[RN_LIB_DECL].index("ticks")])
 RN_LIB_USE_COL = u16(RL[RN_LIB_USE][:RL[RN_LIB_USE].index("ticks")])
 RN_LIB_COL = RN_LIB_USE_COL + 2
-S7I_MSGS = [APPLY, msgs[1], opened(RN_LIB_URI, RN_LIB_TEXT),
+# msgs[2] and msgs[3] -- the .sd7 didOpen/didChange of /tmp/tt_a.sd7 -- are the control document
+# for the disclosure's negative check: with no second uri publishing in this very run, "no other
+# document receives it" could only pass, and the `disclose to every buffer' mutant that proves it
+# can fail would redden nothing here.
+S7I_MSGS = [APPLY, msgs[1], msgs[2], msgs[3], opened(RN_LIB_URI, RN_LIB_TEXT),
             req(120, "textDocument/references",
                 dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL),
                      context={"includeDeclaration": True})),
             req(121, "textDocument/prepareRename", pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL)),
             req(122, "textDocument/rename",
                  dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL), newName="beats")),
-            shutdown(123), exit_()]
+            closed(RN_LIB_URI), shutdown(123), exit_()]
 replies, code, err, junk = run([frame(m) for m in S7I_MSGS])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 lib_refs = by_id.get(120, {}).get("result")
@@ -917,6 +926,40 @@ expect(answered_null(by_id, 121),
        "prepareRename refuses the same cursor in a .s7i buffer (%r)" % by_id.get(121, {}))
 expect(answered_null(by_id, 122),
        "and rename refuses it too, so no edit can land on a stale line (%r)" % by_id.get(122, {}))
+
+# Graded from the frames, not from LIB_MSGS, which holds log text only. Grouped per publish
+# notification, so "once" means once per publish rather than once per session.
+RN_PUBS = [r["params"]["diagnostics"] for r in replies
+           if r.get("method") == "textDocument/publishDiagnostics"
+           and r["params"]["uri"] == RN_LIB_URI]
+RN_DIS = [[d for d in p if "unsaved edits in this library" in d.get("message", "")]
+          for p in RN_PUBS]
+expect(len(RN_PUBS) >= 2 and all(len(x) == 1 for x in RN_DIS[:-1]),
+       "the .s7i buffer is told once per publish that its analysis is the file on disk (%s)"
+       % [len(x) for x in RN_DIS])
+expect(all(d["severity"] == 3 for x in RN_DIS for d in x),
+       "and the disclosure is Information, so a client does not badge it as a code error")
+expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
+       "and it is the whole sentence the user reads, not a prefix of it (%s)"
+       % [d["message"] for x in RN_DIS for d in x])
+expect(all(d["range"] == {"start": {"line": 0, "character": 0},
+                          "end": {"line": 0, "character": len(RL[0])}}
+           for x in RN_DIS for d in x),
+       "and its range is the whole first line of the buffer (%s)"
+       % [d["range"] for x in RN_DIS for d in x])
+expect(RN_PUBS and RN_PUBS[-1] == [],
+       "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
+# Per uri and per publish, and requiring the control to have published: the disclosure is a property
+# of a .s7i path, never of a buffer analysed from the client's own text, and a third document that
+# never published cannot make this pass.
+RN_STALE_BY_URI = [(r["params"]["uri"],
+                    len([d for d in r["params"]["diagnostics"]
+                         if "unsaved edits in this library" in d.get("message", "")]))
+                   for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
+expect(all(n == 0 for uri, n in RN_STALE_BY_URI if uri != RN_LIB_URI)
+       and any(uri != RN_LIB_URI for uri, _ in RN_STALE_BY_URI),
+       "and no other document in the run receives it: the disclosure is a property of a .s7i path, "
+       "never of a buffer analysed from the client's own text (%s)" % RN_STALE_BY_URI)
 LIB_MSGS = [r.get("params", {}).get("message", "") for r in replies
             if r.get("method") == "window/logMessage"]
 LIB_WHY = " is a library buffer whose symbols come from disk while R-F10"

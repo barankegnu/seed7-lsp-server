@@ -233,7 +233,7 @@ The unit suite proves the decision. The wire proves the notification: that the d
 
 - [ ] **Step 1: Add the close frame and the checks**
 
-Insert `closed(RN_LIB_URI)` before `shutdown(123)` in `S7I_MSGS`. Then grade the frames — not `LIB_MSGS`, which holds log text only — grouped per publish notification, so "once" means once per publish rather than once per session:
+Insert `closed(RN_LIB_URI)` before `shutdown(123)` in `S7I_MSGS`, and insert `msgs[2]`, `msgs[3]` — the `.sd7` `didOpen`/`didChange` of `/tmp/tt_a.sd7` — before `opened(RN_LIB_URI, RN_LIB_TEXT)` as the control document for the disclosure's negative check. Then grade the frames — not `LIB_MSGS`, which holds log text only — grouped per publish notification, so "once" means once per publish rather than once per session:
 
 ```python
 RN_PUBS = [r["params"]["diagnostics"] for r in replies
@@ -256,13 +256,17 @@ expect(all(d["range"] == {"start": {"line": 0, "character": 0},
        % [d["range"] for x in RN_DIS for d in x])
 expect(RN_PUBS and RN_PUBS[-1] == [],
        "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
-expect(all("unsaved edits" not in d.get("message", "")
-           for r in replies if r.get("method") == "textDocument/publishDiagnostics"
-           and r["params"]["uri"] != RN_LIB_URI for d in r["params"]["diagnostics"]),
-       "and no other document in the run receives it")
+RN_STALE_BY_URI = [(r["params"]["uri"],
+                    len([d for d in r["params"]["diagnostics"]
+                         if "unsaved edits in this library" in d.get("message", "")]))
+                   for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
+expect(all(n == 0 for uri, n in RN_STALE_BY_URI if uri != RN_LIB_URI)
+       and any(uri != RN_LIB_URI for uri, _ in RN_STALE_BY_URI),
+       "and no other document in the run receives it: the disclosure is a property of a .s7i path, "
+       "never of a buffer analysed from the client's own text (%s)" % RN_STALE_BY_URI)
 ```
 
-The fourth check is the load-bearing one: `S7I_MSGS` opens `RN_LIB_URI` in a session whose earlier frames opened a `.sd7` document (`msgs[1]`), so a disclosure that followed a buffer analysed from the client's own text reddens it. Leave the `lib_log()` ordering checks alone — they pin the refusal half, which this plan does not touch.
+The sixth check is the load-bearing one, and it was vacuous as first briefed: this plan credited `msgs[1]` with opening a `.sd7` document, but `msgs[1]` is the `initialized` notification, so the run held no second uri and `all(...)` over "everything that is not `RN_LIB_URI`" could only pass — Step 3's mutant 2 reddened nothing. The control frames are `msgs[2]`/`msgs[3]` and are added to this scenario deliberately, and the check is per uri and per publish, requiring the control to have published, so a future third document cannot make it vacuous again. Leave the `lib_log()` ordering checks alone — they pin the refusal half, which this plan does not touch.
 
 - [ ] **Step 2: Run it**
 
@@ -274,20 +278,20 @@ Expected: `transcript: 202 checks, 0 failed` (196 + 6), `code == 0` (the scenari
 
 - [ ] **Step 3: Prove the wire checks can fail**
 
-Three mutants, one at a time, reverted with `git checkout HEAD -- <file>`:
-
 Three mutants, one at a time, each reverted with `git checkout HEAD -- <file>`:
 
-1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call): `transcript: 202 checks, 1 failed` — the once-per-publish check — **and** `make test-lsp_server` red in the same run, all three. If only the wire reddens, the two suites grade different things and the wire check is not pinning the product.
-2. Guard → `if TRUE then`: the "no other document" check FAILs, the rest stay green.
-3. `stale.column1 := 0` → `stale.column1 := 7`. Nothing in the Seed7 suite can see it — `describe` prints severity and two words — so this is the mutant that justifies the range assertion above: the range check FAILs, `transcript: 202 checks, 1 failed`. Revert per file; anchor any `sed` you use, because an unanchored pattern has already matched `textToAnalyze` once in this branch's history.
+1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call): `transcript: 201 checks, 1 failed` — the once-per-publish check. Measured on this branch, and the wire reddens **alone**: `make test-lsp_server` stayed `82 checks, 0 failed`, because Task 2's suite calls the pure `discloseStaleLibrary` and cannot see its call site in `refresh`. So the cross-suite proof this step wanted is mutant 2, which reddens both suites.
+2. Guard → `if TRUE then`: the "no other document" check FAILs, and five pre-existing empty-list pins FAIL with it (`fixed file clears diagnostics`, the astral GAP, the escape notification, the based-literal fixture, the versionless change) — that is what a disclosure sent to every buffer looks like on this wire — while `make test-lsp_server` reads `82 checks, 1 failed` (`a .sd7 document gains nothing`). The disclosure's own five checks stay green. This needs the `msgs[2]`/`msgs[3]` control frames in the run: a build that discloses to every buffer has to have a non-library publish to disclose to.
+3. `stale.column1 := 0` → `stale.column1 := 7`. Nothing in the Seed7 suite can see it — `describe` prints severity and two words — so this is the mutant that justifies the range assertion above: the range check FAILs, `transcript: 201 checks, 1 failed`, the failing row reporting `0:6 → 0:7`. Revert per file; anchor any `sed` you use, because an unanchored pattern has already matched `textToAnalyze` once in this branch's history.
 
 (`didClose` cannot be given the disclosure as a fourth mutant without editing the close path, which is out of scope here; the `RN_PUBS[-1] == []` check is what stands guard over it.)
+
+Read the totals as the harness prints them: `transcript.py:1656` prints the count of **passing** checks, so a 202-check run with one failure reads `201 checks, 1 failed`. `make transcript` gates on the exit code, not on the number.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/transcript.py
+git add tests/transcript.py docs/superpowers/plans/2026-10-29-rf10-disclosure.md
 git commit -m "rf10: pin the .s7i disclosure on the wire, with a .sd7 control and didClose's clear"
 ```
 
