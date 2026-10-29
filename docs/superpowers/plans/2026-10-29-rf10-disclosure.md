@@ -314,7 +314,7 @@ git commit -m "rf10: pin the .s7i disclosure on the wire, with a .sd7 control an
 grep -nFf tools/agents_required.txt AGENTS.md | head -50
 ```
 
-`tools/agents_gate.sh` greps its 44 tokens over the union of `AGENTS.md` and `docs/seed7-cli.md`, and `## `-prefixed tokens in `AGENTS.md` alone. A token whose only host sentence is being reworded prints MISSING and reddens `make test-agents` — `docs/seed7-cli.md` § *Citation defect, counted and closed* records what happened last time a document about a wrong citation propped up the net that guards it. Substitute into the new wording; do not add a token beside a stale one.
+`tools/agents_gate.sh` greps its tokens (44 at authoring time, 45 now) over the union of `AGENTS.md` and `docs/seed7-cli.md`, and `## `-prefixed tokens in `AGENTS.md` alone. A token whose only host sentence is being reworded prints MISSING and reddens `make test-agents` — `docs/seed7-cli.md` § *Citation defect, counted and closed* records what happened last time a document about a wrong citation propped up the net that guards it. Substitute into the new wording; do not add a token beside a stale one.
 
 - [ ] **Step 2a: Keep one now-conditional claim honest**
 
@@ -336,8 +336,9 @@ found `A`"*). Not the `C0 80` at line 86: Seed7 accepts that overlong pair and d
 `docs/seed7-cli.md:394` is one row carrying four per-suite figures *and* a total: `21 suites, 1064 checks:
 scan 66, features 191, lsp_server 79, transcript 196`. This branch moves three of them — `lsp_server` 79 →
 **82** (Task 2), `transcript` 196 → **202** (Task 3), `doc_index` 10 → **12** (Task 5) — and the total
-1064 → **1075** (`doc_index` gains two checks, not one: the mojibake pair and the invalid-UTF-8
-raise). Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
+1064 → **1076** (`doc_index` gains two checks, not one: the mojibake pair and the invalid-UTF-8
+raise; and Task 4's own fix round adds a third by appending a gate token, since every token is a graded
+check). Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
 parenthetical explaining that the older `1040`/`1061` figures measured an earlier tree: that sentence is
 what a reader needs when the numbers do not add up to memory. Re-read the row afterwards — a totals row
 disagreeing with its own per-suite list is the class of wrong number this file already documents twice.
@@ -352,7 +353,7 @@ disagreeing with its own per-suite list is the class of wrong number this file a
 make test
 ```
 
-Expected: 21 graded lines, each `0 failed`, totalling **1 074** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks and Task 5's two `doc_index` checks. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
+Expected: 21 graded lines, each `0 failed`, totalling **1 076** checks — the 1 064 recorded at `docs/seed7-cli.md:394`, plus Task 2's three unit checks, Task 3's six wire checks, Task 5's two `doc_index` checks and the one gate token Task 4 appends. This task runs **last**, after Task 5, which is why its arithmetic includes a check from a task that comes after it in the file. If the run disagrees with that number, the run wins: correct this line, not the suites, and say so in the commit body.
 
 - [ ] **Step 6: Commit**
 
