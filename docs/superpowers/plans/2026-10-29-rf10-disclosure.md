@@ -2,97 +2,115 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tell the user, in the document they are looking at, that an open `.s7i` buffer is analysed from the file on disk — so an unsaved library edit no longer reads as a clean document.
+**Goal:** Say, in the open `.s7i` buffer itself, that its outline / hover / completion / diagnostics come from the file on disk — so an unsaved library edit stops reading as a clean document.
 
-**Architecture:** The server keeps its current route for libraries (`analysis.sd7`'s `driverFor(path)`, which makes the interpreter read the file), because the interpreter will not analyse a library from its own text once that library is already inside `seed7_05.s7i`'s include closure — the buffer's declarations then re-declare the closure's. One `Information` diagnostic is appended in `lsp_server.sd7`'s `refresh`, on the same predicate the existing write refusals already read, and the measured reason for the limitation is recorded as a re-runnable probe in `tools/`.
+**Architecture:** The analysis route for libraries does not change: `analysis.sd7`'s `driverFor(path)` stays, because the interpreter re-declares a library's names when its text is pasted into an analysed string (measured: 46 of the 214 top-level libraries). One pure function in `lsp_server.sd7` decides whether the disclosure is due, `refresh` calls it on the way to `publish`, and `tools/rf10_probe.sh` makes the measurement re-runnable from the repo.
 
-**Tech Stack:** Seed7 5.4.10 (`s7`, `s7c`), the repo's own suites in `tests/` graded from their `N checks, M failed` line, and `tests/transcript.py` driving the real process over real frames.
+**Tech Stack:** Seed7 5.4.10 (`s7`, `s7c`), the 18 unit suites in `tests/` graded from their `N checks, M failed` line, and `tests/transcript.py` driving the real process over real frames.
 
-**Spec:** no spec file in this tree. The authority is LSP 3.18 `textDocument/didOpen` ("the server must not try to read the document's content using the document's Uri"), `AGENTS.md` § *Do not "fix" these* (R-F10), and `README.md` § *What does not work yet*. The measurements that decide the shape are in this plan's Task 1.
+**Spec:** no spec file in this tree (the design doc was deleted in `fca09be` and has no successor). Authority is LSP 3.18 `textDocument/didOpen` — "The document's content is now managed by the client and **the server must not try to read the document's content using the document's Uri**" — `AGENTS.md` § *Do not "fix" these* (R-F10), and `README.md` § *What does not work yet*.
 
 ## Global Constraints
 
 - Red first: write the check, run it, confirm it fails for the reason named, then implement. `make test` before and after.
-- `AGENTS.md` invariant 5: a capability is advertised only once its method is answered. This plan advertises nothing new.
-- `AGENTS.md` invariant 7: outbound text goes through `jsonw.sd7`. No `addStr(w, str(` anywhere.
-- `AGENTS.md` invariant 3: `transport.sd7` owns every outbound byte count. This plan emits none.
-- The `-32603` net in `main.sd7` stays unreachable. Nothing in this plan may raise, and no raise may reach stdout.
-- Severity for a truncated-buffer class message stays `Information` (3): `diagnostics.sd7` already defines `SEV_INFORMATION`.
-- `docs/PROJECT_GRAPH.md` is generated and byte-compared by `tests/graph_test.sh`, so any line-count change in `src/` requires `make graph` in the same commit.
-- `tools/agents_required.txt` holds 44 frozen tokens grepped over `AGENTS.md` + `docs/seed7-cli.md`. Adding prose is safe; deleting or rewording a token's host sentence reddens `make test-agents`.
-- Do not run `make -j`: `tests/graph_test.sh:17-19` uses fixed `/tmp/g1`, `/tmp/s1` names.
+- `AGENTS.md` invariant 1: only `src/analysis.sd7` imports `progs.s7i`. No new file may.
+- `AGENTS.md` invariant 4: `analysis.sd7` returns Seed7-shaped data and builds no LSP shape; the disclosure is a `Diagnostic` payload, so it is decided in `lsp_server.sd7` and serialised by `diagnostics.sd7`'s existing `diagnosticsJson`.
+- `AGENTS.md` invariant 7: outbound text goes through `jsonw.sd7`. The message is ASCII and reaches the writer as `addStr(w, LIB_STALE_MESSAGE)`, which `diagnosticsJson` already does for every message.
+- Nothing new may raise on the request path; no raise may reach stdout.
+- `docs/PROJECT_GRAPH.md` is generated and byte-compared by `tests/graph_test.sh`, so any `src/` line-count change regenerates it in the same commit.
+- `tools/agents_required.txt` freezes 44 tokens grepped over `AGENTS.md` + `docs/seed7-cli.md`; tokens whose host sentence is reworded print MISSING — and `## `-prefixed tokens are checked in `AGENTS.md` alone.
+- Do not run `make -j`: `tests/graph_test.sh:17-19` uses fixed `/tmp/g1`, `/tmp/s1`.
 
 ## Review Focus
 
-- A `.sd7` buffer must never receive the disclosure — it is analysed from the text the client sent, so the statement would be false. Pinned in Task 2.
-- An untrusted `.s7i` outside the declared roots must still publish nothing: `refresh` returns early on `analysable`, so the new call must sit inside that existing `if analysable(uri)` body, never before it. No new check exists for this and none is invented: the existing trust pins (`lsp_server_test.sd7:460-476`, `transcript.py:1554-1588`) hold whatever the disclosure does, and Task 2 Step 4 says how to place the call so those pins keep holding.
-- `didClose` must clear the document and must not re-emit the disclosure. It is a different path — `didClose` publishes `0 times lspDiag.value` straight through `publish` and never reaches `discloseStaleLibrary` — so Task 3 adds the close frame to the `.s7i` scenario and pins that the last publish for that uri is empty.
-- A repeated `didChange` must not accumulate disclosures: `refresh` maps fresh from `a.diags` on every call, so `discloseStaleLibrary` only ever appends to a freshly-mapped list. Pinned per publish in Task 3 — `len(x) == 1` for every publish, not once per session.
-- The disclosure must not be counted as a *code* error by a client that shows an error badge: it carries `severity 3`, the same class `mapDiagnostics` already uses for `END OF FILE` and `SYSTEM_MAIN_MISSING`. Pinned in Task 2 and Task 3.
+- A `.sd7` buffer must never receive the disclosure — it is analysed from the text the client sent, so the sentence would be false. Pinned in Task 2's unit checks and Task 3's second wire check.
+- A `.s7i` buffer whose text already matches disk still gets it. That is deliberate: the analysis is the disk's either way, and "differs from disk" would also be a per-keystroke read of the file. Recorded in Task 2 Step 4.
+- An untrusted `.s7i` outside the declared roots must publish nothing at all. `refresh`'s existing `if analysable(uri)` gate wraps the new call, and that placement is checked after editing, not assumed.
+- Repeats: one disclosure per publish, never two in the same list. `mapDiagnostics` dedupes on `line:column:message`, and the new record is appended after that map, so the dedupe is not what makes this true — Task 3's per-publish grouping is.
+- The disclosure is `Information` (3), not `Error` (1): a client that badges errors would otherwise show a code fault the user did not write. Same severity class `mapDiagnostics` already uses for `END OF FILE` and `SYSTEM_MAIN_MISSING`.
 
 ---
 
-### Task 1: Record why the buffer text cannot be analysed
+### Task 1: Put the measurement in the repo, where it can be re-run
 
-The plan's shape rests on one measurement. It must be re-runnable from the repo, not from a `/tmp` scratch file, or the figures in Task 4 are unciteable.
+The plan's shape rests on one figure: an open library's own text is not analysable for a large minority of libraries. That was measured in `/tmp` on 2026-10-29, so today it is unciteable.
 
 **Files:**
 - Create: `tools/rf10_probe.sh`
-- Create: `docs/rf10-measurement.md` (output of the probe, committed)
+- Create: `docs/rf10-measurement.md` (the probe's output, committed)
 
 **Interfaces:**
-- Consumes: `s7c`, the interpreter's own `lib/` directory.
-- Produces: the figures Task 4 quotes. No `src/` symbol.
+- Consumes: `s7c`, and the interpreter's own `lib/` (default `/home/username/seed7/lib`, overridable as `$1` the way `tools/corpus_scan.sh` does).
+- Produces: the figures `docs/seed7-cli.md` quotes in Task 4. No `src/` symbol, nothing wired into `make test`.
 
 - [ ] **Step 1: Write the probe**
 
-`tools/rf10_probe.sh` runs one Seed7 program over the same file list `tools/corpus_scan.sh` passes — `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7` — and prints, per file, both routes of the same analysis:
+`tools/rf10_probe.sh` runs one Seed7 program over the file list `tools/corpus_scan.sh` already passes — `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7` — and prints, per file, both routes of the same analysis:
+
+- `DRIVER` — `$ include "seed7_05.s7i";` then `include <literal(path)>;`. What the server does today. The interpreter opens the document's own path.
+- `LEAD` — `$ include "seed7_05.s7i";` followed by the file's own text. The buffer's text, no uri involved.
+
+For each, print `CLEAN`/`NOISY`, `errorCount`, `length(globalObjects(prog))`, the count of records whose `file(obj)` is `"STRING"`, and the first error's `message` when there is one. Read files with a `readln` loop — `gets(f, -1)` raises `RANGE_ERROR` (`AGENTS.md`). End with the sentinel line, which is what the harness requires before any payload counts as a result:
 
 ```
 SENTINEL files=<N> leadClean=<N> leadNoisy=<N> recordsSame=<N>
 ```
 
-Exit non-zero if `$SEED7/lib` is unreadable or the compile fails. Wrap the program in a heredoc into `mktemp -d` with `trap 'rm -rf "$WORK"' EXIT`, compile with `s7c -O2 -l "$SEED7/lib"`, and run the binary over the file list. It is **not** wired into `make test` — same policy as `tools/corpus_scan.sh` (`13-14`: "Not wired into `make test`, and it must not be"), for the same reason: two analyze phases per file over 343 files takes minutes (`shiftjis.s7i` alone reports `199529` errors on the `LEAD` route, measured). State that in the header comment.
+Exit non-zero if the `lib` directory is unreadable or the compile fails. Heredoc the program into `mktemp -d` with `trap 'rm -rf "$WORK"' EXIT`, compile `s7c -O2 -l "$SEED7/lib"`, run the binary. Header comment states it is deliberately **not** in `make test` — two analyze phases per file over 343 files takes minutes — same policy and wording as `tools/corpus_scan.sh:13-14`.
 
-- [ ] **Step 2: Run it and capture the output**
+- [ ] **Step 2: Run it over the libraries**
 
 ```bash
 sh tools/rf10_probe.sh > docs/rf10-measurement.md.tmp && mv docs/rf10-measurement.md.tmp docs/rf10-measurement.md
+tail -1 docs/rf10-measurement.md
 ```
 
-Expected: the last line is a `SENTINEL` row, and `lib/basearray.s7i` and `lib/null_file.s7i` appear with `DRIVER 0 errors` against `LEAD` `2` and `44` redeclaration errors — `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` and `Redeclaration of "null_file"`. `lib/strifile.s7i`, `lib/json.s7i` and `lib/bigint.s7i` must show `DRIVER 0` / `LEAD 0` with `STRING` counts of 17, 92 and 66: the routes agree there, and only there the buffer's own records would rank first.
+Expected `SENTINEL`, and these rows among the output (all measured 2026-10-29 against `~/seed7` at `c93282a6`):
 
-- [ ] **Step 3: Confirm the probe can fail**
+| file | `DRIVER` | `LEAD` |
+|---|---|---|
+| `lib/strifile.s7i` | 0 errors | 0 errors, 17 records report `STRING` |
+| `lib/json.s7i` | 0 errors | 0 errors, 92 `STRING` |
+| `lib/bigint.s7i` | 0 errors | 0 errors, 66 `STRING` |
+| `lib/basearray.s7i` | 0 errors | **2** errors, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
+| `lib/null_file.s7i` | 0 errors | **44** errors, first `Redeclaration of "null_file"` |
+| aggregate over the 214 top-level libraries | — | **168 clean / 46 noisy**, records agree for 178 |
 
-Edit the probe's `LEAD` step once, so it passes the file's own text **without** the essential include (`probe(textOf(path), dirs)`). Re-run. Expected: `leadNoisy` jumps — `lib/strifile.s7i` reports `1731` errors with first `Expression expected found const` and `STRING=0`, `lib/null_file.s7i` reports `1021` — while `prg/hello.sd7` stays clean, because a program is a complete program and a library is not. That contrast is the positive control: it shows the probe is grading the `LEAD` route and not the file list. Restore the `LEAD` line and re-run before committing.
+If the new run disagrees, the new run wins: put the fresh numbers in `docs/seed7-cli.md` (Task 4) and correct the table above in the same commit.
+
+- [ ] **Step 3: Prove the probe distinguishes the routes**
+
+One edit: make `LEAD` pass the file's text **without** the essential include (`probe(textOf(path), dirs)`). Re-run and expect `leadNoisy` to jump — `lib/strifile.s7i` then reports `1731` errors, first `Expression expected found const`, `STRING=0`, while `prg/hello.sd7` stays clean, because a program is a whole program and a library is not. That contrast is the control: it shows the probe grades the route, not the file list. Restore, re-run, confirm the `SENTINEL` row is back to Step 2's figures.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add tools/rf10_probe.sh docs/rf10-measurement.md
-git commit -m "rf10: record the measured reason a library buffer cannot be analysed from its text"
+git commit -m "rf10: make the reason driverFor stays a re-runnable measurement"
 ```
-
-Label the commit honestly: these are measurements of code that already works, written after the fact (`AGENTS.md` § *Every change*).
+Say in the body that these are measurements of code that already works, taken after the fact, with the mutation that proves the probe can tell the routes apart (`AGENTS.md` § *Every change*).
 
 ---
 
-### Task 2: Publish the disclosure on an open `.s7i`
+### Task 2: Decide and publish the disclosure
 
 **Files:**
-- Modify: `src/lsp_server.sd7` (`refresh`, plus one new `const string:` and one new `const func array lspDiag:` above it)
+- Modify: `src/lsp_server.sd7` (one `const string:`, one `const func array lspDiag:` above `refresh`, one call inside `refresh`)
+- Modify: `src/diagnostics.sd7` only if Step 3's aggregate comparison turns out to need a `severity`-aware printer — it should not
 - Test: `tests/lsp_server_test.sd7`
-- Modify: `docs/PROJECT_GRAPH.md` (regenerated — the module line counts change)
+- Modify: `docs/PROJECT_GRAPH.md` (regenerated)
 
 **Interfaces:**
-- Consumes: `uris.isLibraryBufferPath(path)` and `uris.pathOf` (existing; `isLibraryBufferPath` is the one spelling of "is this a library buffer", read today by `textToAnalyze` and by `features/prepare_rename.sd7`'s refusal arm), `diagnostics.SEV_INFORMATION`, `analysis.lspDiag` fields `line1` / `column1` / `message` / `severity`.
-- Produces: `discloseStaleLibrary (in array lspDiag: mapped, in string: uri) -> array lspDiag` in `src/lsp_server.sd7`, and its message text `LIB_STALE_MESSAGE`. Task 2's unit suite calls `discloseStaleLibrary` directly; Task 3 reads the frame `refresh` publishes.
+- Consumes: `uris.isLibraryBufferPath(path)` and `uris.pathOf` — `isLibraryBufferPath` is the one spelling of "is this a library buffer", read today by `textToAnalyze` and by `features/prepare_rename.sd7`'s refusal arm. `diagnostics.SEV_INFORMATION`. `analysis.lspDiag` fields `line1` / `column1` / `message` / `severity`.
+- Produces: `discloseStaleLibrary (in array lspDiag: mapped, in string: uri) -> array lspDiag` in `src/lsp_server.sd7`, and `const string: LIB_STALE_MESSAGE` in the same file. Task 2's suite calls `discloseStaleLibrary` directly; Task 3 reads the frame `refresh` publishes.
 
-`refresh` is not observable from a unit suite — it writes to the protocol channel, which `lsp_server_test.sd7` cannot capture — so the decision is one pure function that both the suite and `refresh` can call.
+`refresh` writes to the protocol channel, which a unit suite cannot capture — so the decision is one pure function that both `refresh` and the suite can call. That is why this task splits the decision from the publish.
 
-- [ ] **Step 1: Write the failing check**
+- [ ] **Step 1: Write the checks**
 
-Append to `tests/lsp_server_test.sd7`'s existing `.s7i` block (`libPath`/`libUri` at `183-184`). Build an `array lspDiag` of one Error record, run the function for a library uri and for a `.sd7` uri, and grade the aggregate as `severity|message-prefix` per record:
+In `tests/lsp_server_test.sd7`, near the existing `.s7i` block (`libPath`/`libUri` at `:183-184`). Helpers are suite-local: `describe` renders an `array lspDiag` as `severity|` + the first TWO words of each message joined by `|`; `oneError()` is one `lspDiag` with `severity := SEV_ERROR` and `message := "syntax error and more"`.
+
+Two words, because `lsp_tst.sd7:11-16` prints on plain `stdout` and a longer excerpt — or the analyzer's own quote-bearing text — can hold a byte Seed7's writer refuses, which would cost the suite its graded line rather than name one FAIL. No check indexes the returned array, for the same reason: a mutant that drops the append would raise `INDEX_ERROR` on stdout instead of failing a check.
 
 ```seed7
 check("a .s7i buffer gains exactly the disclosure",
@@ -104,29 +122,29 @@ check("and the disclosure is Information, not Error",
       describe(discloseStaleLibrary(0 times lspDiag.value, libUri)), "3|unsaved edits");
 ```
 
-`describe` joins records as `severity|` + the first TWO words of each message, separated by `|`; `oneError()` is one `lspDiag` with `severity := SEV_ERROR` and `message := "syntax error and more"`. Two words, because the graded line must stay ASCII: `lsp_tst.sd7` prints on plain `stdout`, and a longer excerpt of a message carrying the analyzer's quote characters can hold a byte Seed7's writer refuses. No check indexes the returned array — a mutant that drops the append would then raise `INDEX_ERROR` onto stdout and cost the suite its graded line instead of naming one FAIL. All three helpers live in the suite.
-
-- [ ] **Step 2: Add the function as a stub, so the suite can run**
-
-A Seed7 suite that does not analyse prints nothing and exits 0 (`AGENTS.md`), so "write the test, watch it fail" needs the callee to exist first. Add the signature with the body `out := mapped;` and nothing else, then:
+- [ ] **Step 2: Run it and read the failure**
 
 ```bash
 make test-lsp_server
 ```
 
-Expected: `lsp_server: 82 checks, 2 failed` — `a .s7i buffer gains exactly the disclosure` (prints `1|syntax error`) and `and the disclosure is Information, not Error` (prints the empty `describe` of an empty list) go red on their VALUES, and `a .sd7 document gains nothing` is green for the wrong-but-harmless reason: the stub adds nothing to any document. That green is what Step 5's mutant 1 kills.
+Expected: the recipe's `grep -E '^[a-z0-9_]+: [0-9]+ checks, 0 failed$'` finds no match, because the suite does not analyse — `discloseStaleLibrary` is undeclared — so it prints nothing and exits 0, and the grade is what fails. That is the red, and it is a *different* red from a value mismatch: Step 3's stub exists precisely so Step 4 produces the value kind.
 
-- [ ] **Step 3: Implement the decision**
+- [ ] **Step 3: Stub the function so the checks run**
 
-Fill in the stub above `refresh`:
+Add the signature with the body `out := mapped;` and nothing else, then `make test-lsp_server`. Expected: `lsp_server: 82 checks, 2 failed` — `a .s7i buffer gains exactly the disclosure` (prints `1|syntax error`) and `and the disclosure is Information, not Error` (prints the empty `describe` of an empty list) FAIL on their values; `a .sd7 document gains nothing` passes for the wrong reason, which is the check Step 5's mutant 1 kills.
+
+- [ ] **Step 4: Implement**
 
 ```seed7
-# The one sentence R-F10 owes the user. A .s7i buffer is analysed through analysis.sd7's
-# driverFor(path) because the interpreter refuses a library's own text -- measured, in
-# docs/rf10-measurement.md: strifile/json/bigint analyse clean either way, basearray
-# redeclares 2 names and null_file 44. So the symbols, ranges and prose an open .s7i gets
-# are the file's, not the editor's, and an unsaved edit is invisible. Saying so is the
-# whole task; the write path already refuses on the same predicate.
+# The one sentence R-F10 owes the user. analysis.sd7's driverFor(path) is how a library
+# gets analysed, because the interpreter will not take a library's own text once that
+# library is inside seed7_05.s7i's include closure -- measured in docs/rf10-measurement.md:
+# 168 of the 214 top-level libraries analyse clean from text, 46 redeclare (basearray 2
+# names, null_file 44), and records agree for only 178. So the symbols, ranges and prose
+# an open .s7i shows are the FILE's, and an unsaved edit is invisible -- including when
+# the buffer already matches disk, which is why no comparison is made and no second read
+# is paid per keystroke. The write path already refuses on this same predicate.
 const string: LIB_STALE_MESSAGE is
   "unsaved edits in this library are not analysed: the outline, hover, completion"
   <& " and the diagnostics come from the file on disk";
@@ -149,59 +167,52 @@ const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
   end func;
 ```
 
-One comparison decides it; do not re-derive the `.s7i` test from the extension anywhere else (`uris.isLibraryBufferPath` is that one spelling, and `features/prepare_rename.sd7`'s refusal arm already reads it).
-
-- [ ] **Step 4: Wire it into `refresh`, then regenerate the graph**
-
-One call between the mapping and the publish, so the disclosure rides the same frame as the analyzer's own results and inherits the `analysable` gate above it:
+In `refresh`, inside the existing `if analysable(uri)` body, one call between the mapping and the publish:
 
 ```seed7
       mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
       publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri));
 ```
 
-It lands AFTER `mapDiagnostics`, so `MAX_DIAGNOSTICS` (100) caps the analyzer's rows and the disclosure is the one record a capped document always sees. Two placements are load-bearing and this is where they are checked, not assumed: the call stays inside `refresh`'s existing `if analysable(uri)` body (so an untrusted buffer still publishes nothing), and `didClose`'s `publish(uri, openDocs[uri], 0 times lspDiag.value)` is left alone (so a close clears the disclosure instead of re-adding it). Read both back out of the file after the edit:
+Two placements are load-bearing and are read back out of the file after the edit, not assumed: the call stays inside `if analysable(uri)` (an untrusted buffer must still publish nothing), and `didClose`'s `publish(uri, openDocs[uri], 0 times lspDiag.value)` is left alone (a close clears the disclosure instead of re-adding it).
 
-`src/lsp_server.sd7` grew, so the generated artifact is now stale and `make test-graph` reddens:
+Landing after `mapDiagnostics` means `MAX_DIAGNOSTICS` caps the analyzer's rows and the disclosure is the one record a capped document always sees.
+
+- [ ] **Step 5: Run, regenerate, prove the checks can fail**
 
 ```bash
-make graph && make test-lsp_server && make test-graph
+make test-lsp_server && make graph && make test-graph
 ```
 
-Expected: `lsp_server: 82 checks, 0 failed`, `graph: 21 checks, 0 failed`, and `docs/PROJECT_GRAPH.md`'s `lsp_server.sd7` row carrying the new line count.
+Expected: `lsp_server: 82 checks, 0 failed`, `graph: 21 checks, 0 failed`, and the `lsp_server.sd7` row carrying the new line count. Then two mutants, one at a time, each reverted with `git checkout HEAD -- src/lsp_server.sd7` (never `git checkout -- .`, which reads the index):
 
-- [ ] **Step 5: Prove the new assertion can fail**
-
-Mutate production twice, separately, and name the check that goes red each time:
-1. `if isLibraryBufferPath(pathOf(uri)) then` → `if TRUE then`: `a .sd7 document gains nothing` FAILs.
-2. `SEV_INFORMATION` → `SEV_ERROR`: `and the disclosure is Information, not Error` FAILs, and `a .s7i buffer gains exactly the disclosure` FAILs with it (`3|` becomes `1|`).
-
-Revert per file with `git checkout HEAD -- src/lsp_server.sd7` — never `git checkout -- .`, which restores from the index and silently undoes uncommitted work.
+1. Guard → `if TRUE then`: `a .sd7 document gains nothing` FAILs.
+2. `SEV_INFORMATION` → `SEV_ERROR`: `and the disclosure is Information, not Error` FAILs, and the first check FAILs with it (`3|` becomes `1|`).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/lsp_server.sd7 tests/lsp_server_test.sd7 docs/PROJECT_GRAPH.md
-git commit -m "rf10: publish an Information diagnostic when a .s7i buffer is analysed from disk"
+git commit -m "rf10: tell an open .s7i buffer that its analysis is the file on disk"
 ```
 
 ---
 
-### Task 3: Pin it on the wire
+### Task 3: Pin the frame the editor reads
 
-A unit check proves the function; the wire proves the frame the editor reads. The disclosure must arrive on `publishDiagnostics`, exactly once per publish, and it must not follow a `.sd7` document into the same session.
+The unit suite proves the decision. The wire proves the notification: that the disclosure arrives on `textDocument/publishDiagnostics`, once per publish, that `didClose` clears it, and that a `.sd7` document in the same session never sees it.
 
 **Files:**
-- Modify: `tests/transcript.py` (the `.s7i` scenario at `870-954`: it writes `/tmp/seed7_lsp_transcript_rn_lib.s7i`, opens it, asks `references`/`prepareRename`/`rename`, and asserts the two refusal-log orderings; `S7I_MSGS` today ends `shutdown(123), exit_()` with **no `didClose`**)
+- Modify: `tests/transcript.py` (the `.s7i` scenario at `:870-954`, which writes `/tmp/seed7_lsp_transcript_rn_lib.s7i`, opens it, asks `references`/`prepareRename`/`rename`, and asserts the two refusal-log orderings). `S7I_MSGS` at `:897-906` ends `shutdown(123), exit_()` with **no `didClose`**.
 - Modify: nothing in `src/`
 
 **Interfaces:**
-- Consumes: `replies` / `split_frames` (`junk == 0`), the scenario's existing `RN_LIB_URI`, `expect`, `one_answer_per_request`, `closed(uri)` (`108-109`, which sends `textDocument/didClose` with `td(uri)`), and `lib_log()` (`924-937`).
+- Consumes: `replies` / `split_frames` (`junk == 0`), `RN_LIB_URI`, `expect`, `one_answer_per_request` (`:405-413`), `closed(uri)` (`:108-109`, which sends `textDocument/didClose` with `td(uri)`), `lib_log()` (`:924-937`).
 - Produces: the four check titles Step 2 prints.
 
 - [ ] **Step 1: Add the close frame and the checks**
 
-Insert `closed(RN_LIB_URI)` before `shutdown(123)` in `S7I_MSGS`. Then grade the *frames*, not `LIB_MSGS` (log text only), the way `lib_log()` grades the refusal — by what the client receives. Group by publish notification so "exactly once" means once per publish, not once per session:
+Insert `closed(RN_LIB_URI)` before `shutdown(123)` in `S7I_MSGS`. Then grade the frames — not `LIB_MSGS`, which holds log text only — grouped per publish notification, so "once" means once per publish rather than once per session:
 
 ```python
 RN_PUBS = [r["params"]["diagnostics"] for r in replies
@@ -222,7 +233,7 @@ expect(all("unsaved edits" not in d.get("message", "")
        "and no other document in the run receives it")
 ```
 
-The first check asserts `>= 2` publishes because the run now publishes twice: the `didOpen` (and the driver analyses a file whose text the client also sent, so it is clean) and the `didClose` empty frame. The fourth check is the load-bearing one: `S7I_MSGS` opens a `.sd7` document (`msgs[1]`) in the same session, so a disclosure that leaked onto a buffer analysed from the client's own text reddens it. Do not touch the existing `lib_log()` ordering checks; they pin the refusal half, which stays.
+The fourth check is the load-bearing one: `S7I_MSGS` opens `RN_LIB_URI` in a session whose earlier frames opened a `.sd7` document (`msgs[1]`), so a disclosure that followed a buffer analysed from the client's own text reddens it. Leave the `lib_log()` ordering checks alone — they pin the refusal half, which this plan does not touch.
 
 - [ ] **Step 2: Run it**
 
@@ -230,15 +241,15 @@ The first check asserts `>= 2` publishes because the run now publishes twice: th
 make transcript
 ```
 
-Expected: `transcript: 200 checks, 0 failed` (196 + 4), `code == 0` (the scenario now closes before it shuts down, so the `exit` path is unchanged), and `junk == 0` on every scenario, the astral ones included.
+Expected: `transcript: 200 checks, 0 failed` (196 + 4), `code == 0` (the scenario still shuts down before `exit`), and `junk == 0` on every scenario — the astral and surrogate ones included, because a new byte on the protocol channel is the failure class those checks exist to catch.
 
 - [ ] **Step 3: Prove the wire checks can fail**
 
-Three mutants, one at a time, each reverted with `git checkout HEAD -- <file>`:
+Three mutants, one at a time, reverted with `git checkout HEAD -- <file>`:
 
-1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call). `make transcript` → `transcript: 200 checks, 1 failed` (the once-per-publish check), **and** `make test-lsp_server` red in the same run (all three of Task 2's checks). If only the wire reddens, the two suites grade different things and the wire check is not pinning the product.
-2. `discloseStaleLibrary`'s guard → `if TRUE then` → the "no other document" check goes red while the first three stay green.
-3. Route `didClose`'s empty publish through `discloseStaleLibrary` (i.e. `publish(uri, openDocs[uri], discloseStaleLibrary(0 times lspDiag.value, uri))`) → the "didClose still clears" check goes red, which is the check that exists to keep that edit from looking like an improvement.
+1. Pass `mapped` to `publish` in `refresh` (drop the `discloseStaleLibrary` call): `transcript: 200 checks, 1 failed` — the once-per-publish check — **and** `make test-lsp_server` red in the same run, all three. If only the wire reddens, the two suites grade different things and the wire check is not pinning the product.
+2. Guard → `if TRUE then`: the "no other document" check FAILs, the first two stay green.
+3. Route `didClose`'s empty publish through `discloseStaleLibrary`: the "didClose still clears" check FAILs. This mutant is the reason that check exists — folding the disclosure into the close path would look like an improvement.
 
 - [ ] **Step 4: Commit**
 
@@ -249,66 +260,65 @@ git commit -m "rf10: pin the .s7i disclosure on the wire, with a .sd7 control an
 
 ---
 
-### Task 4: Say it in the docs, with the figures beside it
+### Task 4: Put the sentences where the rules live
 
 **Files:**
-- Modify: `README.md` (§ *What works*, § *What does not work yet*)
-- Modify: `AGENTS.md` (§ *Do not "fix" these*)
+- Modify: `README.md` (§ *What works* diagnostics sentence, § *What does not work yet* R-F10 bullet)
+- Modify: `AGENTS.md` (§ *Protocol decisions that are easy to undo by accident* and § *Do not "fix" these*)
 - Modify: `docs/seed7-cli.md` (new section under *AGENTS.md provenance*)
 
-- [ ] **Step 1: README**
-
-Move R-F10 from the unqualified list to a stated disclosure: the `.s7i` bullet gains "and the server now says so in the document" + the severity, and the *What works* line about diagnostics gains one clause naming the disclosure. Keep the "unscheduled, split out of the M3 plan" wording — the limitation is still open; only the silence is closed.
-
-- [ ] **Step 2: AGENTS.md**
-
-In the § *Do not "fix" these* bullet (`AGENTS.md:269-272`), replace "so unsaved library edits report stale diagnostics" with "so unsaved library edits report stale diagnostics, and `refresh` publishes one `Information` diagnostic saying so", and add the one-line reason with the two figures: `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text.
-
-This edit is gate-safe, and that is measured rather than assumed: `grep -n 'R-F10\|s7i' tools/agents_required.txt` returns only `seed7_05.s7i:280-294` (`:27`) and `utf8.s7i:132` (`:32`) — no frozen token lives in the R-F10 sentences, so rewording them cannot redden `make test-agents`. If the list has grown since this plan was written, re-run that grep before editing.
-
-- [ ] **Step 3: docs/seed7-cli.md**
-
-Add a section `R-F10 — the two routes, measured` holding: the exact `sh tools/rf10_probe.sh` command, the six `DRIVER`/`LEAD` rows quoted at the top of this plan, the `SENTINEL` line from `docs/rf10-measurement.md`, and the temp-copy result (a scratch path holding the buffer text gives the same `2`/`44`, because the real library is already inside `seed7_05.s7i`'s closure).
-
-- [ ] **Step 4: Regenerate and run everything**
+- [ ] **Step 1: Check which frozen tokens the edits touch**
 
 ```bash
-make graph && make test
+grep -nFf tools/agents_required.txt AGENTS.md | head -50
 ```
 
-Expected: 21 graded lines, each `0 failed`, summing to **1 071** checks — the 1 064 baseline plus Task 2's three unit checks and Task 3's four wire checks. If the run disagrees with that arithmetic, the run wins: correct this line, not the suites, and say so in the commit body.
+`tools/agents_gate.sh` greps its 44 tokens over the union of `AGENTS.md` and `docs/seed7-cli.md`, and `## `-prefixed tokens in `AGENTS.md` alone. A token whose only host sentence is being reworded prints MISSING and reddens `make test-agents` — `docs/seed7-cli.md` § *Citation defect, counted and closed* records what happened last time a document about a wrong citation propped up the net that guards it. Substitute into the new wording; do not add a token beside a stale one.
+
+- [ ] **Step 2: The two rule sentences**
+
+`AGENTS.md` § *Do not "fix" these*, the R-F10 bullet: keep the sentence, and add that `refresh` publishes one `Information` diagnostic saying it, plus the measured reason the route stays — `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text, 168 of 214 libraries clean. `README.md` § *What does not work yet*: the `.s7i` staleness clause gains "and the server says so in the buffer". § *What works*: the diagnostics sentence gains one clause naming the disclosure. The limitation stays open; only the silence closes.
+
+- [ ] **Step 3: The provenance section**
+
+`docs/seed7-cli.md`: `R-F10 — the two routes, measured`, holding the `sh tools/rf10_probe.sh` command, the six rows of Task 1's table, the `SENTINEL` line as it came out of the committed `docs/rf10-measurement.md`, and the temp-copy result — a scratch path holding the buffer text gives the same `2` and `44`, because the real library is already inside `seed7_05.s7i`'s closure.
+
+- [ ] **Step 4: Run everything**
+
+```bash
+make test
+```
+
+Expected: 21 graded lines, each `0 failed`, totalling **1 071** checks — the 1 064 recorded at `docs/seed7-cli.md:394` plus Task 2's three unit checks and Task 3's four wire checks. If the run disagrees with that arithmetic, the run wins: correct this line, not the suites, and say so in the commit body.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add README.md AGENTS.md docs/seed7-cli.md
-git commit -m "docs: record the R-F10 disclosure and the measured reason the driver stays"
+git commit -m "docs: record the R-F10 disclosure and the measured reason driverFor stays"
 ```
 
 ---
 
 ## Definition of done
 
-- An open `.s7i` publishes exactly one `Information` diagnostic per publish saying the analysis is the file on disk; no other document does, on the unit suite and on the wire; `didClose` publishes the empty list.
-- `docs/rf10-measurement.md` is in the tree, produced by `tools/rf10_probe.sh`, and the probe is proven to distinguish the routes (Task 1 Step 3).
-- Two mutants in Task 2 Step 5 and three in Task 3 Step 3 each redden a named check, and Task 3 Step 3's mutant 1 reddens both suites.
-- `make test` green (21 graded lines, `0 failed` each); `git status --porcelain -uall` empty.
+- An open `.s7i` publishes exactly one `Information` diagnostic per publish saying the analysis is the file on disk; no other document does; `didClose` publishes the empty list.
+- `docs/rf10-measurement.md` is in the tree, produced by `tools/rf10_probe.sh`, and Task 1 Step 3 proves the probe distinguishes the two routes.
+- Two mutants in Task 2 Step 5 and three in Task 3 Step 3 each redden a named check; Task 3 Step 3's mutant 1 reddens both suites.
+- `make test` green — 21 graded lines, `0 failed` each; `git status --porcelain -uall` empty.
 
 ## Out of scope
 
-- Changing `textToAnalyze`, `driverFor`, or any analysis route. The driver stays because the interpreter refuses the alternative; Task 1 is the evidence for that sentence.
-- Lifting the `rename`/`prepareRename` refusal inside a `.s7i`. That arm keys on `uris.isLibraryBufferPath` and its reason still holds.
-- The raw-`id`-text question. It is NOT out of scope any more — it has its own plan, `docs/superpowers/plans/2026-10-29-request-id-fidelity.md`, because the probe showed a string-id request is answered under `id: 0` and an unknown string-id method is answered not at all, which is a hang rather than a cosmetic mismatch. Nothing in this plan depends on that one, and they touch `src/lsp_server.sd7` in different places (`refresh` here, the senders there).
+- Any change to `textToAnalyze`, `driverFor` or an analysis route. Task 1 is the evidence for that sentence, and it is now re-runnable.
+- Lifting the `rename` / `prepareRename` refusal inside a `.s7i`. That arm reads the same `isLibraryBufferPath` and its reason stands.
+- Comparing the buffer to disk before disclosing. It would buy silence for a pristine buffer at the cost of a read and a comparison per keystroke, and the analysis is the disk's either way.
+- Request-`id` fidelity (`{"id":"42"}` is answered with `id: 0`, and an unknown string-id method is answered not at all). Measured, and it is a hang rather than a cosmetic mismatch, so it is planned in its own file, `2026-10-29-request-id-fidelity.md`. Nothing here depends on it.
 
 ## Measured, and therefore NOT planned
 
-Two candidate changes were killed by probe before this plan was written. Both belong here so nobody re-litigates them from the review notes:
-
-- **`intAt` is already total; the `-32603` net is still unreachable.** A review claimed a float in an integer slot costs the request (`integer(str(v))` raising `NUMERIC_ERROR`). Refuted: `readJson` keeps a number's **source text**, so `str(jsonNumber)` of `10.5` is `"10.5"`, and `integer("10.5")` raises `RANGE_ERROR` — the one `intAt` already catches. Measured against the real process: 24 well-framed hostile bodies (`"character":10.5`, `"line":"3"`, `"line":1e999`, `"id":0.5/true/null/[1]/"42"`, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as object, bodies that are a number/string/`null`/array/bool, a 5-deep nest), each followed by `shutdown`/`exit` → **`PROBE -32603 cases: none`**. Answers were `-32602`, `-32601`, `-32700`, `null`, `[]` or a result. `AGENTS.md`'s "keep the net, it is unreachable" stands as written.
-- **Raw-`id` text — NOT refuted, and now its own plan.** Measured here: `{"id":"42","method":"textDocument/hover"}` is answered with `{"id":0,…}`, and `{"id":"x","method":"no/such"}` is answered with nothing at all, so the client waits forever. `src/rpc.sd7:8-11` records that as a `ponytail:` decision on the grounds that every client tested sends integers; the 2-of-3 shapes above are hangs, not cosmetics, so it is planned in `docs/superpowers/plans/2026-10-29-request-id-fidelity.md`.
-- **A `.s7i` analysis from the buffer's own text.** Task 1 measures it; the numbers say the interpreter re-declares (`basearray.s7i` 2 names, `null_file.s7i` 44) because the real library is already inside `seed7_05.s7i`'s closure, and a scratch copy of the buffer text does the same. So `driverFor` stays and only the silence is fixed.
-
----
+- **The reachable `-32603`.** A review claimed a float in an integer slot costs the request because `integer(str(v))` raises `NUMERIC_ERROR`. Refuted by measurement: `readJson` keeps a number's **source text** (`str(jsonValue)` of `10.5` is `"10.5"`, not `"10.500000"`), and `integer("10.5")` raises `RANGE_ERROR` — the one `intAt` already catches. Against the real process: 24 well-framed hostile bodies (`"character":10.5`, `"line":"3"`, `"line":1e999`, ids `0.5/true/null/[1]/"42"`, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as an object, bodies that are a number/string/`null`/array/bool, a 5-deep nest) and 12 hostile request shapes (positions past EOF, negative positions, `semanticTokens/range` to line 100000, an empty document, an unclosed `if` with no trailing newline, `http:` and `untitled:` uris, no `rootUri`) → **`-32603` in none of them**, `junk == 0` in all, exit status always 0. `AGENTS.md`'s "keep the net, it is unreachable" stands as written.
+- **Analysing an open library from its own text.** Task 1 measures it and 46 of 214 libraries say no.
+- **Hovering the character after an identifier.** `wordAt` is left-of-character and `transcript.py` pins it; probing eglot's exact bounds produced correct answers, so there is nothing to fix and no task here.
 
 ## Start here
 
