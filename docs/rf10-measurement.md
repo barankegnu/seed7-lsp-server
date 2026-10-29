@@ -1,5 +1,5 @@
 # rf10_probe.sh -- DRIVER (analysis.sd7 driverFor) vs LEAD (buffer text), one row per route
-# columns: route file verdict errors=<errorCount> records=<length(globalObjects)> string=<records with file()=STRING> first=<getError(1).message>
+# columns: route file verdict errors=<errorCount> records=<length(globalObjects)> string=<records with file()=BUFFER_FILE> first=<getError(1).message>
 # seed7 tree: /home/username/seed7 c93282a6
 DRIVER /home/username/seed7/lib/aes_gcm.s7i CLEAN errors=0 records=5989 string=0 first=
 LEAD /home/username/seed7/lib/aes_gcm.s7i CLEAN errors=0 records=5989 string=19 first=
@@ -70,7 +70,7 @@ LEAD /home/username/seed7/lib/cgi.s7i CLEAN errors=0 records=4639 string=2 first
 DRIVER /home/username/seed7/lib/char.s7i CLEAN errors=0 records=3060 string=0 first=
 LEAD /home/username/seed7/lib/char.s7i NOISY errors=74 records=3060 string=0 first=Redeclaration of "char"
 DRIVER /home/username/seed7/lib/charsets.s7i CLEAN errors=0 records=3161 string=0 first=
-LEAD /home/username/seed7/lib/charsets.s7i NOISY errors=7729 records=3161 string=87 first=Illegal character in text "\135;" (U+0087)
+LEAD /home/username/seed7/lib/charsets.s7i CLEAN errors=0 records=3161 string=87 first=
 DRIVER /home/username/seed7/lib/chartype.s7i CLEAN errors=0 records=3097 string=0 first=
 LEAD /home/username/seed7/lib/chartype.s7i CLEAN errors=0 records=3097 string=37 first=
 DRIVER /home/username/seed7/lib/cipher.s7i CLEAN errors=0 records=3482 string=0 first=
@@ -94,9 +94,9 @@ LEAD /home/username/seed7/lib/crc32.s7i CLEAN errors=0 records=3772 string=10 fi
 DRIVER /home/username/seed7/lib/crc64.s7i CLEAN errors=0 records=4183 string=0 first=
 LEAD /home/username/seed7/lib/crc64.s7i CLEAN errors=0 records=4183 string=5 first=
 DRIVER /home/username/seed7/lib/cronos16.s7i CLEAN errors=0 records=6972 string=0 first=
-LEAD /home/username/seed7/lib/cronos16.s7i NOISY errors=99 records=6972 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/cronos16.s7i CLEAN errors=0 records=6972 string=2 first=
 DRIVER /home/username/seed7/lib/cronos27.s7i CLEAN errors=0 records=6972 string=0 first=
-LEAD /home/username/seed7/lib/cronos27.s7i NOISY errors=99 records=6972 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/cronos27.s7i CLEAN errors=0 records=6972 string=2 first=
 DRIVER /home/username/seed7/lib/csv.s7i CLEAN errors=0 records=3063 string=0 first=
 LEAD /home/username/seed7/lib/csv.s7i CLEAN errors=0 records=3063 string=3 first=
 DRIVER /home/username/seed7/lib/db_prop.s7i CLEAN errors=0 records=5211 string=0 first=
@@ -248,7 +248,7 @@ LEAD /home/username/seed7/lib/math.s7i CLEAN errors=0 records=3357 string=19 fir
 DRIVER /home/username/seed7/lib/mixarith.s7i CLEAN errors=0 records=3943 string=0 first=
 LEAD /home/username/seed7/lib/mixarith.s7i CLEAN errors=0 records=3943 string=25 first=
 DRIVER /home/username/seed7/lib/modern27.s7i CLEAN errors=0 records=6972 string=0 first=
-LEAD /home/username/seed7/lib/modern27.s7i NOISY errors=95 records=6972 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/modern27.s7i CLEAN errors=0 records=6972 string=2 first=
 DRIVER /home/username/seed7/lib/more.s7i CLEAN errors=0 records=3120 string=0 first=
 LEAD /home/username/seed7/lib/more.s7i CLEAN errors=0 records=3120 string=4 first=
 DRIVER /home/username/seed7/lib/msgdigest.s7i CLEAN errors=0 records=6125 string=0 first=
@@ -323,7 +323,7 @@ LEAD /home/username/seed7/lib/set.s7i NOISY errors=2 records=3060 string=0 first
 DRIVER /home/username/seed7/lib/shell.s7i CLEAN errors=0 records=3331 string=0 first=
 LEAD /home/username/seed7/lib/shell.s7i CLEAN errors=0 records=3331 string=22 first=
 DRIVER /home/username/seed7/lib/shiftjis.s7i CLEAN errors=0 records=3758 string=0 first=
-LEAD /home/username/seed7/lib/shiftjis.s7i NOISY errors=1214 records=3758 string=6 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/shiftjis.s7i CLEAN errors=0 records=3758 string=6 first=
 DRIVER /home/username/seed7/lib/showtls.s7i CLEAN errors=0 records=11508 string=0 first=
 LEAD /home/username/seed7/lib/showtls.s7i CLEAN errors=0 records=11508 string=18 first=
 DRIVER /home/username/seed7/lib/signature.s7i CLEAN errors=0 records=7146 string=0 first=
@@ -341,23 +341,23 @@ LEAD /home/username/seed7/lib/sql_base.s7i CLEAN errors=0 records=5164 string=93
 DRIVER /home/username/seed7/lib/stars.s7i CLEAN errors=0 records=3493 string=0 first=
 LEAD /home/username/seed7/lib/stars.s7i CLEAN errors=0 records=3493 string=3 first=
 DRIVER /home/username/seed7/lib/stdfont10.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont10.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont10.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont12.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont12.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont12.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont14.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont14.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont14.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont16.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont16.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont16.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont18.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont18.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont18.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont20.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont20.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont20.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont24.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont24.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont24.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont8.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont8.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont8.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdfont9.s7i CLEAN errors=0 records=6823 string=0 first=
-LEAD /home/username/seed7/lib/stdfont9.s7i NOISY errors=99 records=6823 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/stdfont9.s7i CLEAN errors=0 records=6823 string=2 first=
 DRIVER /home/username/seed7/lib/stdio.s7i CLEAN errors=0 records=3060 string=0 first=
 LEAD /home/username/seed7/lib/stdio.s7i NOISY errors=30 records=3060 string=0 first=Redeclaration of "INIT_STD_FILE (ref clib_file: primitive_file, ref string: fileName)"
 DRIVER /home/username/seed7/lib/strifile.s7i CLEAN errors=0 records=3132 string=0 first=
@@ -405,9 +405,9 @@ LEAD /home/username/seed7/lib/utf16.s7i CLEAN errors=0 records=3215 string=19 fi
 DRIVER /home/username/seed7/lib/utf8.s7i CLEAN errors=0 records=3129 string=0 first=
 LEAD /home/username/seed7/lib/utf8.s7i CLEAN errors=0 records=3129 string=18 first=
 DRIVER /home/username/seed7/lib/vecfont10.s7i CLEAN errors=0 records=6972 string=0 first=
-LEAD /home/username/seed7/lib/vecfont10.s7i NOISY errors=99 records=6972 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/vecfont10.s7i CLEAN errors=0 records=6972 string=2 first=
 DRIVER /home/username/seed7/lib/vecfont18.s7i CLEAN errors=0 records=6972 string=0 first=
-LEAD /home/username/seed7/lib/vecfont18.s7i NOISY errors=99 records=6972 string=2 first="'" expected found "\194;" (U+00c2)
+LEAD /home/username/seed7/lib/vecfont18.s7i CLEAN errors=0 records=6972 string=2 first=
 DRIVER /home/username/seed7/lib/vector3d.s7i CLEAN errors=0 records=3431 string=0 first=
 LEAD /home/username/seed7/lib/vector3d.s7i CLEAN errors=0 records=3431 string=22 first=
 DRIVER /home/username/seed7/lib/vectorfont.s7i CLEAN errors=0 records=6970 string=0 first=
@@ -431,4 +431,4 @@ LEAD /home/username/seed7/lib/zip.s7i CLEAN errors=0 records=14927 string=129 fi
 DRIVER /home/username/seed7/lib/zstd.s7i CLEAN errors=0 records=6396 string=0 first=
 LEAD /home/username/seed7/lib/zstd.s7i CLEAN errors=0 records=6396 string=65 first=
 CONTROL /home/username/seed7/prg/hello.sd7 CLEAN errors=0 records=3061 string=1 first=
-SENTINEL files=214 leadClean=168 leadNoisy=46 recordsSame=213
+SENTINEL files=214 leadClean=184 leadNoisy=30 recordsSame=213
