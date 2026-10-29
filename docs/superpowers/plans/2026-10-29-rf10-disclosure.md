@@ -404,13 +404,13 @@ two-character fixture (`¡` and `€` in a `(** … *)` comment) answers `34/5` 
 `tests/doc_index_test.sd7` builds its fixture with 20 `write(out, …)` calls on a plain file; that cannot
 produce the defect, because a plain Seed7 write emits one byte per character and the round trip is
 self-consistent. So write a *second* fixture with `openUtf8(path, "w")` containing a `(** … *)` comment
-whose body holds one non-ASCII character (`'¡'`, `chr(161)`), one declaration below it, then assert the
-prose that comes back is the same character:
+whose body holds **two** non-ASCII characters — `'¡'` (`chr(161)`, two bytes) and `'€'` (`chr(8364)`,
+three bytes) — with one declaration below it, then assert what comes back is two characters, not five:
 
 ```seed7
 check("prose keeps a non-ASCII character as one character",
       str(length(proseFor(nonAsciiPath, declLine1))) <& "/" <&
-      str(countCharsAbove127(proseFor(nonAsciiPath, declLine1))), "<N>/1");
+      str(countCharsAbove127(proseFor(nonAsciiPath, declLine1))), "31/2");
 ```
 
 Both numbers are measured, on the fixture above: the buggy reader answers **`34/5`** and the fixed
@@ -428,7 +428,7 @@ merely "no non-ASCII".
 make test-doc_index
 ```
 
-Expected: `doc_index: 11 checks, 1 failed` (10 baseline + 1), the new check's `got:` reading `34/5`. If the suite prints no graded line, the fixture write or the helper does not compile —
+Expected: `doc_index: 11 checks, 1 failed` (10 baseline + the new check), its `got:` reading `34/5`. If the suite prints no graded line, the fixture write or the helper does not compile —
 fix that before claiming the red.
 
 - [ ] **Step 3: Implement, then run the whole gate**
