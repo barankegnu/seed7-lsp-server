@@ -329,3 +329,84 @@ git commit -m "docs: record the R-F10 disclosure and the measured reason driverF
 ## Start here
 
 `src/lsp_server.sd7`'s `refresh` and `uris.sd7`'s `isLibraryBufferPath`, then `docs/rf10-measurement.md` for why nothing else changes.
+
+---
+
+### Task 5: Read the library's prose as UTF-8 (found while verifying Task 1's fix)
+
+**Why this task exists:** the same byte-per-character read that contaminated Task 1's probe is in the
+product. `src/doc_index.sd7:14-16` reads a library with `open(path, "r")`, so `(** … *)` documentation
+holding non-ASCII reaches hover as latin-1 decompositions. Measured on real input: `proseFor` of
+`/home/username/seed7/lib/asn1.s7i` line 372 (the comment above `genAsn1String`) returns 314
+characters containing the runs `U+00E2 U+0082 U+00AC` and `U+00C3 U+00A2` — the bytes of an
+`–` and a `¢` read one per character. Five libraries carry non-ASCII inside a `(** … *)` comment:
+`asn1.s7i`, `bytedata.s7i`, `lzma.s7i`, `scanjson.s7i`, `unicode.s7i`.
+
+**Files:**
+- Modify: `src/doc_index.sd7` (`readLinesOf`, `:10-28`)
+- Test: `tests/doc_index_test.sd7`
+- Modify: `docs/PROJECT_GRAPH.md` (regenerated)
+
+**Interfaces:**
+- Consumes: `utf8.s7i`'s `openUtf8 (in string: path, in string: mode) is func file` (`lib/utf8.s7i:91`).
+- Produces: no new symbol. `proseFor` and `proseForText` keep their signatures; the change is which
+  reader `readLinesOf` uses, and the fix must not disturb the `proseIn` walk over an in-memory string.
+
+- [ ] **Step 1: Write the failing check**
+
+`tests/doc_index_test.sd7` builds its fixture with 20 `write(out, …)` calls on a plain file; that cannot
+produce the defect, because a plain Seed7 write emits one byte per character and the round trip is
+self-consistent. So write a *second* fixture with `openUtf8(path, "w")` containing a `(** … *)` comment
+whose body holds one non-ASCII character (`'¡'`, `chr(161)`), one declaration below it, then assert the
+prose that comes back is the same character:
+
+```seed7
+check("prose keeps a non-ASCII character as one character",
+      str(length(proseFor(nonAsciiPath, declLine1))) <& "/" <&
+      str(countCharsAbove127(proseFor(nonAsciiPath, declLine1))), "<N>/1");
+```
+
+`<N>` is the length the fixture's prose actually has — count it from the fixture text rather than
+copying a number, and write the number you measured into the check. `countCharsAbove127` is a
+suite-local loop, one comparison per character (`AGENTS.md`: a long `and`/`or` chain can fail to match).
+The buggy build answers `2` for that count (three bytes become three characters, two of them in
+`U+0080`–`U+00BF`), so the check is the one that distinguishes the readers.
+
+- [ ] **Step 2: Run it and confirm the reason**
+
+```bash
+make test-doc_index
+```
+
+Expected: `doc_index: 11 checks, 1 failed` (10 baseline + 1), the new check's `got:` showing the
+inflated count. If the suite prints no graded line, the fixture write or the helper does not compile —
+fix that before claiming the red.
+
+- [ ] **Step 3: Implement, then run the whole gate**
+
+`include "utf8.s7i";` in `src/doc_index.sd7` and `f := openUtf8(path, "r");` at `:14`. Nothing else: the
+`eof`/`readln`/`close` loop is already correct, and `proseForText` must stay as it is because it walks
+text that never touched a file.
+
+```bash
+make test-doc_index && make graph && make test-graph && make test
+```
+
+Expected: `doc_index: 11 checks, 0 failed`, `graph: 21 checks, 0 failed`, 21 graded lines each
+`0 failed` — and check `docs/PROJECT_GRAPH.md`'s `doc_index.sd7` row carries the new line count.
+
+- [ ] **Step 4: Prove the check can fail, both ways**
+
+1. Revert the reader to `open(path, "r")` with the UTF-8 fixture: the new check FAILs on its count.
+   Revert per file with `git checkout HEAD -- src/doc_index.sd7`.
+2. Feed `proseFor` a path that does not exist: it must still answer `""`, proving the
+   `catch FILE_ERROR` arm in `readLinesOf` is intact after the reader swap — that arm is what keeps a
+   missing library off the protocol channel, and it is reachable (unlike Task 1's, because here the
+   path comes from reflection about a file the client may have deleted).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/doc_index.sd7 tests/doc_index_test.sd7 docs/PROJECT_GRAPH.md
+git commit -m "fix: read library documentation as UTF-8, so hover prose is not latin-1 bytes"
+```
