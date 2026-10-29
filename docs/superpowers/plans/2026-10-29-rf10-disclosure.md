@@ -25,7 +25,7 @@
 ## Review Focus
 
 - A `.sd7` buffer must never receive the disclosure — it is analysed from the text the client sent, so the statement would be false. Pinned in Task 2.
-- An untrusted `.s7i` outside the declared roots must still publish nothing: `refresh` returns early on `analysable`, so the new call must sit inside that existing `if analysable(uri)` body, never before it. Pinned by the existing trust checks (`lsp_server_test.sd7:460-476`, `transcript.py` scenario 31); Task 2 Step 5's mutant 1 is what proves the disclosure is reached only through that gate.
+- An untrusted `.s7i` outside the declared roots must still publish nothing: `refresh` returns early on `analysable`, so the new call must sit inside that existing `if analysable(uri)` body, never before it. No new check exists for this and none is invented: the existing trust pins (`lsp_server_test.sd7:460-476`, `transcript.py:1554-1588`) hold whatever the disclosure does, and Task 2 Step 4 says how to place the call so those pins keep holding.
 - `didClose` must clear the document and must not re-emit the disclosure. It is a different path — `didClose` publishes `0 times lspDiag.value` straight through `publish` and never reaches `discloseStaleLibrary` — so Task 3 adds the close frame to the `.s7i` scenario and pins that the last publish for that uri is empty.
 - A repeated `didChange` must not accumulate disclosures: `refresh` maps fresh from `a.diags` on every call, so `discloseStaleLibrary` only ever appends to a freshly-mapped list. Pinned per publish in Task 3 — `len(x) == 1` for every publish, not once per session.
 - The disclosure must not be counted as a *code* error by a client that shows an error badge: it carries `severity 3`, the same class `mapDiagnostics` already uses for `END OF FILE` and `SYSTEM_MAIN_MISSING`. Pinned in Task 2 and Task 3.
@@ -64,7 +64,7 @@ Expected: the last line is a `SENTINEL` row, and `lib/basearray.s7i` and `lib/nu
 
 - [ ] **Step 3: Confirm the probe can fail**
 
-Edit the probe's `LEAD` string once, to a text that cannot redeclare (the file's own text *without* the essential include, i.e. pass `textOf(path)` alone). Re-run. Expected: `leadNoisy` jumps to 343 — `strifile.s7i` reports `1731` errors, first `Expression expected found const`, and `STRING=0` everywhere. That is the positive control: the harness grades a difference, not a tautology. Restore the `LEAD` line and re-run before committing.
+Edit the probe's `LEAD` step once, so it passes the file's own text **without** the essential include (`probe(textOf(path), dirs)`). Re-run. Expected: `leadNoisy` jumps — `lib/strifile.s7i` reports `1731` errors with first `Expression expected found const` and `STRING=0`, `lib/null_file.s7i` reports `1021` — while `prg/hello.sd7` stays clean, because a program is a complete program and a library is not. That contrast is the positive control: it shows the probe is grading the `LEAD` route and not the file list. Restore the `LEAD` line and re-run before committing.
 
 - [ ] **Step 4: Commit**
 
@@ -160,7 +160,7 @@ One call between the mapping and the publish, so the disclosure rides the same f
       publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri));
 ```
 
-It lands AFTER `mapDiagnostics`, so `MAX_DIAGNOSTICS` (100) caps the analyzer's rows and the disclosure is the one record a capped document always sees.
+It lands AFTER `mapDiagnostics`, so `MAX_DIAGNOSTICS` (100) caps the analyzer's rows and the disclosure is the one record a capped document always sees. Two placements are load-bearing and this is where they are checked, not assumed: the call stays inside `refresh`'s existing `if analysable(uri)` body (so an untrusted buffer still publishes nothing), and `didClose`'s `publish(uri, openDocs[uri], 0 times lspDiag.value)` is left alone (so a close clears the disclosure instead of re-adding it). Read both back out of the file after the edit:
 
 `src/lsp_server.sd7` grew, so the generated artifact is now stale and `make test-graph` reddens:
 

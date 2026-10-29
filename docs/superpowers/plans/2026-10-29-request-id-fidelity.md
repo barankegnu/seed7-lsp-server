@@ -2,95 +2,97 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Answer a request with the `id` the client sent, and answer nothing at all when the message was a notification — so a client that uses a string `id` stops waiting for a reply that never carries its own key.
+**Goal:** Answer a request with the `id` the client sent, so a client that uses string ids — which LSP 3.18 allows — gets a response it can match instead of waiting forever.
 
-**Architecture:** `rpc.sd7` keeps the id as the JSON text to echo (`idJson`) instead of squeezing it into an `integer`, and `sendResult`/`sendError` return silently when that text is `"null"` — which is the spec's rule that a notification must not be answered. `lsp_server.sd7` and `main.sd7` pass the message to the senders instead of `msg.id`; no feature file changes, and no response shape changes.
+**Architecture:** `rpc.sd7`'s `rpcMsg` keeps the id twice: the integer it always kept, and the JSON text to echo (`idJson`). The three senders take the message instead of an integer and write that text with `raw`, so the response carries the client's own id, quoted or bare as it arrived. `lsp_server.sd7` and `main.sd7` change only at the call sites; no feature module, no response shape and no capability changes.
 
-**Tech Stack:** Seed7 5.4.10 (`s7`, `s7c`), the unit suites in `tests/` graded from their `N checks, M failed` line, `tests/transcript.py` driving the real process over real frames.
+**Tech Stack:** Seed7 5.4.10 (`s7`, `s7c`), `tests/rpc_test.sd7` and `tests/lsp_server_test.sd7` graded from their `N checks, M failed` line, `tests/transcript.py` driving the real process over real frames.
 
-**Spec:** no spec file in this tree. The authority is LSP 3.18 Base Protocol: `RequestMessage.id` is `integer | string` (L1501-1520), `ResponseMessage.id` is `integer | string | null` and "`result` … REQUIRED on success" (L1524-1547), "A processed notification message must not send a response back. They work like events." (L1674), and for a `$/`-prefixed request "it must error the request with error code MethodNotFound" (L1690).
+**Spec:** no spec file in this tree. Authority: LSP 3.18 Base Protocol — `RequestMessage.id: integer | string` (L1501-1520), `ResponseMessage.id: integer | string | null` (L1524-1547), "Every processed request must send a response back to the sender" (L1497), "a request starting with `$/` … must error the request with error code MethodNotFound" (L1690). Current behaviour measured against the real process: `{"id":"42","method":"textDocument/hover"}` is answered with `{"id":0,…}`, and `{"id":"x","method":"no/such"}` is answered with **nothing at all**.
 
 ## Global Constraints
 
 - Red first: write the check, run it, confirm it fails for the reason named, then implement. `make test` before and after.
-- Nothing on the request path may raise onto stdout. Every accessor in `rpc.sd7` stays total, and no new code may print a non-ASCII character through `writeln` on plain stdout (`AGENTS.md`, `lsp_tst.sd7` grades on that stream).
-- `AGENTS.md` invariant 7: outbound text goes through `jsonw.sd7`. `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty — and the same rule forbids pasting `str(jsonValue)` of a *string* into a frame, because `str()` renders non-ASCII as `"\1048;"`, which is not valid JSON.
-- `AGENTS.md` invariant 3: `transport.sd7` owns every outbound byte count. This plan emits no new byte arithmetic; `writeMessage` keeps counting.
-- `docs/PROJECT_GRAPH.md` is generated and byte-compared by `tests/graph_test.sh`, so every commit that changes a `src/` line count regenerates it in the same commit.
-- `-32700` keeps its `id: null` (a body that is not JSON has no id to echo). That path already exists as `sendParseError` and does not change.
-- Do not run `make -j`: `tests/graph_test.sh:17-19` uses fixed `/tmp/g1`, `/tmp/s1` names.
+- Nothing on the request path may raise, and no raise may reach stdout (`AGENTS.md`). Every new accessor stays total.
+- `AGENTS.md` invariant 7: outbound text goes through `jsonw.sd7`, and `grep -rn 'addStr(w, str(' --include='*.sd7' src/` must stay empty. This plan adds no such call — see Task 1 Step 3 for why `str(jsonValue)` on a string is exactly the thing that rule refuses.
+- `AGENTS.md` invariant 3: `transport.sd7` owns every outbound byte count. `writeMessage` keeps counting; nothing here emits a `Content-Length`.
+- `src/features/*.sd7` is untouched. `docs/PROJECT_GRAPH.md` is generated and byte-compared, so every commit that changes a `src/` line count regenerates it in the same commit.
+- `-32700` keeps `id: null` (a body that is not JSON has no id to echo) and `-32603`'s net keeps its behaviour; `handlerFailed` gains the id from the message it is handed, which is `"null"` when parsing never finished.
+- Do not run `make -j` (`tests/graph_test.sh:17-19` uses fixed `/tmp` names).
 
 ## Review Focus
 
-- A notification for a method that has a response (`textDocument/hover` with no `id`) must produce **no frame**. Measured today: it produces `{"id":0,"result":…}`. Pinned in Task 2.
-- An unknown method asked as a **string-id request** must produce `-32601` with that id. Measured today: it produces nothing, so the client waits forever. Pinned in Task 2.
-- A non-ASCII string id must come back as valid JSON. `str(jsonValue)` on `{"id":"Ид"}` answers `"a\1048;\1076;"`-style text, which no JSON decoder accepts — so the id is re-escaped through `jsonw`, not pasted. Pinned in Task 1.
-- A string id that holds a client-escaped surrogate pair (`"\ud83d\ude00"`) must round-trip as the same two escapes, not as raw bytes no decoder is obliged to accept. Pinned in Task 1.
-- An unusable id (`true`, `null`, `[1]`, `{"a":1}`) must not be answered as if it were a request. Measured today: `true` and `null` ids are answered `id: 0`; `[1]` and objects are silently dropped. After this plan all four are answered nothing, which is what the spec's "no response to a notification" allows. Pinned in Task 1 and Task 2.
+- A string id must come back **as a string**. `idJson` for `"42"` is the text `"42"` with the quotes, so `1e400`-style text is the only thing that could make a client's `by_id` map miss. Pinned in Task 1 and Task 2.
+- A non-ASCII string id must not echo Seed7's literal form. Measured: `str(jsonValue)` of `{"id":"Ид"}` answers `"\\1048;\\1076;"` — not JSON. The string arm therefore re-escapes through `jsonw`. Pinned in Task 1.
+- A message with an unusable id (`true`, `null`, `[1]`, absent) is a notification: it gets **no** frame, exactly as today, so nothing that works now breaks. Pinned in Task 1.
+- An unknown method asked with a string id must produce `-32601`, not silence — that is the hang this plan exists to remove. Pinned in Task 2.
+- `initialize` asked with a string id must answer with that id, or the client never finishes starting up. Pinned in Task 2.
 
 ---
 
-### Task 1: Keep the id as the text to echo
+### Task 1: Carry the id's JSON text, and echo it
 
 **Files:**
-- Modify: `src/rpc.sd7` (the `rpcMsg` struct at `53-59`, `parseMessage` at `175-193`, `sendResult` at `208-216`, `sendError` at `222-235`, and one new `const func string:`)
+- Modify: `src/rpc.sd7` (`rpcMsg` at `53-59`, `parseMessage` at `175-193`, `sendResult` at `208-216`, `sendError` at `222-235`, `sendParseError` untouched, one new `const func string:`)
+- Modify: `src/lsp_server.sd7` (27 call sites: 25 `sendResult(msg.id,`, `sendError(msg.id, -32602, …)` at `:452`, `sendError(msg.id, -32601, …)` at `:538`, and `sendError(0, -32603, …)` inside `handlerFailed` at `:74`)
+- Modify: `src/main.sd7` (`:19` and `:23`)
 - Test: `tests/rpc_test.sd7`
+- Modify: `docs/PROJECT_GRAPH.md` (regenerated)
 
 **Interfaces:**
-- Consumes: `rpc.atKey`, `rpc.category`, `jsonw.jsonEscape (inout string: buf, in string: stri)` (public in `src/jsonw.sd7:19`), `jsonw.finishJson`, `jsonw.raw`, `jsonw.field`, `jsonw.addStr`, `transport.writeMessage`.
-- Produces in `rpc.sd7`:
-  - `rpcMsg` field `var string: idJson is "null";` — the exact JSON text to echo, or `"null"`.
-  - `const func string: idJsonOf (in jsonValue: idValue)` — returns the echo text for a `JSON_NUMBER` or `JSON_STRING`, and `"null"` for anything else, including an absent id.
-  - `sendResult (in rpcMsg: msg, in string: resultJson)` and `sendError (in rpcMsg: msg, in integer: code, in string: message)` — both return without writing when `msg.idJson = "null"`.
-  - The `integer: id` field is **deleted**. Its only reader was the echo.
+- Consumes: `rpc.category`, `rpc.atKey`, `jsonw.jsonWriter`, `jsonw.openObject`, `jsonw.field`, `jsonw.raw`, `jsonw.addStr`, `jsonw.closeObject`, `jsonw.finishJson`, `transport.writeMessage`.
+- Produces:
+  - `rpcMsg` gains `var string: idJson is "null";` — the exact JSON text to echo, or `"null"`.
+  - `const func string: idJsonOf (in jsonValue: idValue)` in `src/rpc.sd7` — the only new proc. Returns `str(idValue)` for a `JSON_NUMBER`, a `jsonw`-written quoted string for a `JSON_STRING`, and `"null"` for anything else.
+  - `sendResult (in rpcMsg: msg, in string: resultJson)` and `sendError (in rpcMsg: msg, in integer: code, in string: message)` — the integer-first forms are gone; there is no third sender to keep, because `sendParseError` and `sendNotification` never carried an id.
+  - `msg.id` stays as it is (the integer, `0` when the id is a string), because `handlerFailed`'s log and four unit checks read it.
 
 - [ ] **Step 1: Write the failing checks**
 
-Append to `tests/rpc_test.sd7` before `report("rpc")`. `parseMessage` is the unit under test; grade the field, never a frame:
+In `tests/rpc_test.sd7`, beside the existing `parseMessage` checks. `m := parseMessage(…)` then `check("…", m.idJson, "…")`:
 
 ```seed7
-m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\":\"textDocument/hover\"}");
-check("a string id is a request", str(m.isRequest), "TRUE");
-check("and its id text is echoed quoted", m.idJson, "\"42\"");
-m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"a\\u0040b\",\"method\":\"x\"}");
-check("an escaped string id keeps its decoded text", m.idJson, "\"a@b\"");
+m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"x\"}");
+check("a number id echoes its own text",   m.idJson, "7");
+m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\":\"x\"}");
+check("a string id echoes quoted",          m.idJson, "\"42\"");
+check("and it is a request",                str(m.isRequest), "TRUE");
+check("its integer id is still 0",          str(m.id), "0");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\u0418\\u0434\",\"method\":\"x\"}");
-check("and a non-ASCII id is re-escaped, not pasted", m.idJson, "\"Ид\"");
-m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\ud83d\\ude00\",\"method\":\"x\"}");
-check("and a lone-surrogate id escapes rather than ships 3-byte CESU", m.idJson, "\"\\ud83d\\ude00\"");
+check("a non-ASCII string id is not Seed7's literal form", m.idJson, "\"Ид\"");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":10.5,\"method\":\"x\"}");
-check("a float id echoes its own source text", m.idJson, "10.5");
+check("a float id echoes the source text",  m.idJson, "10.5");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":1e3,\"method\":\"x\"}");
-check("and so does an exponent form", m.idJson, "1e3");
+check("an exponent id echoes the source text", m.idJson, "1e3");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"x\"}");
-check("a bool id is not a request", str(m.isRequest), "FALSE");
-check("and echoes null", m.idJson, "null");
+check("a bool id is not a request",         str(m.isRequest), "FALSE");
+check("and it echoes null",                 m.idJson, "null");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":[1],\"method\":\"x\"}");
-check("an array id is not a request", str(m.isRequest), "FALSE");
-m := parseMessage("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\"}");
-check("a notification has no id text", m.idJson, "null");
-check("and is not a request", str(m.isRequest), "FALSE");
+check("an array id echoes null",            m.idJson, "null");
+m := parseMessage("{\"jsonrpc\":\"2.0\",\"method\":\"x\"}");
+check("an absent id echoes null",           m.idJson, "null");
+check("not-a-JSON body leaves id null",     (parseMessage("{oops")) .idJson, "null");
 ```
 
-The `"Ид"` expectation is written as the literal two characters (the source file is UTF-8, which `s7` reads as characters) — `src/jsonw.sd7` emits BMP text raw, and `lsp_tst.sd7`'s `check` compares strings, so the compare never prints it. Keep it that way: a FAIL print of this expectation would put non-ASCII on stdout, which is the class of thing `AGENTS.md` says corrupts the graded line. The check can still go red — `check` prints `expected:` / `got:` for the *length-safe* checks only if the message stays ASCII; see Step 5's note on the print.
+`"Ид"` in the expectation is written as the two literal characters: `tests/rpc_test.sd7` is UTF-8 source and Seed7 compares characters, not bytes. The check compares strings, so nothing prints those characters — a FAIL line WOULD print them, and `lsp_tst.sd7:11-16` says a non-ASCII print on plain stdout raises `RANGE_ERROR` and costs the suite its graded line. Task 1 Step 5's mutant is what proves the check can fail *without* relying on that print: it compares lengths too, so `check("…", str(length(m.idJson)), "4")` (the `"` + 2 chars + `"`) is the ASCII-safe twin of the same claim. Write BOTH: the value check for the reader, the length check for the grading line.
 
-- [ ] **Step 2: Run and confirm the reason**
+- [ ] **Step 2: Run it and confirm the reason**
 
 ```bash
 make test-rpc
 ```
 
-Expected: the suite no longer compiles — `rpcMsg` has no `idJson` field, so `str(m.isRequest)` lines pass and the `m.idJson` lines fail to analyse. The `Makefile`'s `test-%` rule grades the `N checks, 0 failed` line, and a suite that fails to analyse prints nothing and exits 0, so `make test-rpc` must FAIL with no graded line. That is the red; it is a different red from a value mismatch, and Step 4 is what turns it into the value kind.
+Expected: FAIL to analyse — `idJson` is not a field yet. The `test-%` rule grades the total line, and a suite that fails to analyse prints nothing and exits 0, so `make test-rpc` must fail with **no** `rpc: N checks, 0 failed` line. That is a different red from a value mismatch, and it is the honest first red here.
 
-- [ ] **Step 3: Work out the escape route for the non-ASCII expectation**
+- [ ] **Step 3: Add the field, the text reader, and the two senders**
 
-Before implementing, confirm `jsonw.jsonEscape` produces `"Ид"` (raw UTF-8 between quotes) for those two characters and `"\ud83d\ude00"` for a lone surrogate — both are already pinned in `tests/jsonw_test.sd7:49-52` and `:72-74`, so read those two checks rather than re-measuring. If `jsonEscape`'s output for a BMP non-ASCII character were an escape rather than the raw bytes, Step 1's `"\"Ид\""` expectation would have to be the escape form; the existing jsonw pins say it is raw, so the expectation stands.
-
-- [ ] **Step 4: Implement**
-
-`rpcMsg`: replace `var integer: id is 0;` with `var string: idJson is "null";`. Above `parseMessage`, add `idJsonOf` — a `number` answers `str(idValue)` (`readJson` keeps the source text, so `1e3` and `10.5` echo exactly what was sent), a `string` answers a buffer run through `jsonEscape` so non-ASCII and lone surrogates go out as JSON requires, and anything else answers `"null"`:
+`idJsonOf`'s string arm must not be `str(idValue)`. Measured against the interpreter: `readJson` keeps a JSON *number*'s source text, so `str()` of `10.5` is `"10.5"` and of `1e3` is `"1e3"` — both valid JSON, so the number arm is a one-liner. A JSON *string* is the other case: `str()` of `{"id":"Ид"}` answers `"\"\\1048;\\1076;\"`" — Seed7's own decimal escape form, which no JSON decoder accepts, and which is precisely the bug invariant 7 exists to stop. So the string arm re-escapes through `jsonw`:
 
 ```seed7
+# The JSON text to echo back as this message's id. readJson keeps a number's source
+# text, so str() round-trips; a string does NOT -- str(jsonValue) of {"id":"Ид"} is
+# Seed7's "\1048;\1076;" form, which is not JSON -- so the string arm goes through
+# jsonw, whose escape rules rpc and jsonw already agree on (AGENTS.md invariant 7).
 const func string: idJsonOf (in jsonValue: idValue) is func
   result
     var string: out is "null";
@@ -100,94 +102,82 @@ const func string: idJsonOf (in jsonValue: idValue) is func
     if category(idValue) = JSON_NUMBER then
       out := str(idValue);
     elsif category(idValue) = JSON_STRING then
-      jsonEscape(w.buf, string(idValue));
+      openObject(w);
+      field(w, "id");
+      addStr(w, string(idValue));
+      closeObject(w);
       out := finishJson(w);
+      out := out[8 .. pred(length(out))];
     end if;
   end func;
 ```
 
-`jsonEscape` appends the quoted text and no trailing comma, so `finishJson` is the identity there — use it, because it is what the module already hands back, and do not add a second writer helper for one field.
+The slice peels `{"id":` (7 characters) and the trailing `}` off a one-field object — `out[8 .. pred(length(out))]` — because `jsonw` has no "write one value" proc and adding one for a single caller would be the second way to emit JSON. Verify the arithmetic in Step 4's check rather than trusting it: `{"id":7}`'s own text is what the number arm returns, and the string arm's output must start with `"`.
 
-`parseMessage`: replace `msg.isRequest := category(idValue) = JSON_NUMBER;` / `msg.id := intAt(root, "id", 0);` with
+`parseMessage`: set `msg.idJson := idJsonOf(idValue);` and make `msg.isRequest` TRUE for a string id too — `category(idValue) = JSON_NUMBER or category(idValue) = JSON_STRING`, written as two comparisons in a `const func boolean: echoable (…)` if the chain fails to match (`AGENTS.md`: a long `or` chain of parenthesised comparisons can fail to match at analysis time).
 
-```seed7
-      msg.idJson := idJsonOf(idValue);
-      msg.isRequest := msg.idJson <> "null";
-```
+`sendResult` / `sendError`: take `in rpcMsg: msg` first, and replace `addInt(w, id)` with `raw(w, msg.idJson)`. `handlerFailed` (`lsp_server.sd7:69-75`) takes the message as well and passes it on; `main.sd7:19,23` become `sendError(msg, -32002, …)` and `sendError(msg, -32600, …)`.
 
-which makes a request "a message whose id is echoable" — the same set as `integer | string`, plus `10.5` and `1e3`, which are JSON numbers and must be answered too.
-
-`sendResult` / `sendError`: take `in rpcMsg: msg`, start the body with `if msg.idJson = "null" then return; end if;` — no, `return` in a `proc` is `PROC_EXPECTED` (`AGENTS.md`); wrap the existing body in `if msg.idJson <> "null" then … end if;` instead — and replace `field(w, "id"); addInt(w, id);` with `field(w, "id"); raw(w, msg.idJson);`.
-
-`src/main.sd7`: `sendError(msg.id, …)` → `sendError(msg, …)` (two sites, `:19` and `:23`). `sendParseError` does not change.
-
-- [ ] **Step 5: Make the suite analyse, then run it**
+- [ ] **Step 4: Run the suite and the tree**
 
 ```bash
-make test-rpc
+make test-rpc && make test-lsp_server && make graph && make test-graph
 ```
 
-Expected: `rpc: 43 checks, 0 failed` (31 + the 12 new checks above; if the run says a different N, the run wins — correct the number in this line and say so in the commit body). `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` must be rewritten to `check("id", m.idJson, "7")` in the same commit — it reads the deleted field.
+Expected: `rpc: 44 checks, 0 failed` (31 baseline + 13 here), `lsp_server: 82 checks, 0 failed` if Task 2 of the R-F10 plan has landed on this branch, otherwise 79 with no new checks (this task adds none there), and `graph: 21 checks, 0 failed` with the regenerated `docs/PROJECT_GRAPH.md` rows for `rpc.sd7` and `lsp_server.sd7`.
 
-- [ ] **Step 6: Prove the checks can fail**
+- [ ] **Step 5: Prove the new checks can fail**
 
-Three mutants, one at a time, each reverted with `git checkout HEAD -- src/rpc.sd7`:
+Three mutants, one at a time, reverted with `git checkout HEAD -- src/rpc.sd7`:
 
-1. `raw(w, msg.idJson)` → `addStr(w, string(idValue))`-equivalent paste (i.e. `out := str(idValue)` in the `JSON_STRING` arm): the `non-ASCII id is re-escaped` check FAILs — and if that FAIL's print corrupts the graded line, that is itself the finding; report it instead of editing the check.
-2. `msg.isRequest := msg.idJson <> "null"` → `category(idValue) = JSON_NUMBER`: `a string id is a request` and `and its id text is echoed quoted` FAIL together (the field is still set, so the echo checks stay green and the *request* check goes red).
-3. `idJsonOf`'s `elsif` arm deleted: the four string-id checks FAIL, `a float id echoes its own source text` stays green.
+1. Number arm → `out := addInt-form` (i.e. `out := str(intAt(root…))`, losing the source text): `a float id echoes the source text` and `an exponent id echoes the source text` FAIL. This mutant is the reason the number arm is `str()` and not the integer.
+2. String arm → `out := str(idValue)`: the length check (`str(length(m.idJson)) = "4"`) FAILs while the value check's FAIL may not print — which is the point of writing the length twin in Step 1.
+3. `msg.isRequest := category(idValue) = JSON_NUMBER;` left un-widened: `a string id echoes quoted` stays green and `and it is a request` FAILs. That pair is the whole bug — the text is kept but the dispatcher still treats the message as a notification.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/rpc.sd7 tests/rpc_test.sd7
-git commit -m "rpc: keep the request id as the JSON text to echo, and answer no notification"
+git add src/rpc.sd7 src/lsp_server.sd7 src/main.sd7 tests/rpc_test.sd7 docs/PROJECT_GRAPH.md
+git commit -m "rpc: echo the request id the client sent, integer or string"
 ```
 
 ---
 
-### Task 2: Pass the message, not the integer, through the dispatcher
-
-`src/lsp_server.sd7` has 25 `sendResult(msg.id, …)` sites, one `sendError(msg.id, -32602, …)`, one `sendError(msg.id, -32601, …)` and `handlerFailed`'s `sendError(0, -32603, …)`. Task 1 changed the signatures, so this task is what makes the tree compile — it is deliberately one commit with no behaviour decision of its own.
+### Task 2: Prove it on the wire, including the two hangs
 
 **Files:**
-- Modify: `src/lsp_server.sd7` (`handlerFailed` at `69-75`, and every `send` call in `handle`)
-- Modify: `src/main.sd7:19,23` (already done in Task 1 Step 4 if the tree must compile there; if Task 1 was committed alone, `make test` stays red until this task lands — do not split them across PRs)
-- Test: `tests/transcript.py`, `tests/lsp_server_test.sd7`
+- Modify: `tests/transcript.py` (one new scenario; no change to `src/`)
 
 **Interfaces:**
-- Consumes: Task 1's `sendResult (in rpcMsg: msg, …)` / `sendError (in rpcMsg: msg, …)`.
-- Produces: `handlerFailed (in rpcMsg: msg, in string: kind, in string: body)`.
+- Consumes: `frame`, `run`, `split_frames` (`junk == 0`), `expect`, `answered_null`, `one_answer_per_request` (`405-413`), `initialize`, `opened`, `pos`, `req`, `shutdown`, `exit_`.
+- Produces: five check titles and the string-id session other scenarios can copy.
 
-- [ ] **Step 1: Write the failing wire checks**
+- [ ] **Step 1: Add the scenario**
 
-New scenario in `tests/transcript.py`, after the lifecycle block, using the harness's existing `frame` (ASCII, so its `Content-Length` equals its character count — `transcript.py:1093-1102` says why that matters and why it is fine *here*):
+A whole session whose ids are all strings, because a string id is legal at every step and `initialize` is where a wrong id is fatal. Send `initialize` with `"id":"i1"`, a `textDocument/hover` with `"id":"h1"`, an unknown method with `"id":"u1"`, `shutdown` with `"id":"s1"`, then `exit`:
 
 ```python
-STR_ID = [initialize(1),
-          opened("/tmp/tt_strid.sd7", TRIVIAL),
-          {"jsonrpc": "2.0", "id": "hover-1", "method": "textDocument/hover",
-           "params": {"textDocument": {"uri": "/tmp/tt_strid.sd7"},
-                      "position": {"line": 3, "character": 10}}},
-          {"jsonrpc": "2.0", "id": "nope-1", "method": "not/a/method", "params": {}},
-          {"jsonrpc": "2.0", "method": "textDocument/hover",
-           "params": {"textDocument": {"uri": "/tmp/tt_strid.sd7"},
-                      "position": {"line": 3, "character": 10}}},
-          shutdown(9), exit_()]
-replies, code, err, junk = run([frame(m) for m in STR_ID])
+STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
+            "params": {"capabilities": {}, "rootUri": "file:///tmp"}},
+           {"jsonrpc": "2.0", "method": "initialized", "params": {}},
+           opened("/tmp/tt_strid.sd7", TRIVIAL),
+           {"jsonrpc": "2.0", "id": "h1", "method": "textDocument/hover",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "id": "u1", "method": "not/a/method", "params": {}},
+           {"jsonrpc": "2.0", "id": "s1", "method": "shutdown"},
+           exit_()]
+replies, code, err, junk = run([frame(m) for m in STR_IDS])
 ids = [r.get("id") for r in replies]
-expect("hover-1" in ids, "a string-id hover is answered with its own id (%s)" % ids)
-expect("nope-1" in ids, "a string-id unknown method is answered, not dropped (%s)" % ids)
-expect(0 not in ids, "and nothing is answered under a borrowed id 0 (%s)" % ids)
-expect(next((r for r in replies if r.get("id") == "nope-1"), {}).get("error", {}).get("code")
-       == -32601, "the unknown string-id request carries -32601")
-expect(not any("id" in r and r["id"] is None and "result" in r for r in replies),
-       "the idless hover produced no response frame at all")
-expect(junk == 0, "the string-id run put only frames on stdout (junk=%d)" % junk)
-one_answer_per_request(STR_ID, replies, "the string-id run")
+expect(ids == ["i1", "h1", "u1", "s1"], "every reply carries the string id it answers (%s)" % ids)
+expect(next(r for r in replies if r.get("id") == "u1")["error"]["code"] == -32601,
+       "the unknown string-id method is answered with -32601, not with silence")
+expect("capabilities" in next(r for r in replies if r.get("id") == "i1").get("result", {}),
+       "and initialize answered under its own id, so the client finishes starting up")
+expect(code == 0 and junk == 0, "the string-id session exits clean (code=%d junk=%d)" % (code, junk))
+one_answer_per_request(STR_IDS, replies, "the string-id session")
 ```
 
-`one_answer_per_request` counts frames carrying `result` or `error` against messages carrying an `id`. With the idless hover it must still balance: that message has no `id`, so it is not counted, and it must not be answered. Read the helper (`transcript.py:405-413`) before trusting that claim, and if it counts differently, fix the *check* to match the helper's documented meaning — not the helper.
+`frame` writes `json.dumps` with the default `ensure_ascii=True` (`transcript.py:1093-1102`), so a non-ASCII id would arrive as `\uXXXX` escapes and be a different test. Keep this scenario ASCII; the non-ASCII claim is pinned in Task 1, where the comparison never prints.
 
 - [ ] **Step 2: Run it**
 
@@ -195,93 +185,73 @@ one_answer_per_request(STR_ID, replies, "the string-id run")
 make transcript
 ```
 
-Expected: FAIL. Today the hover answers under `id: 0`, the unknown string-id request is dropped, and the idless hover is answered — so checks 1, 2, 3 and 5 all go red. `make test-lsp_server` also goes red, because `handlerFailed` still calls `sendError(0, …)` against Task 1's signature.
+Expected: `transcript: 205 checks, 0 failed` (200 after the R-F10 plan's three, else 196 — plus the 5 here; take the number from the run). If the first check reports `ids == [0, 0, 0, 0]`, Task 1 did not land; that is the shape of the bug, not a failure of this check.
 
-- [ ] **Step 3: Mechanise the call sites**
+- [ ] **Step 3: Prove the wire checks can fail**
 
-In `src/lsp_server.sd7`: `sendResult(msg.id,` → `sendResult(msg,` (25 sites) and `sendError(msg.id,` → `sendError(msg,` (2 sites). One `sed`, then read the diff:
+Revert `sendResult`/`sendError` to `addInt(w, msg.id)` and keep everything else: `make transcript` → `transcript: 205 checks, 3 failed` — the `ids ==` check, the `-32601` check (which now reads `id: 0` and misses), and `one_answer_per_request`. `code == 0 and junk == 0` stays green, which is the finding worth recording: **a wrong id is invisible to every safety net the harness has except the id comparison itself** — no `junk`, no raise, no extra frame. Revert with `git checkout HEAD -- src/rpc.sd7`.
 
-```bash
-sed -i 's/sendResult(msg\.id,/sendResult(msg,/g; s/sendError(msg\.id,/sendError(msg,/g' src/lsp_server.sd7
-git diff --stat src/lsp_server.sd7
-```
-
-Expected: 27 changed lines, nothing else. Then `handlerFailed`: add `in rpcMsg: msg` as its first parameter, pass it to `sendError`, and keep the log line. In `src/main.sd7`, reset `msg := rpcMsg.value;` as the first statement inside the `while readMessage(body) do` body, before the `block`, so a raise inside `handle` can never echo the *previous* message's id — `msg` is loop-carried, and without the reset an idless malformed frame would answer with whatever id came before it.
-
-- [ ] **Step 4: Run everything the tree can run**
+- [ ] **Step 4: Full run and commit**
 
 ```bash
-make test-rpc && make test-lsp_server && make transcript
+make test && git status --porcelain -uall
+git add tests/transcript.py
+git commit -m "transcript: pin string-id fidelity, and the -32601 that a string id used to lose"
 ```
 
-Expected: `rpc: 43 checks, 0 failed`, `lsp_server: 79 checks, 0 failed` (Task 2 adds no unit check), `transcript: 202 checks, 0 failed` (196 baseline + the 6 checks in Step 1). If this branch also carries the R-F10 plan, that baseline is 200 and the total is 206 — take the number from the run, not from this line.
-
-- [ ] **Step 5: Prove the wire checks can fail**
-
-1. Revert one site only — `sendResult(msg, initializeResultJson)` back to `sendResult(msg.id, …)` — and confirm the tree no longer compiles, which is the point: the integer field is gone, so a stale call site cannot survive silently. (`main.sd7` is where a missed site shows up first.)
-2. Remove `msg := rpcMsg.value;` from `main.sd7` and hand-feed `{"id":"x","method":"nope"}` after an answered `initialize`: `transcript: 202 checks, 1 failed` — the borrowed-id check. This is the mutant that matters, because it is the failure the loop-carried record makes possible.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/lsp_server.sd7 src/main.sd7 tests/transcript.py
-git commit -m "rpc: thread the message to every sender; a request is answered under its own id"
-```
+Expected: 21 graded lines each `0 failed`; `git status --porcelain -uall` empty.
 
 ---
 
-### Task 3: Delete the recorded shortcut and say what changed
+### Task 3: Record the decision where the rules live
 
 **Files:**
-- Modify: `src/rpc.sd7` (the `ponytail: request ids are handled as integers only` comment at `8-11`)
-- Modify: `README.md` (§ *What works*, the "Error handling is spec-shaped" sentence)
-- Modify: `docs/PROJECT_GRAPH.md` (regenerated)
+- Modify: `README.md` (§ *What works*)
+- Modify: `AGENTS.md` (§ *Protocol decisions that are easy to undo by accident*)
+- Modify: `docs/seed7-cli.md` (new section under *AGENTS.md provenance*)
 
-- [ ] **Step 1: Replace the comment with the rule**
-
-The comment records a limit that no longer exists, so it goes. In its place, one line above `rpcMsg`: `# A request is a message whose id is echoable (integer or string); idJson carries the JSON
-# text to echo and "null" means "notification -- answer nothing" (LSP 3.18 L1674).` Then grep for the old phrasing so no other file repeats a now-false claim: `grep -rn 'integers only\|echoes back as 0' src/ tests/ README.md AGENTS.md docs/`.
-
-- [ ] **Step 2: README**
-
-The *What works* sentence listing `-32002`/`-32600`/`-32700`/`-32601` gains one clause: requests are answered under the id the client sent, integer or string, and a notification is never answered. Keep it to one sentence — the spec lines are the authority, cited in the plan.
-
-- [ ] **Step 3: Regenerate, run, check the tree is clean**
+- [ ] **Step 1: Check which frozen tokens the edits touch**
 
 ```bash
-make graph && make test && git status --porcelain -uall
+grep -nFf tools/agents_required.txt AGENTS.md | head -50
+grep -n 'id' tools/agents_required.txt
 ```
 
-Expected: 21 graded lines, each `0 failed`; `git status --porcelain -uall` prints nothing (no `src/main`, no `profile_out`, no `.tmp`).
+`tools/agents_gate.sh` greps 44 frozen tokens over the union of `AGENTS.md` and `docs/seed7-cli.md`, and a token whose only host sentence is being reworded prints `MISSING`. If a token sits in the sentence this plan reword, substitute it in the new wording — do not add a token to the list to paper over a moved sentence (`AGENTS.md` § *Citation defect, counted and closed* records what a documentation file propping up its own guard did).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 2: The two sentences**
+
+`README.md` § *What works*: the error-handling list ("`-32002` before initialize, … `-32601` for unimplemented methods") gains one clause: a request is answered under the id the client sent, integer or string. `AGENTS.md` § *Protocol decisions that are easy to undo by accident* gains the rule and its cost in one bullet — echo `idJson`, never the integer, because a reply under a borrowed id is a client that waits forever with nothing on the wire to show it.
+
+- [ ] **Step 3: The provenance section**
+
+`docs/seed7-cli.md`: a section `Protocol decisions — the request id`, holding the three measurements this plan was written from, each with the command that produced it: the 24-body hostile probe and its `PROBE -32603 cases: none` result (which is what refuted the `-32603` premise); `{"id":"42"}` answered `id: 0`, and `{"id":"x","method":"no/such"}` answered with no frame at all; and `str(jsonValue)` of `{"id":"Ид"}` = `"Ид"` for a number-shaped string but `"\\1048;\\1076;"` for a real one — the reason the string arm re-escapes.
+
+- [ ] **Step 4: Run the gate, then commit**
 
 ```bash
-git add src/rpc.sd7 README.md docs/PROJECT_GRAPH.md
-git commit -m "docs: the integer-id shortcut is gone; state the id-fidelity rule in its place"
+make test-agents && make test
+git add README.md AGENTS.md docs/seed7-cli.md
+git commit -m "docs: record the request-id rule, with the measurements behind it"
 ```
+
+Expected: `agents: 44 checks, 0 failed` and 21 graded lines each `0 failed`.
 
 ---
 
 ## Definition of done
 
-- A request with a string, float-valued or exponent id is answered under exactly the text the client sent; `{"id":"42"}` no longer produces `{"id":0,…}`.
-- No notification — including a notification whose method happens to be `textDocument/hover` — produces a response frame.
-- An unknown method asked with a string id produces `-32601`, not silence.
-- Five wire checks and eleven unit checks exist, and each of the two suites reddens from a named production mutant.
+- A string id is echoed as a string at every step of a session, `initialize` included; an unknown method asked with a string id gets `-32601`.
+- `idJsonOf`'s two arms are each proven by a mutant, and the non-ASCII claim is pinned by a length check that cannot corrupt the graded line.
+- The `ponytail:` note at `src/rpc.sd7:8-11` is gone (its limit no longer exists), and `grep -rn 'integers only' src/ tests/ README.md AGENTS.md docs/` prints nothing.
 - `make test` green; `git status --porcelain -uall` empty.
 
 ## Out of scope
 
-- Ordering: responses stay in request order because the server is single-threaded. Nothing to do.
-- `completionItem/resolve`, `$/progress`, and work-done tokens: not implemented, not advertised. A `$/`-prefixed **request** now correctly gets `-32601` because it reaches the `else` arm with an echoable id; no new method is answered here.
-- The malformed-*position* question. `intAt` on `{"line":10.5}` answers `RANGE_ERROR` to the fallback, i.e. it reads the request as `line 0` — measured: hover returns `null` where `line 1` was meant, and `{"character":"8"}` reads as `character 0`. `-32602 InvalidParams` would be the honest answer. It is a deliberate choice, not an oversight: `strAt`/`boolAt`/`intAt` are all total on purpose, because an exception on the request path is the class of bug that puts bytes on the protocol channel. It needs its own decision and its own plan; nothing here depends on it.
-
-## Measured, and therefore NOT planned
-
-- **The `-32603` claim.** A review said a float in an integer slot or a `1e400` id costs the request. Refuted against the real process: 24 well-framed hostile bodies (`"character":10.5`, `"line":"3"`, `"line":1e999`, `"id":0.5/true/null/[1]`, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as object, bodies that are a number/string/`null`/array/bool, a 5-deep nest) → **`PROBE -32603 cases: none`**. `readJson` keeps a number's source text, and `integer("10.5")` raises `RANGE_ERROR` — the one `intAt` already catches. `AGENTS.md`'s "keep the net, it is unreachable" stands.
-- **`{"id":"42"}` answered with `id: 0`** — this *is* the bug, and Task 1-3 fix it. The earlier `ponytail:` note claimed no client sends string ids; the LSP spec allows them, and the failure mode is a permanent hang, not a cosmetic mismatch.
+- **A malformed position that reads as `line 0`.** Measured: `{"character":10.5}` → `intAt` catches `RANGE_ERROR` and returns the fallback, so hover answers `null` about line 0 rather than the intended line; `{"line":"3"}` does the same. `-32602 InvalidParams` is the arguable answer, and silently falling back is the current one. It is a decision, not a bug fix, and it is the one left over from the `-32603` hunt.
+- **The `-32603` net.** Re-measured, not refuted: 24 well-framed hostile bodies against the real process (float and string and `null` and array ids, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as object, bodies that are a number/string/`null`/array/bool, a 5-deep nest) → **`PROBE -32603 cases: none`**. A review had claimed `integer(str(v))` on a float raises `NUMERIC_ERROR`; it raises `RANGE_ERROR`, the one `intAt` already catches. `AGENTS.md`'s "keep the net, it is unreachable" stands as written, and Task 3 records the probe that says so.
+- **`$/`-prefixed requests other than the two handled.** With `isRequest` widened, `$/anything` asked as a request now correctly reaches the `-32601` arm — no new code, and no new method answered.
 
 ## Start here
 
-`src/rpc.sd7:53-59` (the struct), `:175-193` (`parseMessage`), `:208-235` (the two senders), then `src/main.sd7:11-30` for the loop-carried `msg`.
+`src/rpc.sd7:53-59` (`rpcMsg`), `:175-193` (`parseMessage`), `:208-235` (the two senders), `src/main.sd7:11-30` (where `isRequest` gates the two lifecycle errors).
