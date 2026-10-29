@@ -318,9 +318,13 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 
 - [ ] **Step 3: The per-suite figure in the same row**
 
-`docs/seed7-cli.md:394`'s totals row names both `1064 checks` and `lsp_server` 79. Task 2 moved that
-suite to 82, so the row's own two halves now disagree. Correct the per-suite figure in the same edit as
-the total, and re-read the row after the edit to confirm it does not contradict itself.
+`docs/seed7-cli.md:394` is one row carrying four per-suite figures *and* a total: `21 suites, 1064 checks:
+scan 66, features 191, lsp_server 79, transcript 196`. This branch moves three of them — `lsp_server` 79 →
+**82** (Task 2), `transcript` 196 → **202** (Task 3), `doc_index` 10 → **11** (Task 5) — and the total
+1064 → **1074**. Correct all four in one edit, leave `scan` and `features` alone, and keep the row's
+parenthetical explaining that the older `1040`/`1061` figures measured an earlier tree: that sentence is
+what a reader needs when the numbers do not add up to memory. Re-read the row afterwards — a totals row
+disagreeing with its own per-suite list is the class of wrong number this file already documents twice.
 
 - [ ] **Step 4: The provenance section**
 
