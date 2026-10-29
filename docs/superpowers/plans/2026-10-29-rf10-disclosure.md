@@ -316,6 +316,15 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 
 `tools/agents_gate.sh` greps its 44 tokens over the union of `AGENTS.md` and `docs/seed7-cli.md`, and `## `-prefixed tokens in `AGENTS.md` alone. A token whose only host sentence is being reworded prints MISSING and reddens `make test-agents` — `docs/seed7-cli.md` § *Citation defect, counted and closed* records what happened last time a document about a wrong citation propped up the net that guards it. Substitute into the new wording; do not add a token beside a stale one.
 
+- [ ] **Step 2a: Keep one now-conditional claim honest**
+
+`AGENTS.md`'s "the `-32603` containment net in `main.sd7` is still unreachable" was true when it was
+written and is still true, but Task 5 is the reason: `doc_index.sd7`'s new `openUtf8` reader raises
+`RANGE_ERROR` on a file whose bytes are not valid UTF-8, and the `catch` added beside it is what stops
+that reaching the request path. Add one clause to that bullet naming the dependency, so nobody removes
+the `catch` as dead code — measured directly: `proseFor` of `~/seed7/prg/err.sd7` (byte `C0` at 5672)
+escapes `RANGE_ERROR` with the handler absent. Do not restate the bullet's existing wording.
+
 - [ ] **Step 2: The two rule sentences**
 
 `AGENTS.md` § *Do not "fix" these*, the R-F10 bullet: keep the sentence, and add that `refresh` publishes one `Information` diagnostic saying it, plus the measured reason the route stays — `basearray.s7i` redeclares 2 names and `null_file.s7i` 44 when analysed from their own text; 184 of the 214 libraries are clean and 30 are not, of which 29 are the redeclaration split. `README.md` § *What does not work yet*: the `.s7i` staleness clause gains "and the server says so in the buffer". § *What works*: the diagnostics sentence gains one clause naming the disclosure. The limitation stays open; only the silence closes.
@@ -454,8 +463,9 @@ request a `-32603`, and `AGENTS.md`'s "the `-32603` containment net in `main.sd7
 becomes false in a path the product can reach. Catch `RANGE_ERROR` in `readLinesOf` beside `FILE_ERROR`,
 answer the empty list (hover then shows the signature with no prose, which is what an unreadable comment
 already does), and pin it with a twelfth check built from a fixture the suite writes itself: a plain
-`open(path,"w")` write of `chr(192) <& chr(128)` puts the bytes `C0 80` — an overlong encoding, invalid
-UTF-8 — in a real file, because a plain Seed7 write emits one byte per character.
+`open(path,"w")` write of `chr(255)` puts the byte `FF` in a real file — a plain Seed7 write emits one
+byte per character — and `FF` is a lead byte no valid sequence starts with. Measured, that raises;
+`C0 80` **does not**, so an overlong-encoding fixture would have produced a check that cannot fail.
 
 ```seed7
 check("a file that is not valid UTF-8 yields no prose and no raise",
