@@ -481,10 +481,12 @@ check("a file that is not valid UTF-8 yields no prose and no raise",
 
 1. Revert the reader to `open(path, "r")` with the UTF-8 fixture: the new check FAILs on its count.
    Revert per file with `git checkout HEAD -- src/doc_index.sd7`.
-2. Feed `proseFor` a path that does not exist: it must still answer `""`, proving the
-   `catch FILE_ERROR` arm in `readLinesOf` is intact after the reader swap — that arm is what keeps a
-   missing library off the protocol channel, and it is reachable (unlike Task 1's, because here the
-   path comes from reflection about a file the client may have deleted).
+2. Feed `proseFor` a path that does not exist: it must still answer `""`. This pins the **behaviour**,
+   not the `catch FILE_ERROR` arm — measured, `openUtf8` returns `STD_NULL` for an absent path instead of
+   raising, and `eof(STD_NULL)` is `TRUE`, so the empty list comes from the loop with either reader, and a
+   mutant that swaps the arm for another exception reddens nothing. The arm is still worth keeping:
+   `ut8_rtl.c` raises `FILE_ERROR` from a mid-read I/O error, which no fixture here can construct. Do not
+   write a synthetic trigger for it, and do not describe this check as proof that it is reachable.
 
 - [ ] **Step 5: Commit**
 
