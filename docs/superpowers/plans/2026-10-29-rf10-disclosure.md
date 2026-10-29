@@ -45,9 +45,9 @@ The plan's shape rests on one figure: an open library's own text is not analysab
 
 - [ ] **Step 1: Write the probe**
 
-`tools/rf10_probe.sh` runs one Seed7 program over the file list `tools/corpus_scan.sh` already passes — `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7` — and prints, per file, both routes of the same analysis:
+`tools/rf10_probe.sh` runs one Seed7 program over every top-level `"$SEED7"/lib/*.s7i` — the domain of the claim, since `textToAnalyze` reaches the driver only for a `.s7i` path — plus one `prg/*.sd7` file as a labelled `CONTROL` row outside the aggregate. It prints, per file, both routes of the same analysis:
 
-- `DRIVER` — `$ include "seed7_05.s7i";` then `include <literal(path)>;`. What the server does today. The interpreter opens the document's own path.
+- `DRIVER` — the result of calling `analysis.sd7`'s own `driverFor(path)`, which the probe obtains by including that module with `-l src` (the same way `tools/corpus_scan.sh`'s driver includes `scan.sd7` and `occurrences.sd7`). What the server does today, word for word: the interpreter opens the document's own path. **Do not retype the driver string in the probe** — a hand copy stops describing the server the moment `driverFor` changes, silently.
 - `LEAD` — `$ include "seed7_05.s7i";` followed by the file's own text. The buffer's text, no uri involved.
 
 For each, print `CLEAN`/`NOISY`, `errorCount`, `length(globalObjects(prog))`, the count of records whose `file(obj)` is `"STRING"`, and the first error's `message` when there is one. Read files with a `readln` loop — `gets(f, -1)` raises `RANGE_ERROR` (`AGENTS.md`). End with the sentinel line, which is what the harness requires before any payload counts as a result:
@@ -56,7 +56,7 @@ For each, print `CLEAN`/`NOISY`, `errorCount`, `length(globalObjects(prog))`, th
 SENTINEL files=<N> leadClean=<N> leadNoisy=<N> recordsSame=<N>
 ```
 
-Exit non-zero if the `lib` directory is unreadable or the compile fails. Heredoc the program into `mktemp -d` with `trap 'rm -rf "$WORK"' EXIT`, compile `s7c -O2 -l "$SEED7/lib"`, run the binary. Header comment states it is deliberately **not** in `make test` — two analyze phases per file over 343 files takes minutes — same policy and wording as `tools/corpus_scan.sh:13-14`.
+Exit non-zero if the `lib` directory is unreadable or the compile fails. Heredoc the program into `mktemp -d` with `trap 'rm -rf "$WORK"' EXIT`, compile `s7c -O2 -l "$SEED7/lib"`, run the binary. Header comment states it is deliberately **not** in `make test` — two analyze phases per library file — same policy as `tools/corpus_scan.sh:13-14`. Measured cost of the full run: 40 s wall for the 214 libraries plus the control (22 s of that is the analysis loop, ~5 s the compile), so it is minutes-scale only on a slower machine; say "one analyze phase per library per route", not a wall figure.
 
 - [ ] **Step 2: Run it over the libraries**
 
@@ -65,7 +65,7 @@ sh tools/rf10_probe.sh > docs/rf10-measurement.md.tmp && mv docs/rf10-measuremen
 tail -1 docs/rf10-measurement.md
 ```
 
-Expected `SENTINEL`, and these rows among the output (all measured 2026-10-29 against `~/seed7` at `c93282a6`):
+Expected `SENTINEL`, the `CONTROL` row, and these rows among the output (all measured 2026-10-29 against `~/seed7` at `c93282a6`):
 
 | file | `DRIVER` | `LEAD` |
 |---|---|---|
@@ -74,7 +74,7 @@ Expected `SENTINEL`, and these rows among the output (all measured 2026-10-29 ag
 | `lib/bigint.s7i` | 0 errors | 0 errors, 66 `STRING` |
 | `lib/basearray.s7i` | 0 errors | **2** errors, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
 | `lib/null_file.s7i` | 0 errors | **44** errors, first `Redeclaration of "null_file"` |
-| aggregate over the 214 top-level libraries | — | **168 clean / 46 noisy**, records agree for 213 [the 178 was a position-relative string compare in a scratch probe, not a measurement; the re-run committed as `docs/rf10-measurement.md` replaced it] |
+| aggregate over the 214 top-level libraries | — | **168 clean / 46 noisy**, records agree for 213 (the one disagreement is `seed7_05.s7i`: 3060 against 3061) [the 178 was a position-relative string compare in a scratch probe, not a measurement; the re-run committed as `docs/rf10-measurement.md` replaced it] |
 
 If the new run disagrees, the new run wins: put the fresh numbers in `docs/seed7-cli.md` (Task 4) and correct the table above in the same commit.
 
