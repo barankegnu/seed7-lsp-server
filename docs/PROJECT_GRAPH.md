@@ -6,7 +6,7 @@
 analysis.sd7                  376  +stdlib: progs.s7i ref_list.s7i
 blocks.sd7                    418  scan.sd7
 diagnostics.sd7                83  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
-doc_index.sd7                 155  +stdlib: osfiles.s7i utf8.s7i
+doc_index.sd7                 161  +stdlib: utf8.s7i
 doc_store.sd7                 358  scan.sd7 utf8bytes.sd7
 jsonw.sd7                     135  utf8bytes.sd7
 keywords.sd7                   73

@@ -30,6 +30,10 @@ const proc: main is func
     var string: nonAsciiPath is "/tmp/seed7_lsp_docindex_utf8.sd7";
     var file: utfOut is STD_NULL;
     var integer: declLine1 is 4;
+    # A third fixture, with the bytes FF FE -- not valid UTF-8 -- on the line below the
+    # comment opener, written plain because one byte per character is what puts them there.
+    var string: invalidPath is "/tmp/seed7_lsp_docindex_invalid.sd7";
+    var file: rawOut is STD_NULL;
   begin
     out := open(path, "w");
     write(out, "const integer: a is 1;\n");
@@ -56,6 +60,12 @@ const proc: main is func
     write(utfOut, " *)\n");
     write(utfOut, "const proc: six is func\n");
     close(utfOut);
+    rawOut := open(invalidPath, "w");
+    write(rawOut, "(**\n");
+    write(rawOut, " *  Bad bytes " <& chr(255) <& chr(254) <& " here.\n");
+    write(rawOut, " *)\n");
+    write(rawOut, "const proc: eight is func\n");
+    close(rawOut);
     check("prose of the doc comment", proseFor(path, 8), "Adds two numbers.");
     check("multi-line prose keeps both lines in order", proseFor(path, 15),
           "First line.\nSecond line.");
@@ -74,5 +84,11 @@ const proc: main is func
     check("prose keeps a non-ASCII character as one character",
           str(length(proseFor(nonAsciiPath, declLine1))) <& "/" <&
           str(countCharsAbove127(proseFor(nonAsciiPath, declLine1))), "31/2");
+    # Asked at line 2, the line the decoder raises on: the comment above it is unterminated,
+    # so the plain reader finds no prose either and this check stays green when the reader
+    # mutant reddens the one above. Asking at the declaration (line 4) would make the two
+    # checks answer the same question.
+    check("a file that is not valid UTF-8 yields no prose and no raise",
+          proseFor(invalidPath, 2), "");
     report("doc_index");
   end func;
