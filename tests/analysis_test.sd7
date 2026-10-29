@@ -331,8 +331,8 @@ const proc: main is func
               startsWith(symsNamed(syms, "length")[2].file, "/"));
     # One own->library boundary (own first, no interleaving), the own group's three heads, and
     # the library group's head. Reversing either group's append reads the other names first;
-    # the library head goes from `type' to `readln' under it (both reversal runs recorded in
-    # .superpowers/sdd/2026-10-28-own-records-first/task-1-report.md).
+    # the library head goes from `type' to `readln' under it (both reversal runs are recorded
+    # in the branch's fix report -- scratch, not in the repo).
     check("the order inside each group survives the own-first split",
           rankShape(syms, ""), "1|Widget,length,main,|type,");
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than

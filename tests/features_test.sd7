@@ -78,7 +78,7 @@ const func array symRec: libFirstLength is func
     # Declared with the document's own path, not BUFFER_FILE: an open .s7i arrives that way, so
     # the own arm of definition is isBufferFile(file, docPath), and this record is what tells the
     # two apart at the cap. The docUri these checks pass is file:///tmp/tt_own.sd7, so both own
-    # records answer that uri -- line 6 below is what distinguishes them.
+    # records answer that uri -- `rec.line1 := 7' below is what distinguishes them.
     rec.name := "length"; rec.cat := "ACTOBJECT"; rec.ty := "func integer";
     rec.file := "/tmp/tt_own.sd7"; rec.line1 := 7;
     rec.sign := "const func integer: length (Widget: w)";
