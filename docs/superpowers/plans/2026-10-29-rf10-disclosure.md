@@ -298,14 +298,14 @@ git commit -m "docs: record the R-F10 disclosure and the measured reason the dri
 
 - Changing `textToAnalyze`, `driverFor`, or any analysis route. The driver stays because the interpreter refuses the alternative; Task 1 is the evidence for that sentence.
 - Lifting the `rename`/`prepareRename` refusal inside a `.s7i`. That arm keys on `uris.isLibraryBufferPath` and its reason still holds.
-- The raw-`id`-text question (`{"id":"42"}` answered with `id: 0`): no measured client needs it, so it stays the documented `ponytail:` decision in `src/rpc.sd7`.
+- The raw-`id`-text question. It is NOT out of scope any more — it has its own plan, `docs/superpowers/plans/2026-10-29-request-id-fidelity.md`, because the probe showed a string-id request is answered under `id: 0` and an unknown string-id method is answered not at all, which is a hang rather than a cosmetic mismatch. Nothing in this plan depends on that one, and they touch `src/lsp_server.sd7` in different places (`refresh` here, the senders there).
 
 ## Measured, and therefore NOT planned
 
 Two candidate changes were killed by probe before this plan was written. Both belong here so nobody re-litigates them from the review notes:
 
 - **`intAt` is already total; the `-32603` net is still unreachable.** A review claimed a float in an integer slot costs the request (`integer(str(v))` raising `NUMERIC_ERROR`). Refuted: `readJson` keeps a number's **source text**, so `str(jsonNumber)` of `10.5` is `"10.5"`, and `integer("10.5")` raises `RANGE_ERROR` — the one `intAt` already catches. Measured against the real process: 24 well-framed hostile bodies (`"character":10.5`, `"line":"3"`, `"line":1e999`, `"id":0.5/true/null/[1]/"42"`, `params` as array/string/`null`, `positions:null`, `context:null`, `newName` as object, bodies that are a number/string/`null`/array/bool, a 5-deep nest), each followed by `shutdown`/`exit` → **`PROBE -32603 cases: none`**. Answers were `-32602`, `-32601`, `-32700`, `null`, `[]` or a result. `AGENTS.md`'s "keep the net, it is unreachable" stands as written.
-- **Raw-`id` text (`{"id":"42"}` answered as `id: 0`).** Measured: the request is answered, and answered with the wrong id, so a string-id client never resolves it. This is the documented `ponytail:` decision at `src/rpc.sd7:8-11` ("every client tested … sends integers"), and no client that does it has been named. Adding the raw-id channel would be inventing a trigger, so it stays out — see Out of scope.
+- **Raw-`id` text — NOT refuted, and now its own plan.** Measured here: `{"id":"42","method":"textDocument/hover"}` is answered with `{"id":0,…}`, and `{"id":"x","method":"no/such"}` is answered with nothing at all, so the client waits forever. `src/rpc.sd7:8-11` records that as a `ponytail:` decision on the grounds that every client tested sends integers; the 2-of-3 shapes above are hangs, not cosmetics, so it is planned in `docs/superpowers/plans/2026-10-29-request-id-fidelity.md`.
 - **A `.s7i` analysis from the buffer's own text.** Task 1 measures it; the numbers say the interpreter re-declares (`basearray.s7i` 2 names, `null_file.s7i` 44) because the real library is already inside `seed7_05.s7i`'s closure, and a scratch copy of the buffer text does the same. So `driverFor` stays and only the silence is fixed.
 
 ---
