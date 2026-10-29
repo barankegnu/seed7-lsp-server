@@ -322,8 +322,10 @@ grep -nFf tools/agents_required.txt AGENTS.md | head -50
 written and is still true, but Task 5 is the reason: `doc_index.sd7`'s new `openUtf8` reader raises
 `RANGE_ERROR` on a file whose bytes are not valid UTF-8, and the `catch` added beside it is what stops
 that reaching the request path. Add one clause to that bullet naming the dependency, so nobody removes
-the `catch` as dead code — measured directly: `proseFor` of `~/seed7/prg/err.sd7` (byte `C0` at 5672)
-escapes `RANGE_ERROR` with the handler absent. Do not restate the bullet's existing wording.
+the `catch` as dead code — measured directly: `proseFor` of `~/seed7/prg/err.sd7` escapes `RANGE_ERROR`
+with the handler absent, dying at line 89, whose bytes are `ED 80 41` — a lead byte whose second
+continuation is missing, which is that line's own labelled case (*"UTF-8 continuation byte expected
+found `A`"*). Not the `C0 80` at line 86: Seed7 accepts that overlong pair and decodes `chr(0)`. Do not restate the bullet's existing wording.
 
 - [ ] **Step 2: The two rule sentences**
 
@@ -458,8 +460,9 @@ Expected: `doc_index: 11 checks, 0 failed`, `graph: 21 checks, 0 failed`, 21 gra
 
 Measured, this machine: `readln` on a file opened by `openUtf8` raises `RANGE_ERROR` at the first byte
 sequence that is not valid UTF-8 (one line read, then the raise). Exactly one file in the corpus the
-server is pointed at is like that — `~/seed7/prg/err.sd7`, byte `0xC0` at offset 5672 — so without a
-handler, hovering a symbol declared there turns the task that removes mojibake into a task that costs the
+server is pointed at is like that — `~/seed7/prg/err.sd7`, which raises at line 89 (`ED 80 41`) and not
+at line 86 (`C0 80`, which Seed7 decodes to `chr(0)` as an overlong pair) — so without a handler,
+hovering a symbol declared in such a file turns the task that removes mojibake into a task that costs the
 request a `-32603`, and `AGENTS.md`'s "the `-32603` containment net in `main.sd7` is still unreachable"
 becomes false in a path the product can reach. Catch `RANGE_ERROR` in `readLinesOf` beside `FILE_ERROR`,
 answer the empty list (hover then shows the signature with no prose, which is what an unreadable comment
