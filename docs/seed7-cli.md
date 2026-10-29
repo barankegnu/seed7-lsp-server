@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1075 checks: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 202, `doc_index` 12 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved) | `make test` |
+| suite totals | 21 suites, 1076 checks: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 202, `doc_index` 12, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -566,6 +566,16 @@ AGENTS.md's *Do not "fix" these* keeps the rule: an open `.s7i` is analysed thro
 diagnostic per publish; the staleness itself stays open. This is the evidence for the figures in that
 bullet, and the way to take them again — the measurement behind the first version of the claim was a
 `/tmp` scratch, which made it unciteable.
+
+The heading's wording is now a frozen token in `tools/agents_required.txt`, appended after the R26
+replay (`git show d300662:AGENTS.md` matches neither the full heading nor the looser `two routes`, so
+none of it was already there). Its limit is the gate's own union rule: the check reddens only when
+`AGENTS.md`'s two italic pointers and this heading go **together** — measured, removing all three
+prints `MISSING` and one failed check, while deleting this heading alone with the pointers still
+naming the old wording prints `0 failed`. A rename on one side of the pair therefore stays green and
+leaves two dangling references, the same shape R26 in `tools/agents_gate.sh` exists to catch, so a
+rename must move both hosts at once. Do not answer the gap with a second token beside the first: that
+would be a guard that cannot fail for exactly the rename it is meant to catch.
 
     sh tools/rf10_probe.sh                    # $1 overrides the default /home/username/seed7
 
