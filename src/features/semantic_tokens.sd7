@@ -29,33 +29,43 @@ const func integer: literalType (in integer: kind) is func
     end if;
   end func;
 
-# name -> class index, first declaration wins for an overload set; name -> declaration line and
-# name -> library flag for the two modifiers. Measured free: 3 048 inserts and 15 000 lookups cost
-# nothing beside one parseStri.
-const proc: buildClasses (in array symRec: syms, in string: ownPath,
-                          inout classHash: classes, inout classHash: declLines,
-                          inout classHash: fromLib) is func
+# name -> class index, name -> declaration line and name -> library flag for the two modifiers.
+# isBufferFile decides the own/library choice; the guard `not (name in classes)' then lets the
+# first record of that group in, so list order still decides within a group, never across one.
+# Nothing new lands in the hashes: the guard admits one insert per name however many records carry
+# it, so the split doubles the walk over syms and adds no insert -- a unit cost, not a pass count.
+const proc: fillClasses (in array symRec: syms, in string: ownPath,
+                         inout classHash: classes, inout classHash: declLines,
+                         inout classHash: fromLib, in boolean: wantOwn) is func
   local
     var integer: i is 0;
     var integer: idx is 0;
     var boolean: own is FALSE;
   begin
     for i range 1 to length(syms) do
-      idx := semanticTypeOf(syms[i].cat, syms[i].ty);
-      if not (syms[i].name in classes) then
-        classes @:= [syms[i].name] idx;
-        declLines @:= [syms[i].name] syms[i].line1;
-        own := FALSE;
-        if syms[i].file = ownPath or syms[i].file = BUFFER_FILE then
-          own := TRUE;
-        end if;
-        if own then
-          fromLib @:= [syms[i].name] 0;
-        else
-          fromLib @:= [syms[i].name] STMOD_DEFAULT_LIBRARY;
+      own := isBufferFile(syms[i].file, ownPath);
+      if own = wantOwn then
+        idx := semanticTypeOf(syms[i].cat, syms[i].ty);
+        if not (syms[i].name in classes) then
+          classes @:= [syms[i].name] idx;
+          declLines @:= [syms[i].name] syms[i].line1;
+          if own then
+            fromLib @:= [syms[i].name] 0;
+          else
+            fromLib @:= [syms[i].name] STMOD_DEFAULT_LIBRARY;
+          end if;
         end if;
       end if;
     end for;
+  end func;
+
+# One body, two calls, own pass first -- the emitSyms shape of features/completion.sd7.
+const proc: buildClasses (in array symRec: syms, in string: ownPath,
+                          inout classHash: classes, inout classHash: declLines,
+                          inout classHash: fromLib) is func
+  begin
+    fillClasses(syms, ownPath, classes, declLines, fromLib, TRUE);
+    fillClasses(syms, ownPath, classes, declLines, fromLib, FALSE);
   end func;
 
 # One scan, five integers per token straight into the writer, nothing kept. The previous token's

@@ -40,8 +40,8 @@ after a probe: the binary lands beside its source and `profile_out` in the cwd.
   function name, ordered by the time each function consumes
   (<https://seed7.net/faq.htm#profile_programs>; a binary may also be profiled with external tools
   such as Valgrind). Measured here as `s7c -p -l src tests/occurrences_test.sd7`, running it
-  gave 194 700 µs in `main`, of which 164 211 µs was 7 `analysisOf` calls (`src/analysis.sd7:333`
-  `analyzeAll`, then `collectSyms` at 78 441 µs) — i.e. analysis and the symbol walk dominate, which
+  gave 194 700 µs in `main`, of which 164 211 µs was 7 `analysisOf` calls (`analyzeAll`, now at
+  `src/analysis.sd7:354`, then `collectSyms` at 78 441 µs) — analysis and the symbol walk dominate, which
   is the evidence behind "one analysis per version" and the buffered-only `locals` guard. Compiled
   probes write a binary next to their source (`tests/occurrences_test`) plus `profile_out` in
   the cwd — delete both; `git status --porcelain -uall` must be empty afterwards.
@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1040 checks: `scan` 66, `features` 186, `lsp_server` 79, `transcript` 192 | `make test` |
+| suite totals | 21 suites, 1064 checks: `scan` 66, `features` 191, `lsp_server` 79, `transcript` 196 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -521,3 +521,40 @@ One semantic question two reviews declined is settled here rather than assumed: 
 one appended element) reported `src[2].a=2 dst[2].a=999` — copied. So the held region list a request
 reuses across positions cannot be corrupted by a future field write inside the filter, which is a
 stronger statement than the one the diff supported.
+
+One correction to the reasoning above, bought by the own-first ranking (`5fe718c`). The plan's
+Architecture paragraph said the producer-side reorder costs "at zero extra cost"; that sentence is
+retracted, and it has been removed from the plan. Every record that survives the dedupe in
+`analysis.collectSyms` is now copied TWICE — once into its group array (`ownAdds &:= rec` /
+`otherAdds &:= rec`) and once again by the two bulk appends that close the proc in
+`src/analysis.sd7` — where one append into `syms` used to do. The copy, not a share, is what the
+`/tmp/alias/a.sd7` probe just above establishes. No figure is recorded here, because the only probe
+run was an interpreted throwaway with no sentinel and no compiled pair, and the first caveat above
+is precisely why such a run cannot be quoted; the structural fact is what stops "zero" being
+restated. The two-array shape is kept on purpose: the library group must be buffered either way, and
+appending the buffer's own records straight into `syms` would spare only the second copy of one group
+while deleting the pair of arrays the mutation proof targets.
+
+Task 1's RED record, which `5fe718c`'s commit body does not carry: against `22ea2fc`'s `collectSyms`
+the two ranking checks printed `got: /home/username/seed7/lib/string.s7i` where they expected
+`STRING` and `/tmp/seed7_lsp_probe2.s7i` (`analysis: 49 checks, 2 failed`), and Step 9's mutation — the
+same single `syms &:= rec` — added `FAIL definition on an own overload of a stdlib name lists the buffer
+first` (`transcript: 193 checks, 1 failed`). Reproduce in a scratch worktree with
+`git checkout 22ea2fc -- src/analysis.sd7 && make test-analysis`, and restore with
+`git checkout HEAD -- src/analysis.sd7` — NOT `git checkout -- src/analysis.sd7`, which reads the index
+the staged checkout just wrote and restores the mutant. On this tree that same mutant reddens FIVE checks,
+not three: `rankShape`'s group-order pin joined the analysis set at
+`got: 0|Widget,length,main,|type,`, and the wire `definition` check dropped out because
+`definitionResult`'s own-first pass (Task 2) no longer depends on the order the producer handed it.
+
+The defect the own-records-first rule in `AGENTS.md` exists to prevent, measured on the pre-branch tree.
+A buffer declaring `const func integer: length (in Widget: w)` and calling it answered
+`textDocument/definition` with 10 locations, the buffer's own `st2.sd7:4` LAST, behind
+`string.s7i:336`, `ref_list.s7i:191`, `basearray.s7i:196`, `struct.s7i:37`, `array.s7i:228`,
+`file.s7i:195`, `null_file.s7i:274`, `clib_file.s7i:247` and `external_file.s7i:266`; and
+`textDocument/semanticTokens/full` marked that own declaration tokenType `function` (legend index 3)
+with `defaultLibrary` and no `declaration`, i.e. `{"data":[0,0,6,3,2]}` where the rule makes it
+`[0,0,6,5,1]`. Reproduce by driving `s7 -q -l src src/main.sd7` over real frames with that fixture
+— `didOpen`, then `definition` at `{"line": 12, "character": 18}` (one past the token; `wordAt` is
+left-of-character) and `semanticTokens/full` — or read the same two answers as green pins in
+`tests/transcript.py` and `tests/semantic_tokens_test.sd7`.

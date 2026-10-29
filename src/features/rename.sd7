@@ -197,6 +197,8 @@ const func renameAnswer: renameResult (in lsDoc: doc, in array symRec: syms,
   local
     var string: docPath is "";
     var string: problem is "";
+    # `no.b.ownerSym' indexes the very array renameDecision resolved the binding from, so the same
+    # `syms' must reach `collides': own-first ordering makes a stale index land in library records.
     var renameCheck: no is renameCheck.value;
     var array occurrence: scoped is 0 times occurrence.value;
     var jsonWriter: w is jsonWriter.value;

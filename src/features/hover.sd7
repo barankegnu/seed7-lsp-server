@@ -9,6 +9,9 @@ const integer: MAX_HOVER_OVERLOADS is 5;
 # Up to MAX_HOVER_OVERLOADS distinct signatures for the token, then the prose above the
 # first declaration that has any. Deduped by signature because the analyzer repeats an
 # overload that reaches the program through two include paths.
+# shortcut: relies on analysis.collectSyms ranking own records first; a caller that builds
+#           syms another way shows library overloads first. Upgrade when a consumer needs
+#           order-independence.
 const func string: hoverText (in array symRec: syms, in wordRef: word,
                               in lsDoc: doc) is func
   result
@@ -23,6 +26,9 @@ const func string: hoverText (in array symRec: syms, in wordRef: word,
          length(shown) < MAX_HOVER_OVERLOADS then
         shown &:= syms[i].sign;
         if prose = "" then
+          # Deliberately narrower than analysis.isBufferFile: this asks where to read the prose
+          # FROM, not who declared it -- an open .s7i must still take its prose from the file on
+          # disk, where R-F10 analyses it, and hoverText has no docPath to pass.
           if syms[i].file = BUFFER_FILE then
             prose := proseForText(doc.text, syms[i].line1);
           else

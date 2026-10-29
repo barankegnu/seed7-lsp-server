@@ -17,9 +17,7 @@ const func string: documentSymbolResult (in array symRec: syms, in string: path)
   begin
     openArray(w);
     for i range 1 to length(syms) do
-      # Own declarations come back as BUFFER_FILE (the document is parsed from the
-      # editor's text); a .s7i buffer analysed through the driver keeps its real path.
-      if syms[i].file = path or syms[i].file = BUFFER_FILE then
+      if isBufferFile(syms[i].file, path) then
         openObject(w);
           field(w, "name");   addStr(w, syms[i].name);
           field(w, "detail"); addStr(w, syms[i].sign);

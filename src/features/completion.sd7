@@ -65,7 +65,7 @@ const func integer: emitSyms (inout jsonWriter: w, inout nameSeen: seen,
   begin
     out := emitted;
     for i range 1 to length(syms) do
-      own := syms[i].file = ownFile or syms[i].file = BUFFER_FILE;
+      own := isBufferFile(syms[i].file, ownFile);
       if own = wantOwn then
         nm := syms[i].name;
         if isTypable(nm) and startsWith(nm, prefix) and nm <> prefix and

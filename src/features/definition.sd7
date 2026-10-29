@@ -8,6 +8,47 @@ const integer: MAX_LOCATIONS is 20;
 
 const type: locSeen is hash [string] integer;
 
+# One location pass over `syms'. `wantOwn' asks for the declarations of the document being
+# edited in the first call and for every library one in the second, because MAX_LOCATIONS
+# truncates: in a single list-order pass a library-first array spends the whole cap on library
+# overloads and the user's own declaration never answers. That must not depend on who built the
+# array -- analyzeAll ranks own-first, and a caller that hands us another order still gets the
+# same answer. One body called twice, the shape completion.sd7's emitSyms already uses; `seen'
+# and `emitted' carry across the two calls so nothing is written twice.
+const func integer: emitLocations (inout jsonWriter: w, inout locSeen: seen,
+                                   in array symRec: syms, in wordRef: word,
+                                   in integer: emitted, in string: docUri,
+                                   in string: docPath, in boolean: wantOwn) is func
+  result
+    var integer: out is 0;
+  local
+    var string: keyStr is "";
+    var integer: i is 0;
+    var boolean: own is FALSE;
+  begin
+    out := emitted;
+    for i range 1 to length(syms) do
+      if syms[i].name = word.word then
+        own := isBufferFile(syms[i].file, docPath);
+        if own = wantOwn then
+          keyStr := syms[i].file <& "|" <& str(syms[i].line1);
+          if keyStr not in seen and out < MAX_LOCATIONS then
+            seen @:= [keyStr] 1;
+            out +:= 1;
+            openObject(w);
+              if syms[i].file = BUFFER_FILE then
+                field(w, "uri"); addStr(w, docUri);
+              else
+                field(w, "uri"); addStr(w, uriFor(syms[i].file));
+              end if;
+              field(w, "range"); raw(w, lspWholeLine(syms[i].line1));
+            closeObject(w);
+          end if;
+        end if;
+      end if;
+    end for;
+  end func;
+
 # Location[] for the token under the cursor: every declaration with that name, in this file
 # or in any library it includes. Overloads are separate locations and the analyzer repeats
 # some of them identically, hence the (file, line) dedupe. Reflection reports a declaration
@@ -25,29 +66,14 @@ const func string: definitionResult (in array symRec: syms, in wordRef: word,
   local
     var jsonWriter: w is jsonWriter.value;
     var locSeen: seen is locSeen.EMPTY_HASH;
-    var string: keyStr is "";
+    var string: docPath is "";
     var integer: emitted is 0;
-    var integer: i is 0;
   begin
     if word.word <> "" then
+      docPath := pathOf(docUri);
       openArray(w);
-      for i range 1 to length(syms) do
-        if syms[i].name = word.word then
-          keyStr := syms[i].file <& "|" <& str(syms[i].line1);
-          if keyStr not in seen and emitted < MAX_LOCATIONS then
-            seen @:= [keyStr] 1;
-            emitted +:= 1;
-            openObject(w);
-              if syms[i].file = BUFFER_FILE then
-                field(w, "uri"); addStr(w, docUri);
-              else
-                field(w, "uri"); addStr(w, uriFor(syms[i].file));
-              end if;
-              field(w, "range"); raw(w, lspWholeLine(syms[i].line1));
-            closeObject(w);
-          end if;
-        end if;
-      end for;
+      emitted := emitLocations(w, seen, syms, word, emitted, docUri, docPath, TRUE);
+      emitted := emitLocations(w, seen, syms, word, emitted, docUri, docPath, FALSE);
       closeArray(w);
       out := finishJson(w);
     end if;
