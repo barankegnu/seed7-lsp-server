@@ -202,11 +202,14 @@ const func string: scopeLeak (in array symRec: syms, in string: docPath) is func
   end func;
 
 # Test-only: the ranking contract as ONE aggregate string, "<own->library boundaries>|<first
-# three own names>|<first three library names>", all read in array order. Aggregated rather
+# three own names>|<first library name>", all read in array order. Aggregated rather
 # than pinned to one named record for the reason `scopeLeak' above states: the contract has a
 # second half no per-record assertion can see -- a group appended in reverse still puts the
 # buffer's own record of a stdlib name first, so the three ranking checks stay green while the
 # order INSIDE a group is broken. The boundary count catches a group that interleaves.
+# The library half is ONE name because that name is a snapshot of interpreter order, not a
+# contract: an s7 upgrade that reshuffles the stdlib must break one head name at most, and the
+# own half (fixture-controlled) carries the assertion. Review Focus 5 of the plan.
 const func string: rankShape (in array symRec: syms, in string: docPath) is func
   result
     var string: out is "";
@@ -229,7 +232,7 @@ const func string: rankShape (in array symRec: syms, in string: docPath) is func
         end if;
       else
         otherCount +:= 1;
-        if otherCount <= 3 then
+        if otherCount <= 1 then
           otherNames &:= syms[i].name <& ",";
         end if;
         if prevOwn then
@@ -326,10 +329,12 @@ const proc: main is func
           symsNamed(syms, "length")[1].file, BUFFER_FILE);
     checkTrue("the library records of that name still follow it",
               startsWith(symsNamed(syms, "length")[2].file, "/"));
-    # One own->library boundary (own first, no interleaving) and both group heads in
-    # globalObjects order. Reversing either group's append reads the other names first.
+    # One own->library boundary (own first, no interleaving), the own group's three heads, and
+    # the library group's head. Reversing either group's append reads the other names first;
+    # the library head goes from `type' to `readln' under it (both reversal runs recorded in
+    # .superpowers/sdd/2026-10-28-own-records-first/task-1-report.md).
     check("the order inside each group survives the own-first split",
-          rankShape(syms, ""), "1|Widget,length,main,|type,void,proc,");
+          rankShape(syms, ""), "1|Widget,length,main,|type,");
     # Every `set of char' in the stdlib reports its type as a compiler marker rather than
     # a name; buildSign must not paste that marker into text the user reads.
     syms := symsOf("$ include \"seed7_05.s7i\";\n" <&

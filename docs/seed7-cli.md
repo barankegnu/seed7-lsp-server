@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1061 checks: `scan` 66, `features` 190, `lsp_server` 79, `transcript` 194 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed) | `make test` |
+| suite totals | 21 suites, 1064 checks: `scan` 66, `features` 191, `lsp_server` 79, `transcript` 196 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin) | `make test` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -534,3 +534,15 @@ is precisely why such a run cannot be quoted; the structural fact is what stops 
 restated. The two-array shape is kept on purpose: the library group must be buffered either way, and
 appending the buffer's own records straight into `syms` would spare only the second copy of one group
 while deleting the pair of arrays the mutation proof targets.
+
+Task 1's RED record, which `5fe718c`'s commit body does not carry: against `22ea2fc`'s `collectSyms`
+the two ranking checks printed `got: /home/username/seed7/lib/string.s7i` where they expected
+`STRING` and `/tmp/seed7_lsp_probe2.s7i` (`analysis: 49 checks, 2 failed`), and Step 9's mutation — the
+same single `syms &:= rec` — added `FAIL definition on an own overload of a stdlib name lists the buffer
+first` (`transcript: 193 checks, 1 failed`). Reproduce in a scratch worktree with
+`git checkout 22ea2fc -- src/analysis.sd7 && make test-analysis`, and restore with
+`git checkout HEAD -- src/analysis.sd7` — NOT `git checkout -- src/analysis.sd7`, which reads the index
+the staged checkout just wrote and restores the mutant. On this tree that same mutant reddens FIVE checks,
+not three: `rankShape`'s group-order pin joined the analysis set at
+`got: 0|Widget,length,main,|type,`, and the wire `definition` check dropped out because
+`definitionResult`'s own-first pass (Task 2) no longer depends on the order the producer handed it.

@@ -50,9 +50,12 @@ const func array symRec: ownLastSyms is func
   end func;
 
 # The same order-independence for definition's cap, with the library records FIRST: 21
-# overloads of `length' from string.s7i, then the buffer's own, which is globalObjects order.
+# overloads of `length' from string.s7i, then the buffer's own two (BUFFER_FILE, and the
+# document's path as an open .s7i gets it), which is globalObjects order.
 # analyzeAll now hands own-first records, so a fabricated list is the only way to reach the
-# cap with the library ahead -- and a consumer must not depend on who built the array.
+# cap with the library ahead -- and a consumer must not depend on who built the array. That is
+# why this list stays even though the server can no longer produce it: it pins the contract of
+# definitionResult itself, not the order collectSyms happens to hand out.
 const func array symRec: libFirstLength is func
   result
     var array symRec: out is 0 times symRec.value;
@@ -70,6 +73,14 @@ const func array symRec: libFirstLength is func
     end for;
     rec.name := "length"; rec.cat := "ACTOBJECT"; rec.ty := "func integer";
     rec.file := BUFFER_FILE; rec.line1 := 5;
+    rec.sign := "const func integer: length (Widget: w)";
+    out &:= rec;
+    # Declared with the document's own path, not BUFFER_FILE: an open .s7i arrives that way, so
+    # the own arm of definition is isBufferFile(file, docPath), and this record is what tells the
+    # two apart at the cap. The docUri these checks pass is file:///tmp/tt_own.sd7, so both own
+    # records answer that uri -- line 6 below is what distinguishes them.
+    rec.name := "length"; rec.cat := "ACTOBJECT"; rec.ty := "func integer";
+    rec.file := "/tmp/tt_own.sd7"; rec.line1 := 7;
     rec.sign := "const func integer: length (Widget: w)";
     out &:= rec;
   end func;
@@ -685,6 +696,13 @@ const proc: main is func
                   "{\"uri\":\"file:///tmp/tt_own.sd7\",\"range\":" &
                   "{\"start\":{\"line\":4,\"character\":0},\"end\":{\"line\":5," &
                   "\"character\":0}}}") <> 0);
+    checkTrue("the path-declared own record takes the second location too",
+              startsWith(definitionResult(libFirstLength(), word, "file:///tmp/tt_own.sd7"),
+                         "[{\"uri\":\"file:///tmp/tt_own.sd7\",\"range\":" &
+                         "{\"start\":{\"line\":4,\"character\":0},\"end\":{\"line\":5," &
+                         "\"character\":0}}},{\"uri\":\"file:///tmp/tt_own.sd7\",\"range\":" &
+                         "{\"start\":{\"line\":6,\"character\":0},\"end\":{\"line\":7," &
+                         "\"character\":0}}}"));
     check("the cap still totals MAX_LOCATIONS",
           str(uriCount(definitionResult(libFirstLength(), word, "file:///tmp/tt_own.sd7"))), "20");
     word.word := "writeln";

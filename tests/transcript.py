@@ -280,11 +280,32 @@ replies, code, err, junk = run([frame(m) for m in [
     initialize(),
     opened("file:///tmp/tt_ownrank.sd7", OWN_RANK),
     req(61, "textDocument/definition", pos("file:///tmp/tt_ownrank.sd7", 12, 18)),
+    # Column 18 sits just past `length' in `writeln(length(Widget.value));', so the
+    # left-of-character rule resolves hover to the callee. Column 19 is one further in, inside
+    # the call's parens, which is where callContextOf has to be to name a callee at all.
+    req(63, "textDocument/hover", pos("file:///tmp/tt_ownrank.sd7", 12, 18)),
+    req(64, "textDocument/signatureHelp", pos("file:///tmp/tt_ownrank.sd7", 12, 19)),
     shutdown(62), exit_()]])
-defs = {r.get("id"): r for r in replies if "id" in r}.get(61, {}).get("result") or []
+by_id = {r.get("id"): r for r in replies if "id" in r}
+defs = by_id.get(61, {}).get("result") or []
 expect(isinstance(defs, list) and bool(defs) and
        defs[0].get("uri") == "file:///tmp/tt_ownrank.sd7",
        "definition on an own overload of a stdlib name lists the buffer first")
+# The two strings below were read off a run, not composed. The fixture declares
+# `const func integer: length (in Widget: w)' and reflection prints it without the `in'. The
+# stdlib's `length' overloads follow it, headed by
+# `const func integer: length (string: stri)'. Which signature comes FIRST is the whole point,
+# so hover is pinned on the first line inside its fence and signatureHelp on signatures[0].
+hv_rank = (by_id.get(63, {}).get("result") or {}).get("contents", {}).get("value", "")
+hv_rank_lines = hv_rank.split("\n")
+expect(len(hv_rank_lines) > 1 and
+       hv_rank_lines[1] == "const func integer: length (Widget: w)",
+       "hover lists the buffer's own overload of a stdlib name first (%r)" % hv_rank_lines[:2])
+sig_rank = (by_id.get(64, {}).get("result") or {}).get("signatures") or []
+expect(isinstance(sig_rank, list) and bool(sig_rank) and
+       sig_rank[0].get("label") == "const func integer: length (Widget: w)",
+       "signatureHelp lists the buffer's own overload first (%r)" %
+       [s.get("label") for s in sig_rank[:2]])
 expect(junk == 0, "the own-rank session put only frames on stdout")
 
 # --- M5: references, and the log line an unproved binding owes the client ---
