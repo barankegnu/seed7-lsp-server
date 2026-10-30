@@ -230,7 +230,7 @@ one_answer_per_request(STR_IDS, replies, "the string-id session")
 The session now holds three notifications — `initialized`, the idless hover, and a `textDocument/rename`
 whose `newName` is rejected — and five requests. The rename notification is the check that keeps `sendError`'s
 guard honest: that branch dispatches on the method name, so it is the one path where `sendError` is reached with
-no id at all, and a spurious `-32602` there would otherwise be invisible. The last check is the balance one: seven messages, three of them notifications (`initialized`, the idless hover, the rename with a rejected name), and only four may be answered. Read `one_answer_per_request` (`:405-413`) before trusting that it counts that way; if it counts frames-with-`result` against messages-with-`id`, it is already right, and if it does not, fix the check to match its documented meaning — never the helper to match the check.
+no id at all, and a spurious `-32602` there would otherwise be invisible. The last check is the balance one: eight messages, three of them notifications (`initialized`, the idless hover, the rename with a rejected name), and only five may be answered. Read `one_answer_per_request` (`:405-413`) before trusting that it counts that way; if it counts frames-with-`result` against messages-with-`id`, it is already right, and if it does not, fix the check to match its documented meaning — never the helper to match the check.
 
 `frame` writes `json.dumps` with `ensure_ascii=True`, so every id here is ASCII and the harness's known blind spot (`transcript.py:1093-1102`) does not apply: this scenario is not testing byte framing.
 
