@@ -953,10 +953,14 @@ expect(all(d["severity"] == 3 for x in RN_DIS for d in x),
 expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        "and it is the whole sentence the user reads, not a prefix of it (%s)"
        % [d["message"] for x in RN_DIS for d in x])
-# `all()' is TRUE over an empty list, so the count is repeated as a conjunct: without it both
-# range checks below pass on a build that discloses nothing at all.
+# The anchor expectations below are DERIVED from the fixture, so the fixture's shape is a premise
+# and not a coincidence: delete the leading blank line and every range check stays green with the
+# production anchor reverted. This check passed on sight when it was written (the fixture already had
+# the blank line) and is here because the original zero-width defect survived for want of it.
 expect(RL[0] == "",
        "and the fixture opens like every real library does: an empty line 1 (%r)" % RL[0])
+# `all()' is TRUE over an empty list, so the count is repeated as a conjunct in the two checks
+# below: without it both range checks pass on a build that discloses nothing at all.
 expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
        all(d["range"]["end"]["character"] > d["range"]["start"]["character"]
            for x in RN_DIS[:-1] for d in x),

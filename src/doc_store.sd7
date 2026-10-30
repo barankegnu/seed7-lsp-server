@@ -103,7 +103,9 @@ const func integer: lineCount (in lsDoc: doc) is
 # `charColumnForBytes' returns column 1 without entering its loop. Every real library is like that
 # on line 1 -- `find ~/seed7/lib -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u'
 # prints only `1' (a bare newline) for all 265 of them -- so a diagnostic pinned to line 1 of a
-# library carries an empty range. (What a client draws for an empty range was not measured.) The
+# library carries an empty range, and `Diagnostic.range' IS the range a message applies to: an
+# anchor over no characters names nothing the disclosure is about. (What a client *draws* for an
+# empty range was not measured -- no client exists in this environment.) The
 # walk is one `lineWidth' per leading blank line, so it costs O(the blank prefix) and never
 # O(document) (invariant 8).
 const func integer: firstNonEmptyLine (in lsDoc: doc) is func

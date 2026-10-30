@@ -170,6 +170,15 @@ named checks, and one mutant — widening the high-surrogate bound — escaped u
 added, which is the discovery the check existed to record).
 ```
 
+Both revert recipes in the executed plans are the same trap, one level finer. The id plan tells a
+mutator to revert each mutation with `git checkout HEAD -- <file>`, and two of its tasks did exactly that.
+The command restores the *committed* file, so it also discards any uncommitted work in that file: on this
+branch it ate the coordinator's own new `transcript` pin along with the mutation it was undoing, and the
+proof had to be run a second time after the check was re-applied. `AGENTS.md` § *Every change* now names
+both forms — `git checkout -- .` (index) and `git checkout HEAD -- <file>` (committed state) — and the rule
+is to restore the exact bytes changed when a file has uncommitted work in it. The plans keep the old
+recipe as written: a plan describes the tree as it was when it was authored, not as it is.
+
 ## Seed7 traps — the refused-name set
 
 `CANNOT_BE_NAME` as measured: 63 entries for `s7` 5.4.10, re-probed word by word. The array
@@ -390,7 +399,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | `$ syntax` lines in `lib/syntax.s7i` | 194 | `grep -c '^\$ syntax' lib/syntax.s7i` |
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
-| `corpus_scan.sh`'s file set | 343 (214 `lib/*.s7i` + 129 `prg/*.sd7`), re-measured 2026-10-31; the row read 342 / 213 for the life of the branch, and what moved is the installed library set, not the tool | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
+| `corpus_scan.sh`'s file set | 343 (214 `lib/*.s7i` + 129 `prg/*.sd7`), re-measured 2026-10-31; the row read 342 / 213 for the life of the branch, and what moved is the installed library set, not the tool: `lib/pixel.s7i`, last touched at Seed7 `f849fc6a` (2026-10-23), is the file the older row did not count | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
 | suite totals | 21 suites, 1108 checks — these eight are the suites that moved or that carry a figure here, not an enumeration of the 21: `rpc` 47, `scan` 66, `doc_store` 81, `features` 191, `lsp_server` 82, `doc_index` 14, `transcript` 212, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read; 1 077 → 1 100 is the request-id wave, measured 2026-10-31 at HEAD and against the tree at `8d00014`, where the 1 077 was taken: `rpc` 31 → 47 — the largest single growth on the branch, the id-fidelity pins (string, float, exponent, over-wide, surrogate pair) plus the notification-silence pins — and `transcript` 203 → 210; the other 19 suites are unmoved — which per-suite measurement shows and arithmetic does NOT: equal sums at the two endpoints bound the total, they do not force each member, since one suite could grow while another shrank (1 100 − 47 − 210 = 1 077 − 31 − 203 = 843). That correction is the id plan's own Task 2 Step 2 rule — if the run disagrees, the run wins — landing one wave late. 1 100 → 1 106 is the disclosure-anchor and `RANGE_ERROR`-half fix wave, measured 2026-10-31: `transcript` 210 → 211 (the disclosure's non-zero-width pin, on a library fixture whose line 1 is empty as every real `.s7i` has it), `doc_store` 77 → 80 (the three cases of `firstNonEmptyLine`), `doc_index` 12 → 14 (the `catch` arm and the empty-list reset inside it, pinned separately); 1 106 → 1 108 is the minors pass on that review: `transcript` 211 → 212 and `doc_store` 80 → 81. The first is the pin that the library fixture's line 1 IS empty — the anchor checks DERIVE their line from the fixture, so deleting the blank line keeps every one of them green while the production helper is reverted; the original defect survived precisely because nothing pinned that property. The second pins a CRLF blank prefix, which was right on the wire by inheritance from the line-break model and had no check at all. | `make test`; the 31 and the 203: `git archive 8d00014 src tests \| tar -x -C /tmp/at1077` then `s7 -q -l /tmp/at1077/src /tmp/at1077/tests/rpc_test.sd7` and `python3 /tmp/at1077/tests/transcript.py` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
@@ -660,7 +669,7 @@ the user reads, quoted verbatim in `README.md`'s *What does not work yet*. It is
 `mapDiagnostics`, so a document capped at `MAX_DIAGNOSTICS` still sees it; it fires on `uris.sd7`'s
 `isLibraryBufferPath` and on no other document, and inside `analysable(uri)`, so an untrusted buffer
 still publishes nothing. The record is `SEV_INFORMATION` at `column1 := 0` and
-`line1 := doc_store.firstNonEmptyLine(openDocs[uri])`, which the publish path lands on the whole first
+`line1 := doc_store.firstNonEmptyLine(openDocs[uri])`; the publish path lands on the whole first
 NON-EMPTY line of the buffer — or on line 1 when the buffer holds no character at all, where no
 width exists to anchor on and the range collapses again by necessity, not by oversight — and
 `didClose` publishes the empty list that clears it. Line 1 is NOT that
@@ -672,11 +681,14 @@ empty line has no width: `charColumnForBytes` returns column 1 without entering 
 fixture and blind to the domain — the defect was measured on `lib/aes.s7i` and five other libraries as
 `{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}`, the only diagnostic in the
 publish. What pins it now: three `lsp_server` checks grade the decision (a `.s7i` gains exactly one, a
-`.sd7` gains nothing, the severity is `Information`), three `doc_store` checks grade the anchor (two
+`.sd7` gains nothing, the severity is `Information`), four `doc_store` checks grade the anchor (two
 blank leading lines name the third, a line 1 that holds text stays 1, an all-blank buffer falls back to
-1), and seven `transcript` checks pin it on frames — once per publish, `severity` 3, the whole sentence
-(the Seed7 unit suite prints ASCII, so only two words of it are comparable there), that the range has
-non-zero width, that it is the whole first non-empty line of a fixture whose line 1 IS empty, the
+1, and a CRLF blank prefix is blank too), and eight `transcript` checks pin it on frames — once per
+publish, `severity` 3, the whole sentence
+(the Seed7 unit suite prints ASCII, so only two words of it are comparable there), that the fixture's
+line 1 IS empty (the anchor expectations are DERIVED from the fixture, so its shape is a premise and not
+a coincidence, which is why it gets its own check rather than hiding in the range's description), that
+the range has non-zero width, that it is the whole first non-empty line, the
 `didClose` clear, and that no other document in the run receives it. Not measured: whether a client
 drops a `start == end` range or only fails to squiggle it — `start == end` is legal LSP and no client
 exists in this environment.

@@ -7,7 +7,7 @@ analysis.sd7                  376  +stdlib: progs.s7i ref_list.s7i
 blocks.sd7                    418  scan.sd7
 diagnostics.sd7                83  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
 doc_index.sd7                 168  +stdlib: utf8.s7i
-doc_store.sd7                 381  scan.sd7 utf8bytes.sd7
+doc_store.sd7                 383  scan.sd7 utf8bytes.sd7
 jsonw.sd7                     135  utf8bytes.sd7
 keywords.sd7                   73
 lsp_server.sd7                580  analysis.sd7 diagnostics.sd7 doc_store.sd7 features/completion.sd7 features/definition.sd7 features/document_symbol.sd7 features/folding_range.sd7 features/hover.sd7 features/prepare_rename.sd7 features/references.sd7 features/rename.sd7 features/selection_range.sd7 features/semantic_tokens.sd7 features/signature_help.sd7 rpc.sd7 transport.sd7 uris.sd7 +stdlib: stdio.s7i utf8.s7i
