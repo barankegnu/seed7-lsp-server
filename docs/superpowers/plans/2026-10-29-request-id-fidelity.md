@@ -102,7 +102,7 @@ the value is a quoted string rather than the word `null`. `14` is `"` + `\ud83d`
 
 - [ ] **Step 4: Stub `idJsonOf`, so the checks run on values**
 
-Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 46 checks, 9 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab) and the surrogate length check. The other six pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
+Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 45 checks, 9 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab) and the surrogate length check. The other six pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
 
 - [ ] **Step 5: Implement**
 
@@ -143,7 +143,7 @@ const func string: idJsonOf (in jsonValue: idValue) is func
 make test-rpc && make graph && make test-graph
 ```
 
-Expected: `rpc: 46 checks, 0 failed` (31 baseline, +13 in Step 1, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` is rewritten to `check("id", m.idJson, "7")` in this commit — it reads the deleted field.
+Expected: `rpc: 46 checks, 0 failed` (31 baseline, +13 in Step 1, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` becomes `check("id", m.idJson, "7")` in this commit — it is the only reader of the deleted field besides `firstUnhandled`, which does not touch ids.
 
 - [ ] **Step 7: Prove the checks can fail**
 
