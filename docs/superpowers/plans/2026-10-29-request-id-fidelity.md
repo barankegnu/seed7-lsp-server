@@ -149,12 +149,13 @@ Expected: `rpc: 46 checks, 0 failed` (31 baseline, +13 in Step 1, +2 in Step 3),
 
 - [ ] **Step 7: Prove the checks can fail**
 
-Four mutants, one at a time, each reverted with `git checkout HEAD -- src/rpc.sd7`:
+Four mutants, one at a time, each reverted with `git checkout HEAD -- src/rpc.sd7` (plus a fifth, supplementary, which Task 1 ran to find where the notification rule is reachable at all):
 
 1. Number arm → `out := str(intAt(root…))` shape, i.e. parse to integer and back: `a float id echoes the source text` and `an exponent id echoes the source text` FAIL. This mutant is why the number arm is `str()` and not the integer.
-2. String arm → `out := str(idValue)`: the non-ASCII length check FAILs (20 against 4) and `escaped-dquote id re-escapes` FAILs — the second is the one that does not depend on a print.
+2. String arm → `out := str(idValue)`: the two length checks FAIL (`14/"` against `4/"`, and `16` against `14`). Corrected in Task 1's run: `escaped-dquote id re-escapes` and `tab id escapes` stay GREEN, because Seed7's `str()` and `jsonw` agree on the ASCII escapes — measured, both give the 9 characters `"he\"llo"` and the 6 characters `"a\tb"`. Non-ASCII is the only thing that separates the two writers, which is why Step 3 compares lengths and is the real net.
 3. `msg.isRequest := msg.idJson <> "null"` → `category(idValue) = JSON_NUMBER`: `and it too is a request` FAILs while the echo checks stay green. That pair is the bug — the text is kept, the dispatcher still treats the message as a notification.
-4. `if msg.idJson <> "null"` removed from `sendError`: no unit check reddens (the suite never sends), which is the finding — the notification rule is Task 2's wire, not a unit check. Do not add a synthetic frame-capturing harness for it.
+4. `if msg.idJson <> "null"` removed from `sendError`: no unit check reddens (`rpc: 46 checks, 0 failed`), which is the finding — and neither does the existing wire suite (`transcript: 203 checks, 0 failed`). Measured further in Task 1: **no input reaches `sendError` with `idJson = "null"`**, because all four of its call sites sit behind `if msg.isRequest`, and `isRequest` is that same predicate — so this mutant is semantically identical from outside and no black-box check can redden it (AGENTS.md, mutation rule 1). Do not add a synthetic frame-capturing harness for it.
+5. The reachable half of the notification rule is `sendResult`'s guard, and it is the one Task 2 must pin. Measured in Task 1 as a fifth, supplementary mutant: delete `if msg.idJson <> "null"` from `sendResult` alone and a `textDocument/hover` notification is answered with a `"id":null` frame — a 3rd response to 2 requests on a probe session — while `rpc: 46 checks, 0 failed` and `transcript: 203 checks, 0 failed` both stay green. Task 2's `ids ==` check is what sees it, since a reply with `"id": null` still has the key and lands in the list as `None`.
 
 - [ ] **Step 8: Commit**
 
