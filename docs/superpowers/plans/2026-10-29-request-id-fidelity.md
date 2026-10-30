@@ -154,8 +154,20 @@ Four mutants, one at a time, each reverted with `git checkout HEAD -- src/rpc.sd
 1. Number arm → `out := str(intAt(root…))` shape, i.e. parse to integer and back: `a float id echoes the source text` and `an exponent id echoes the source text` FAIL. This mutant is why the number arm is `str()` and not the integer.
 2. String arm → `out := str(idValue)`: the two length checks FAIL (`14/"` against `4/"`, and `16` against `14`). Corrected in Task 1's run: `escaped-dquote id re-escapes` and `tab id escapes` stay GREEN, because Seed7's `str()` and `jsonw` agree on the ASCII escapes — measured, both give the 9 characters `"he\"llo"` and the 6 characters `"a\tb"`. Non-ASCII is the only thing that separates the two writers, which is why Step 3 compares lengths and is the real net.
 3. `msg.isRequest := msg.idJson <> "null"` → `category(idValue) = JSON_NUMBER`: `and it too is a request` FAILs while the echo checks stay green. That pair is the bug — the text is kept, the dispatcher still treats the message as a notification.
-4. `if msg.idJson <> "null"` removed from `sendError`: no unit check reddens (`rpc: 46 checks, 0 failed`), which is the finding — and neither does the existing wire suite (`transcript: 203 checks, 0 failed`). Measured further in Task 1: **no input reaches `sendError` with `idJson = "null"`**, because all four of its call sites sit behind `if msg.isRequest`, and `isRequest` is that same predicate — so this mutant is semantically identical from outside and no black-box check can redden it (AGENTS.md, mutation rule 1). Do not add a synthetic frame-capturing harness for it.
-5. The reachable half of the notification rule is `sendResult`'s guard, and it is the one Task 2 must pin. Measured in Task 1 as a fifth, supplementary mutant: delete `if msg.idJson <> "null"` from `sendResult` alone and a `textDocument/hover` notification is answered with a `"id":null` frame — a 3rd response to 2 requests on a probe session — while `rpc: 46 checks, 0 failed` and `transcript: 203 checks, 0 failed` both stay green. Task 2's `ids ==` check is what sees it, since a reply with `"id": null` still has the key and lands in the list as `None`.
+4. `if msg.idJson <> "null"` removed from `sendError`: no **unit** check reddens it (`rpc: 46 checks, 0 failed`),
+   because the suite never sends — which is a report-only finding, not a reason to skip the mutant. Claiming the
+   path is unreachable is **wrong** and was corrected by measurement: `sendError` has four sites, three of them
+   gated by `if msg.isRequest` (`main.sd7:22`, `:26`, `lsp_server.sd7:570`), but the rename `-32602` site at
+   `lsp_server.sd7:485` sits in `elsif msg.method = "textDocument/rename"`, which dispatches on the **method
+   name**, so a `textDocument/rename` **notification** carrying a bad `newName` reaches it with `idJson = "null"`.
+   Measured against this branch: that input produces **no** frame with the guard in place, which is the guard
+   working. So this mutant is wire-observable, and Task 2 pins it.
+5. `isRequest := TRUE` (ignore the predicate): `a bool id is not a request` and `an array id is not a
+   request` FAIL. Together with mutant 6 this is what makes those five checks provable, which the first
+   revision of this plan did not do.
+6. `idJsonOf`'s default → `out := "0"` instead of `"null"`: `and it echoes null`, `an absent id echoes null`
+   and `not-a-JSON body echoes null` FAIL.
+7. The reachable half of the notification rule is `sendResult`'s guard, and it is the one Task 2 must pin. Measured in Task 1 as a fifth, supplementary mutant: delete `if msg.idJson <> "null"` from `sendResult` alone and a `textDocument/hover` notification is answered with a `"id":null` frame — a 3rd response to 2 requests on a probe session — while `rpc: 46 checks, 0 failed` and `transcript: 203 checks, 0 failed` both stay green. Task 2's `ids ==` check is what sees it, since a reply with `"id": null` still has the key and lands in the list as `None`.
 
 - [ ] **Step 8: Commit**
 
@@ -205,11 +217,18 @@ expect("capabilities" in next(r for r in replies if r.get("id") == "i1").get("re
        "and initialize answered under its own id, so the client finishes starting up")
 expect(not any(r.get("id") == 0 for r in replies),
        "and nothing is answered under a borrowed integer id 0 (%s)" % ids)
+expect(not any("error" in r and r["error"]["code"] == -32602 and r.get("id") is None
+               for r in replies),
+       "and the rename notification with a rejected newName is not answered either (%s)"
+       % [r for r in replies if "error" in r])
 expect(code == 0 and junk == 0, "the string-id session exits clean (code=%d junk=%d)" % (code, junk))
 one_answer_per_request(STR_IDS, replies, "the string-id session")
 ```
 
-The fourth check is the one that catches Task 1 Step 7's mutant 4 class of error, and the sixth is the balance check: the session contains two notifications (`initialized`, the idless hover) and five requests, and the idless hover must **not** be answered. Read `one_answer_per_request` (`:405-413`) before trusting that it counts that way; if it counts frames-with-`result` against messages-with-`id`, it is already right, and if it does not, fix the check to match its documented meaning — never the helper to match the check.
+The session now holds three notifications — `initialized`, the idless hover, and a `textDocument/rename`
+whose `newName` is rejected — and five requests. The rename notification is the check that keeps `sendError`'s
+guard honest: that branch dispatches on the method name, so it is the one path where `sendError` is reached with
+no id at all, and a spurious `-32602` there would otherwise be invisible. The last check is the balance one: and the idless hover must **not** be answered. Read `one_answer_per_request` (`:405-413`) before trusting that it counts that way; if it counts frames-with-`result` against messages-with-`id`, it is already right, and if it does not, fix the check to match its documented meaning — never the helper to match the check.
 
 `frame` writes `json.dumps` with `ensure_ascii=True`, so every id here is ASCII and the harness's known blind spot (`transcript.py:1093-1102`) does not apply: this scenario is not testing byte framing.
 
@@ -227,13 +246,17 @@ Restore `raw(w, msg.idJson)` to `addInt(w, msg.id)` in `sendResult` alone and ke
 
 Then the second mutant: widen `isRequest` back to `category(idValue) = JSON_NUMBER` and rerun — the `ids ==` check and `-32601` check go red, because the unknown string-id request is once again dropped without a reply. That is the hang this plan exists to remove.
 
-Third mutant, and the one that justifies this scenario existing: delete `if msg.idJson <> "null"` from
-`sendResult` **only**. The idless-hover check must go red — the notification is answered again, with
-`"id": null`, which appears in the collected `ids` as `None` — while `make test-rpc` stays green. Task 1
-proved this is the *only* reachable half of the notification rule: all four `sendError` call sites sit behind
-`if msg.isRequest`, which is the same predicate the guard replaced, so removing the guard there is
-semantically identical from outside and no black-box input can redden it (`AGENTS.md` mutation rule 1). Do
-not force a check for the unreachable half.
+Two more mutants, one each for the two senders, because the notification rule is reachable on **both** paths
+and a check for one does not cover the other:
+
+3a. Delete `if msg.idJson <> "null"` from `sendResult` only: the idless-hover check must go red — the
+    notification is answered again, with `"id": null`, which lands in the collected `ids` as `None` — while
+    `make test-rpc` stays green.
+3b. Delete it from `sendError` only: the rename-notification check must go red, for the same reason. The
+    rename branch dispatches on the method name, not on `isRequest`, so this is not the "unreachable half" an
+    earlier revision of this plan claimed it was (Task 1's own measurement is in the ledger).
+
+Both are one-token changes to `src/rpc.sd7`, reverted with `git checkout HEAD -- src/rpc.sd7`.
 
 - [ ] **Step 4: Commit**
 
