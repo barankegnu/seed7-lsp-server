@@ -1067,6 +1067,61 @@ expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS
 expect(junk == 0, "the after-shutdown run put only frames on stdout (junk=%d)" % junk)
 one_answer_per_request(LIFE_POST, replies, "the after-shutdown run")
 
+# --- Task 2: string ids on the wire, the -32601 a string id used to lose, and silence ---------
+# Task 1 made "was this a request?" a property of the id, and 27 call sites follow from that.
+# Only frames can show a client would now be answered -- and that a notification still is not.
+# The whole session uses string ids because a wrong id in `initialize' is fatal to a client, and
+# it holds four notifications (`initialized', `didOpen', the idless hover, and a rename whose
+# newName is rejected) beside its five requests. `frame' writes json.dumps with ensure_ascii=True,
+# so every id here is ASCII and the byte-framing blind spot noted above does not apply to it.
+TRIVIAL = ('$ include "seed7_05.s7i";\n'
+           'const proc: main is func\n'
+           '  begin\n'
+           '    writeln("trivial");\n'
+           '  end func;\n')
+STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
+            "params": {"capabilities": {}, "rootUri": "file:///tmp"}},
+           {"jsonrpc": "2.0", "method": "initialized", "params": {}},
+           opened("/tmp/tt_strid.sd7", TRIVIAL),
+           {"jsonrpc": "2.0", "id": "h1", "method": "textDocument/hover",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "id": "u1", "method": "not/a/method", "params": {}},
+           {"jsonrpc": "2.0", "method": "textDocument/hover",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "method": "textDocument/rename",
+            "params": dict(pos("/tmp/tt_strid.sd7", 3, 10), newName="1bad")},
+           {"jsonrpc": "2.0", "id": "d1", "method": "textDocument/definition",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "id": "s1", "method": "shutdown"},
+           exit_()]
+replies, code, err, junk = run([frame(m) for m in STR_IDS])
+# Only RESPONSES: `publishDiagnostics' and `window/logMessage' are frames with a `method' and
+# no `id', so collecting on "id" or "method" would put bare `None' entries in the list and the
+# equality below could never hold. Measured on this branch: a session with two notification-only
+# method calls yields responses exactly ['i1', 's1'].
+# Line 3 character 10 lands inside `writeln', so the hover carries its signature and `definition'
+# its library locations (measured). The id checks need only that a frame arrives, but a reader who
+# trims TRIVIAL to a bare main gets a null hover and a scenario that reads as broken while it is not.
+ids = [r.get("id") for r in replies if "result" in r or "error" in r]
+by_id = {r.get("id"): r for r in replies if "result" in r or "error" in r}
+expect(ids == ["i1", "h1", "u1", "d1", "s1"],
+       "every reply carries the string id it answers (%s)" % ids)
+# `next' without a default is not an option here: a mutant that drops the -32601 frame, or answers
+# it under another id, would abort the whole suite on StopIteration and no graded line would print.
+# The `.get(id, {})' idiom of the lifecycle block (:1049) fails the named check instead.
+expect((by_id.get("u1", {}).get("error") or {}).get("code") == -32601,
+       "the unknown string-id method is answered with -32601, not with silence")
+expect("capabilities" in (by_id.get("i1", {}).get("result") or {}),
+       "and initialize answered under its own id, so the client finishes starting up")
+expect(not any(r.get("id") == 0 for r in replies if "result" in r or "error" in r),
+       "and nothing is answered under a borrowed integer id 0 (%s)" % ids)
+expect(not any("error" in r and r["error"]["code"] == -32602 and r.get("id") is None
+               for r in replies),
+       "and the rename notification with a rejected newName is not answered either (%s)"
+       % [r for r in replies if "error" in r])
+expect(code == 0 and junk == 0, "the string-id session exits clean (code=%d junk=%d)" % (code, junk))
+one_answer_per_request(STR_IDS, replies, "the string-id session")
+
 # --- M5 Task 10 gap 4: `workspace': null, the malformed client shape ----------------
 # A missing `workspace' key is pinned by the refusal runs above (msgs[0] has no such key). This
 # is the other shape: the key PRESENT and its value JSON null. atKey must hand the null back and

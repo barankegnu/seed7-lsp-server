@@ -187,13 +187,18 @@ Task 1 changed 27 call sites and made "was this a request?" a property of the id
 
 **Interfaces:**
 - Consumes: `frame` (`:10`), `run` (`:42`), `split_frames`/`junk` (`:14`), `expect` (`:50`), `one_answer_per_request` (`:405`), `answered_null` (`:395`), `initialize`/`opened`/`pos`/`shutdown`/`exit_`.
-- Produces: the six check titles Step 2 prints.
+- Produces: the seven check titles Step 2 prints.
 
 - [ ] **Step 1: Add the scenario**
 
 A whole session whose ids are strings, because a string id is legal at every step and `initialize` is where a wrong id is fatal. Place it after the lifecycle block:
 
 ```python
+TRIVIAL = ('$ include "seed7_05.s7i";\n'
+           'const proc: main is func\n'
+           '  begin\n'
+           '    writeln("trivial");\n'
+           '  end func;\n')
 STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
             "params": {"capabilities": {}, "rootUri": "file:///tmp"}},
            {"jsonrpc": "2.0", "method": "initialized", "params": {}},
@@ -205,7 +210,7 @@ STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
             "params": pos("/tmp/tt_strid.sd7", 3, 10)},
            {"jsonrpc": "2.0", "method": "textDocument/rename",
             "params": dict(pos("/tmp/tt_strid.sd7", 3, 10), newName="1bad")},
-           {"jsonrpc": "2.0", "id": "d1", "method": "textDocument/definition,
+           {"jsonrpc": "2.0", "id": "d1", "method": "textDocument/definition",
             "params": pos("/tmp/tt_strid.sd7", 3, 10)},
            {"jsonrpc": "2.0", "id": "s1", "method": "shutdown"},
            exit_()]
@@ -215,11 +220,12 @@ replies, code, err, junk = run([frame(m) for m in STR_IDS])
 # equality below could never hold. Measured on this branch: a session with two notification-only
 # method calls yields responses exactly `['i1', 's1']`.
 ids = [r.get("id") for r in replies if "result" in r or "error" in r]
+by_id = {r.get("id"): r for r in replies if "result" in r or "error" in r}
 expect(ids == ["i1", "h1", "u1", "d1", "s1"],
        "every reply carries the string id it answers (%s)" % ids)
-expect(next(r for r in replies if r.get("id") == "u1")["error"]["code"] == -32601,
+expect((by_id.get("u1", {}).get("error") or {}).get("code") == -32601,
        "the unknown string-id method is answered with -32601, not with silence")
-expect("capabilities" in next(r for r in replies if r.get("id") == "i1").get("result", {}),
+expect("capabilities" in (by_id.get("i1", {}).get("result") or {}),
        "and initialize answered under its own id, so the client finishes starting up")
 expect(not any(r.get("id") == 0 for r in replies if "result" in r or "error" in r),
        "and nothing is answered under a borrowed integer id 0 (%s)" % ids)
@@ -231,10 +237,19 @@ expect(code == 0 and junk == 0, "the string-id session exits clean (code=%d junk
 one_answer_per_request(STR_IDS, replies, "the string-id session")
 ```
 
-The session now holds three notifications — `initialized`, the idless hover, and a `textDocument/rename`
-whose `newName` is rejected — and five requests. The rename notification is the check that keeps `sendError`'s
-guard honest: that branch dispatches on the method name, so it is the one path where `sendError` is reached with
-no id at all, and a spurious `-32602` there would otherwise be invisible. The last check is the balance one: eight messages, three of them notifications (`initialized`, the idless hover, the rename with a rejected name), and only five may be answered. Read `one_answer_per_request` (`:405-413`) before trusting that it counts that way; if it counts frames-with-`result` against messages-with-`id`, it is already right, and if it does not, fix the check to match its documented meaning — never the helper to match the check.
+The session holds ten framed messages: five requests (`i1', `h1', `u1', `d1', `s1') and four
+notifications (`initialized', `textDocument/didOpen', the idless hover, and a `textDocument/rename`
+whose `newName' is rejected), plus `exit'. The rename notification is the check that keeps `sendError's
+guard honest: that branch dispatches on the method name, so it is the one path where `sendError' is
+reached with no id at all, and a spurious `-32602' there would otherwise be invisible. The last check
+is the balance one, and `one_answer_per_request' (`:405-413') was read before trusting it: it counts
+frames with `result`/`error` against messages with an `id`, which is exactly the five-of-ten this
+session owes, so the check ships as written and the helper does not move.
+
+The two id lookups use `.get(id, {})' rather than `next(...)': a `next' with no default raises
+`StopIteration`, and the mutant that drops the `-32601' frame would then abort the suite before its
+summary line prints -- a signal turned into a traceback, and no graded count to compare against. The
+lifecycle block (`:1049`) already uses this idiom.
 
 `frame` writes `json.dumps` with `ensure_ascii=True`, so every id here is ASCII and the harness's known blind spot (`transcript.py:1093-1102`) does not apply: this scenario is not testing byte framing.
 
@@ -244,25 +259,36 @@ no id at all, and a spurious `-32602` there would otherwise be invisible. The la
 make transcript
 ```
 
-Expected: `transcript: 209 checks, 0 failed` — the measured baseline on this branch is **203** (`transcript: 203 checks, 0 failed` at `8d00014`: 196 pre-branch, +6 from R-F10 Task 3, +1 from its fix-wave hover check), plus the 6 here. Do not re-derive it from 196: that figure predates two merged tasks. If the first check reports `[1, 0, 0, 0, 0]` instead, Task 1 did not land — that is the shape of the bug, not a failure of this check.
+Expected: `transcript: 210 checks, 0 failed` -- the measured baseline on this branch is **203** (`transcript: 203 checks, 0 failed` at `8d00014`: 196 pre-branch, +6 from R-F10 Task 3, +1 from its fix-wave hover check), plus the **7** here. The earlier figure of 209, and the "6" it was built from, were wrong because `one_answer_per_request` calls `expect` itself: a helper that prints a check IS a check. Do not re-derive from 196: that figure predates two merged tasks. Note also that the printed number is the count of PASSING checks (`transcript.py` prints `% (passed, len(fails))`), so a red run reports `206 checks, 4 failed` for 210 run -- the total does not stay in the first figure. `make test` is 21 graded lines, each `0 failed`, and the
+tree total is **1 099** (1 092 + 7). If the first check reports `[0, 0, 0, 0, 0]` instead, Task 1 did not land -- that is the shape of the bug, not a failure of this check.
 
 - [ ] **Step 3: Prove the wire checks can fail**
 
-Restore `raw(w, msg.idJson)` to `addInt(w, msg.id)` in `sendResult` alone and keep everything else: `make transcript` → `transcript: 209 checks, 3 failed` (the `ids ==` check, the borrowed-id check, and `one_answer_per_request`), while `code == 0 and junk == 0` **stays green**. That is the finding to record: a wrong id is invisible to every safety net the harness has except the id comparison itself — no stray byte, no short frame, no nonzero exit. Revert with `git checkout HEAD -- src/rpc.sd7`.
+The mutant this task first asked for -- `raw(w, msg.idJson)` back to `addInt(w, msg.id)` in `sendResult` -- does not exist any more: Task 1 deleted the `integer: id` field, so it does not compile, and its closest compilable form (`addInt(w, 0)` in `sendResult`) rewrites EVERY response's id, which kills the pre-existing scenario 1 at `transcript.py:149` with `KeyError: 'result'` before this block runs. Measured: no graded line at all. A mutant whose damage lands in an unrelated scenario proves nothing about this one.
 
-Then the second mutant: widen `isRequest` back to `category(idValue) = JSON_NUMBER` and rerun — the `ids ==` check and `-32601` check go red, because the unknown string-id request is once again dropped without a reply. That is the hang this plan exists to remove.
+So mutate the id path alone, in `idJsonOf`'s JSON_STRING arm: `out := w.buf;` becomes `out := "0";`. Integer ids still echo, string ids answer as integer `0` -- the old symptom, isolated. `make transcript` → `transcript: 206 checks, 4 failed`: the `ids ==` check (reporting `[0, 0, 0, 0, 0]`), the `-32601` check, the `capabilities`-under-`i1` check, and the borrowed-id check -- while `code == 0 and junk == 0` and `one_answer_per_request` stay GREEN. No stray byte, no short frame, no nonzero exit. Revert with `git checkout HEAD -- src/rpc.sd7`.
+
+Then the second mutant: widen `isRequest` back to `category(idValue) = JSON_NUMBER` and rerun → `transcript: 207 checks, 3 failed`, the `ids ==`, `-32601` and `one_answer_per_request` checks red (4 answers for 5 requests), because the unknown string-id request is once again dropped without a reply. That is the hang this plan exists to remove. `make test-rpc` also reddens (1 of 46) -- the unit suite sees `isRequest`.
 
 Two more mutants, one each for the two senders, because the notification rule is reachable on **both** paths
 and a check for one does not cover the other:
 
-3a. Delete `if msg.idJson <> "null"` from `sendResult` only: the idless-hover check must go red — the
-    notification is answered again, with `"id": null`, which lands in the collected `ids` as `None` — while
-    `make test-rpc` stays green.
-3b. Delete it from `sendError` only: the rename-notification check must go red, for the same reason. The
-    rename branch dispatches on the method name, not on `isRequest`, so this is not the "unreachable half" an
-    earlier revision of this plan claimed it was (Task 1's own measurement is in the ledger).
+3a. Delete `if msg.idJson <> "null"` from `sendResult` only → `transcript: 208 checks, 2 failed`: the
+    notification is answered again, with `"id": null`, which lands in the collected `ids` as `None`, and
+    `one_answer_per_request` counts 6 answers to 5 requests -- while `make test-rpc` stays GREEN (46/46).
+3b. Delete it from `sendError` only → `transcript: 207 checks, 3 failed`: the rename-notification check
+    goes red and its own message prints the frame -- `{'id': None, 'error': {'code': -32602, 'message':
+    'rename: 1bad is not a Seed7 identifier'}}` -- and `make test-rpc` again stays GREEN (46/46). The
+    rename branch dispatches on the method name, not on `isRequest`, so this is not the "unreachable half"
+    an earlier revision of this plan claimed it was (Task 1's own measurement is in the ledger).
 
 Both are one-token changes to `src/rpc.sd7`, reverted with `git checkout HEAD -- src/rpc.sd7`.
+
+What the unit suite cannot see is the notification rule, not the id text: 3a and 3b both leave
+`rpc: 46 checks, 0 failed`, which is precisely why this task exists. The id text itself is covered by
+`rpc_test` (mutant 1 reddens 5 of 46), so the wire check is the second net, not the only one.
+
+Anchor any `sed` used for these mutants by function header AND body line. `sed '/^const proc: sendResult/,/^end func;/...'` on this branch matched `sendError` too, because every `end func;` in `rpc.sd7` is indented two spaces: the range never closed and ran to EOF, mutating both senders at once and passing for a single-sender mutant.
 
 - [ ] **Step 4: Commit**
 
