@@ -290,7 +290,8 @@ const string: LIB_STALE_MESSAGE is
 # Pure, not inlined into `refresh`: a unit suite grades this decision and cannot capture the
 # protocol channel. It is handed the buffer because the anchor is a property of the buffer: every
 # real .s7i opens with an empty line, and a record anchored there collapses to a zero-width range
-# (doc_store.firstNonEmptyLine). The caller already holds openDocs[uri] to publish with.
+# (doc_store.firstNonEmptyLine). The caller looks the buffer up once and hands the same value to
+# both the publisher and this.
 const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
                                                 in string: uri,
                                                 in lsDoc: doc) is func
@@ -313,13 +314,15 @@ const proc: refresh (in string: uri) is func
   local
     var analysisResult: a is analysisResult.value;
     var array lspDiag: mapped is 0 times lspDiag.value;
+    var lsDoc: buf is lsDoc.value;
   begin
     # Returning early for an untrusted uri: publishing an empty diagnostics list would claim
     # a clean document, which is the class of lie the spec's §4 already refuses for parseStri.
     if analysable(uri) then
       a := analyzeDocument(uri);
       mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
-      publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri, openDocs[uri]));
+      buf := openDocs[uri];
+      publish(uri, buf, discloseStaleLibrary(mapped, uri, buf));
     end if;
   end func;
 

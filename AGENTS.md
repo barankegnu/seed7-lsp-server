@@ -25,7 +25,10 @@ check: when a safety net becomes unreachable from real input, delete the asserti
 rather than inventing a synthetic trigger. To prove an assertion can fail, mutate one
 production branch and require that named check to go FAIL. Do it after
 committing, and revert per file — `git checkout -- .` restores from the index and will
-silently undo work you have not committed yet. When a review or a probe contradicts a
+silently undo work you have not committed yet. `git checkout HEAD -- <file>` is the same trap one
+level finer: it discards your uncommitted edits to *that* file, so mutate-and-revert that way only
+when nothing in the file is uncommitted — otherwise restore the exact bytes you changed, or the
+check you just proved vanishes together with the mutation. When a review or a probe contradicts a
 commit message, correct the message in the next commit — the correction is the finding.
 
 Two mutation-proofing rules this branch learned the hard way: (1) before demanding a

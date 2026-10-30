@@ -878,8 +878,9 @@ RN_LIB_PATH = "/tmp/seed7_lsp_transcript_rn_lib.s7i"
 # The first line is EMPTY because that is the shape of every real library: `find ~/seed7/lib
 # -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u' prints only `1' -- a bare
 # newline -- for all 265 of them. A range anchored on a blank line collapses to (0,0)->(0,0) in
-# the `lspRangeBytes' clamp, and the disclosure exists to put a squiggle where the user can see it,
-# so it must land on the first line that holds a character.
+# the `lspRangeBytes' clamp, so it must land on the first line that holds a character. Whether a
+# client drops a zero-width range or merely draws no squiggle was NOT measured -- no client exists
+# in this environment -- so this fixture pins the wire property, not a rendering.
 RN_LIB_TEXT = ('\n'
                'const type: Counter is new struct\n'
                '    var integer: amount is 0;\n'
@@ -954,12 +955,15 @@ expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        % [d["message"] for x in RN_DIS for d in x])
 # `all()' is TRUE over an empty list, so the count is repeated as a conjunct: without it both
 # range checks below pass on a build that discloses nothing at all.
+expect(RL[0] == "",
+       "and the fixture opens like every real library does: an empty line 1 (%r)" % RL[0])
 expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
        all(d["range"]["end"]["character"] > d["range"]["start"]["character"]
            for x in RN_DIS[:-1] for d in x),
        "and its range has the width a squiggle needs (%s)"
        % [d["range"] for x in RN_DIS for d in x])
-expect(all(d["range"] == {"start": {"line": RN_LIB_ANCHOR, "character": 0},
+expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
+       all(d["range"] == {"start": {"line": RN_LIB_ANCHOR, "character": 0},
                           "end": {"line": RN_LIB_ANCHOR,
                                    "character": u16(RL[RN_LIB_ANCHOR])}}
            for x in RN_DIS for d in x),

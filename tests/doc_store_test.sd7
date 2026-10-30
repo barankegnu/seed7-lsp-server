@@ -258,13 +258,18 @@ const proc: main is func
     checkTrue("the same sweep does disagree on the astral line",
               unitDisagreements(doc, 0, 30) > 0);
     # The anchor the stale-library disclosure is pinned to (src/lsp_server.sd7). A range on an
-    # EMPTY line has no width, so the helper that picks the line is what keeps that message
-    # visible -- and every real .s7i begins with an empty line 1 (doc_store.firstNonEmptyLine).
+    # EMPTY line has no width, so the helper that picks the line is what gives that message a range
+    # a client could draw -- and every real .s7i begins with an empty line 1 (firstNonEmptyLine).
     setVersion(doc, "\n\nconst integer: a is 1;\n", 1);
     check("past two blank leading lines it names the third", str(firstNonEmptyLine(doc)), "3");
     setVersion(doc, "const integer: a is 1;\n\n", 1);
     check("a buffer whose line 1 holds text keeps line 1", str(firstNonEmptyLine(doc)), "1");
     setVersion(doc, "\n\n", 1);
     check("an all-blank buffer falls back to line 1", str(firstNonEmptyLine(doc)), "1");
+    # Measured on the wire (a CRLF .s7i whose line 1 is a bare "\\r\\n" anchors on line 2), but
+    # never by a unit check: the blank test inherits lineStarts/lineWidth stopping at '\\r', and a
+    # model that counted a lone CR as content would silently make that line "non-empty".
+    setVersion(doc, "\r\n\r\nconst integer: a is 1;\r\n", 1);
+    check("a CRLF blank prefix is blank, not a line of width 1", str(firstNonEmptyLine(doc)), "3");
     report("doc_store");
   end func;
