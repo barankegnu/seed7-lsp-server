@@ -67,11 +67,12 @@ const proc: note (in string: text) is func
   end func;
 
 # A handler that raises must cost the request, never the server: log enough to
-# reproduce it, answer a JSON-RPC internal error, and keep reading.
-const proc: handlerFailed (in string: kind, in string: body) is func
+# reproduce it, answer a JSON-RPC internal error, and keep reading. The `body' stays in the log
+# line because it is what makes the failure reproducible; `msg' is what the answer echoes.
+const proc: handlerFailed (in string: kind, in string: body, in rpcMsg: msg) is func
   begin
     note("handler failed (" <& kind <& "): " <& body);
-    sendError(0, -32603, "internal error: " <& kind);
+    sendError(msg, -32603, "internal error: " <& kind);
   end func;
 
 # A line the feature said it needed the user to see, sent to the client as a window/logMessage
@@ -390,7 +391,7 @@ const proc: handle (in rpcMsg: msg) is func
       end if;
       projectRoots := collected;
       rootsDeclared := length(collected) <> 0;
-      sendResult(msg.id, initializeResultJson);
+      sendResult(msg, initializeResultJson);
       # A rootless client runs unguarded by design (single-file editing must not break), but
       # the plan promises the client is told once. Sent AFTER the result so the InitializeResult
       # is the first frame on the wire, not a logMessage.
@@ -402,7 +403,7 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "$/cancelRequest" then
     elsif msg.method = "shutdown" then
       gotShutdown := TRUE;
-      sendResult(msg.id, "null");
+      sendResult(msg, "null");
     elsif msg.method = "exit" then
       if gotInitialize and gotShutdown then
         exit(0);
@@ -427,17 +428,17 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/documentSymbol" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, documentSymbolResult(symbolsOfDocument(uri), pathOf(uri)));
+        sendResult(msg, documentSymbolResult(symbolsOfDocument(uri), pathOf(uri)));
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/definition" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, definitionResult(symbolsOfDocument(uri),
+        sendResult(msg, definitionResult(symbolsOfDocument(uri),
                      wordOfRequest(msg), uri));
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/references" then
       uri := uriOfRequest(msg);
@@ -451,9 +452,9 @@ const proc: handle (in rpcMsg: msg) is func
         if refs.unresolved then
           logMessage(MSG_INFO, refs.why);
         end if;
-        sendResult(msg.id, refs.json);
+        sendResult(msg, refs.json);
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/prepareRename" then
       uri := uriOfRequest(msg);
@@ -464,9 +465,9 @@ const proc: handle (in rpcMsg: msg) is func
         if prep.refused then
           logMessage(MSG_INFO, prep.why);
         end if;
-        sendResult(msg.id, prep.json);
+        sendResult(msg, prep.json);
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/rename" then
       uri := uriOfRequest(msg);
@@ -481,31 +482,31 @@ const proc: handle (in rpcMsg: msg) is func
         # stderr; only the second costs an error frame.
         if ren.error = "invalid" then
           logMessage(MSG_INFO, ren.why);
-          sendError(msg.id, -32602, ren.why);
+          sendError(msg, -32602, ren.why);
         else
           if ren.why <> "" then
             logMessage(MSG_INFO, ren.why);
           end if;
-          sendResult(msg.id, ren.json);
+          sendResult(msg, ren.json);
         end if;
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/hover" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, hoverResult(openDocs[uri], symbolsOfDocument(uri),
+        sendResult(msg, hoverResult(openDocs[uri], symbolsOfDocument(uri),
                      wordOfRequest(msg)));
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/completion" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, completionResult(symbolsOfDocument(uri), wordOfRequest(msg),
+        sendResult(msg, completionResult(symbolsOfDocument(uri), wordOfRequest(msg),
                      intAt(atKey(msg.params, "position"), "character", 0), pathOf(uri)));
       else
-        sendResult(msg.id, "[]");
+        sendResult(msg, "[]");
       end if;
     elsif msg.method = "textDocument/signatureHelp" then
       uri := uriOfRequest(msg);
@@ -519,28 +520,28 @@ const proc: handle (in rpcMsg: msg) is func
       else
         callee := "";
       end if;
-      sendResult(msg.id, signatureHelpResult(symbolsOfDocument(uri), callee, activeArg));
+      sendResult(msg, signatureHelpResult(symbolsOfDocument(uri), callee, activeArg));
     elsif msg.method = "textDocument/foldingRange" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, foldingResult(openDocs[uri]));
+        sendResult(msg, foldingResult(openDocs[uri]));
       else
-        sendResult(msg.id, "[]");
+        sendResult(msg, "[]");
       end if;
     elsif msg.method = "textDocument/selectionRange" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
+        sendResult(msg, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
       else
-        sendResult(msg.id, "[]");
+        sendResult(msg, "[]");
       end if;
     elsif msg.method = "textDocument/semanticTokens/full" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri),
+        sendResult(msg, tokensIn(openDocs[uri], symbolsOfDocument(uri),
                                     pathOf(uri), 0, pred(lineCount(openDocs[uri]))));
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/semanticTokens/range" then
       uri := uriOfRequest(msg);
@@ -548,10 +549,10 @@ const proc: handle (in rpcMsg: msg) is func
         span := atKey(msg.params, "range");
         fromLine := intAt(atKey(span, "start"), "line", 0);
         toLine := intAt(atKey(span, "end"), "line", pred(lineCount(openDocs[uri])));
-        sendResult(msg.id, tokensIn(openDocs[uri], symbolsOfDocument(uri), pathOf(uri),
+        sendResult(msg, tokensIn(openDocs[uri], symbolsOfDocument(uri), pathOf(uri),
                                     fromLine, toLine));
       else
-        sendResult(msg.id, "null");
+        sendResult(msg, "null");
       end if;
     elsif msg.method = "textDocument/didChange" then
       handleChange(msg);
@@ -567,7 +568,7 @@ const proc: handle (in rpcMsg: msg) is func
       end if;
     else
       if msg.isRequest then
-        sendError(msg.id, -32601, "Method not found: " <& msg.method);
+        sendError(msg, -32601, "Method not found: " <& msg.method);
       end if;
     end if;
   end func;

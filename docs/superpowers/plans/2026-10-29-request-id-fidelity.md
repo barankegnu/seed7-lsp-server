@@ -90,19 +90,21 @@ Append to Step 1's block. `lsp_tst.sd7:11-16` prints on plain stdout, and measur
 ```seed7
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\u0418\\u0434\",\"method\":\"x\"}");
 check("a non-ASCII id is 4 characters, quoted, not Seed7's decimal literal form",
-      str(length(m.idJson)) <& "/" <& substr(m.idJson, 1, 1), "4/\"");
+      str(length(m.idJson)) <& "/" <& m.idJson[1 .. 1], "4/\"");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\ud83d\\ude00\",\"method\":\"x\"}");
 check("a surrogate-pair id escapes both halves", str(length(m.idJson)), "14");
 ```
 
 Compare length AND the first character together: `length("null")` is itself 4, so a length-only
 expectation would be a FALSE GREEN against the Step 4 stub. `4` is `"` + 2 characters + `"`
-(measured: `quoted` length 4 for `Ид`), and `substr(m.idJson, 1, 1)` is the ASCII `"` that proves
-the value is a quoted string rather than the word `null`. `14` is `"` + `\ud83d` + `\ude00` + `"` — the pair arrives from `readJson` as two lone surrogates and `jsonw` escapes each, which is the behaviour `tests/jsonw_test.sd7:49-52` already pins for a written string. A mutant that used `str(idValue)` for the string arm answers 14 characters for that id — measured, `str()` of the two-character id is `"\1048;\1076;"`, one backslash escape per character — so it reddens this check on both halves of the comparison.
+(measured: `quoted` length 4 for `Ид`), and `m.idJson[1 .. 1]` is the ASCII `"` that proves
+the value is a quoted string rather than the word `null`. Corrected in Task 1: Seed7 5.4.10 has
+no three-argument `substr` function — `string.s7i` offers `[start .. stop]`, `[.. stop]`,
+`[start ..]` and `[start len n]` — so the call as briefed did not analyse, and the slice is shipped. `14` is `"` + `\ud83d` + `\ude00` + `"` — the pair arrives from `readJson` as two lone surrogates and `jsonw` escapes each, which is the behaviour `tests/jsonw_test.sd7:49-52` already pins for a written string. A mutant that used `str(idValue)` for the string arm answers 14 characters for that id — measured, `str()` of the two-character id is `"\1048;\1076;"`, one backslash escape per character — so it reddens this check on both halves of the comparison.
 
 - [ ] **Step 4: Stub `idJsonOf`, so the checks run on values**
 
-Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 46 checks, 10 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab) and **both** length checks. The other five pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
+Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 46 checks, 12 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab), **both** length checks, and the two pre-existing `parseMessage` checks `isRequest` and `id` — the stub answers `FALSE` for the first and the stub's `idJson` is `"null"` for the second, and `id` must already read `idJson` at this step or the suite would not analyse at all. Corrected in Task 1's run, which wins over this arithmetic: the count briefed was 10. The other five new checks pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
 
 - [ ] **Step 5: Implement**
 
@@ -271,7 +273,7 @@ Expected: 21 graded lines each `0 failed`, `git status --porcelain -uall` empty 
 - `{"id":"42"}` is answered `"id":"42"`, at every method including `initialize`; `{"id":10.5}` is answered `10.5`, not `10` and not `0`.
 - A message with no usable id (`true`, `null`, `[1]`, `{…}`, absent) produces **no** frame, which also ends the spec violation where a `textDocument/hover` notification was answered `id: 0`.
 - An unknown method asked with a string id produces `-32601`.
-- Fifteen unit checks and six wire checks exist; four named mutants in Task 1 Step 7 (whose stub-step counterpart reddens 9) and two in Task 2 Step 3 each redden a named check, and Task 2 Step 3 records that `junk == 0` cannot see a wrong id.
+- Fifteen unit checks and six wire checks exist; four named mutants in Task 1 Step 7 (whose stub-step counterpart reddens 12, measured in Task 1's run) and two in Task 2 Step 3 each redden a named check, and Task 2 Step 3 records that `junk == 0` cannot see a wrong id.
 - The `ponytail:` note at `src/rpc.sd7:8-11` is gone and `grep -rn 'integers only' src/ tests/ README.md AGENTS.md docs/` prints nothing.
 - `make test` green; `git status --porcelain -uall` empty.
 
