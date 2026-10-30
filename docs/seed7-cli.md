@@ -170,6 +170,15 @@ named checks, and one mutant — widening the high-surrogate bound — escaped u
 added, which is the discovery the check existed to record).
 ```
 
+Both revert recipes in the executed plans are the same trap, one level finer. The id plan tells a
+mutator to revert each mutation with `git checkout HEAD -- <file>`, and two of its tasks did exactly that.
+The command restores the *committed* file, so it also discards any uncommitted work in that file: on this
+branch it ate the coordinator's own new `transcript` pin along with the mutation it was undoing, and the
+proof had to be run a second time after the check was re-applied. `AGENTS.md` § *Every change* now names
+both forms — `git checkout -- .` (index) and `git checkout HEAD -- <file>` (committed state) — and the rule
+is to restore the exact bytes changed when a file has uncommitted work in it. The plans keep the old
+recipe as written: a plan describes the tree as it was when it was authored, not as it is.
+
 ## Seed7 traps — the refused-name set
 
 `CANNOT_BE_NAME` as measured: 63 entries for `s7` 5.4.10, re-probed word by word. The array
@@ -336,7 +345,8 @@ for it; the s7c mechanism and its citation are here and in the CLI reference abo
 
 ## Milestones
 
-The M1-M5 record in full: what is merged, what is still open from M3, why R-F10 is a
+The M1-M5 record in full, plus what `m5-containment-and-rf10` merged on top of it: what is
+merged, what is still open from M3, why R-F10 is a
 conformance violation as well as stale data, the M5 reflection re-measurement, the measured
 cost of filling every library scope record, and how scan.sd7 carries the UTF-16 column of a
 token without a cumulative table. What is true today for a reader is the What works / What does
@@ -373,6 +383,19 @@ projection of it. A token's UTF-16 column is carried forward incrementally by `n
 stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a whole
 document is O(document), not O(document × tokens). The reflection API yields declarations
 only, never use sites, which is why references and rename stay M5.
+
+`m5-containment-and-rf10` merges two waves over M5. The R-F10 *disclosure*: `refresh` appends one
+`Information` diagnostic per publish, for a `.s7i` buffer and for no other document
+(`src/lsp_server.sd7`'s `LIB_STALE_MESSAGE`), anchored by `doc_store.firstNonEmptyLine` because all
+265 real libraries open with an empty line and a range over an empty line has no width; with it,
+`doc_index`'s prose read catches `RANGE_ERROR`, so an unreadable comment costs the prose and not
+the whole hover. Request-id *fidelity*: `rpc.sd7` echoes the id as the JSON text `readJson` saw
+(a string, a float, an exponent, an integer too wide for Seed7's `integer`), treats any echoable id
+as a request, and answers nothing at all when there is nothing to echo — which is what removed the
+string-id `-32601` silence and the answer delivered under a borrowed id. R-F10 itself stays open:
+what closed is the silence, not the staleness. The measurements are the sections below — *R-F10 —
+the two routes, measured*, *Do not "fix" these — the `-32603` net, reached by `readJson`*, and
+*Protocol decisions — the exit code and the id on the wire, measured*.
 ```
 
 ## Figures re-measured against the sibling checkouts, 2026-10-21
@@ -390,8 +413,8 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | `$ syntax` lines in `lib/syntax.s7i` | 194 | `grep -c '^\$ syntax' lib/syntax.s7i` |
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
-| `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1064 checks: `scan` 66, `features` 191, `lsp_server` 79, `transcript` 196 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin) | `make test` |
+| `corpus_scan.sh`'s file set | 343 (214 `lib/*.s7i` + 129 `prg/*.sd7`), re-measured 2026-10-31; the row read 342 / 213 for the life of the branch, and what moved is the installed library set, not the tool: `lib/pixel.s7i`, last touched at Seed7 `f849fc6a` (2026-10-23), is the file the older row did not count | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
+| suite totals | 21 suites, 1108 checks — these eight are the suites that moved or that carry a figure here, not an enumeration of the 21: `rpc` 47, `scan` 66, `doc_store` 81, `features` 191, `lsp_server` 82, `doc_index` 14, `transcript` 212, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read; 1 077 → 1 100 is the request-id wave, measured 2026-10-31 at HEAD and against the tree at `8d00014`, where the 1 077 was taken: `rpc` 31 → 47 — the largest single growth on the branch, the id-fidelity pins (string, float, exponent, over-wide, surrogate pair) plus the notification-silence pins — and `transcript` 203 → 210; the other 19 suites are unmoved — which per-suite measurement shows and arithmetic does NOT: equal sums at the two endpoints bound the total, they do not force each member, since one suite could grow while another shrank (1 100 − 47 − 210 = 1 077 − 31 − 203 = 843). That correction is the id plan's own Task 2 Step 2 rule — if the run disagrees, the run wins — landing one wave late. 1 100 → 1 106 is the disclosure-anchor and `RANGE_ERROR`-half fix wave, measured 2026-10-31: `transcript` 210 → 211 (the disclosure's non-zero-width pin, on a library fixture whose line 1 is empty as every real `.s7i` has it), `doc_store` 77 → 80 (the three cases of `firstNonEmptyLine`), `doc_index` 12 → 14 (the `catch` arm and the empty-list reset inside it, pinned separately); 1 106 → 1 108 is the minors pass on that review: `transcript` 211 → 212 and `doc_store` 80 → 81. The first is the pin that the library fixture's line 1 IS empty — the anchor checks DERIVE their line from the fixture, so deleting the blank line keeps every one of them green while the production helper is reverted; the original defect survived precisely because nothing pinned that property. The second pins a CRLF blank prefix, which was right on the wire by inheritance from the line-break model and had no check at all. | `make test`; the 31 and the 203: `git archive 8d00014 src tests \| tar -x -C /tmp/at1077` then `s7 -q -l /tmp/at1077/src /tmp/at1077/tests/rpc_test.sd7` and `python3 /tmp/at1077/tests/transcript.py` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -400,9 +423,10 @@ Two measurement traps found while taking these, both of which produce a confiden
   the regex was wrong. Count mixed-case words with `[A-Za-z_0-9]+` or verify against
   `sh tools/keyword_gate.sh`, which re-derives the set from the interpreter itself.
 - **`find` recurses where the tool's glob does not.** `find ~/seed7/lib ~/seed7/prg -name '*.s7i'
-  -o -name '*.sd7'` reports 394 files, because `lib` holds 264 `.s7i` counting its
+  -o -name '*.sd7'` reports 395 files, because `lib` holds 265 `.s7i` counting its
   subdirectories, while `tools/corpus_scan.sh` passes `"$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7`
-  and so sees 342. A drift claim against that number was an artifact of the measuring command,
+  and so sees 343 (both re-measured 2026-10-31; the document carried 394 / 264 / 342, which were
+  the same install one library short of this one). A drift claim against that number was an artifact of the measuring command,
   not of the checkout; re-derive a file count with the same glob the tool uses.
 
 ## Citation defect, counted and closed
@@ -558,3 +582,257 @@ with `defaultLibrary` and no `declaration`, i.e. `{"data":[0,0,6,3,2]}` where th
 — `didOpen`, then `definition` at `{"line": 12, "character": 18}` (one past the token; `wordAt` is
 left-of-character) and `semanticTokens/full` — or read the same two answers as green pins in
 `tests/transcript.py` and `tests/semantic_tokens_test.sd7`.
+
+## R-F10 — the two routes, measured
+
+AGENTS.md's *Do not "fix" these* keeps the rule: an open `.s7i` is analysed through `analysis.sd7`'s
+`driverFor(path)`, which reads the file back from disk; `refresh` discloses that with one `Information`
+diagnostic per publish; the staleness itself stays open. This is the evidence for the figures in that
+bullet, and the way to take them again — the measurement behind the first version of the claim was a
+`/tmp` scratch, which made it unciteable.
+
+The heading's wording is now a frozen token in `tools/agents_required.txt`, appended after the R26
+replay (`git show d300662:AGENTS.md` matches neither the full heading nor the looser `two routes`, so
+none of it was already there). Its limit is the gate's own union rule: the check reddens only when
+`AGENTS.md`'s two italic pointers and this heading go **together** — measured, removing all three
+prints `MISSING` and one failed check, while deleting this heading alone with the pointers still
+naming the old wording prints `0 failed`. A rename on one side of the pair therefore stays green and
+leaves two dangling references, the same shape R26 in `tools/agents_gate.sh` exists to catch, so a
+rename must move both hosts at once. Do not answer the gap with a second token beside the first: that
+would be a guard that cannot fail for exactly the rename it is meant to catch.
+
+    sh tools/rf10_probe.sh                    # $1 overrides the default /home/username/seed7
+
+One Seed7 program, compiled `s7c -O2 -l "$SEED7/lib" -l "$SRC"` (`$SRC` is this repo's `src`, so the
+probe reads the working tree's `analysis.sd7`), run over the 214 top-level `lib/*.s7i`
+plus `prg/hello.sd7` as a labelled `CONTROL` row outside the aggregate. Per library it prints two rows
+of the same analysis: `DRIVER` — the text `driverFor(path)` builds, taken from `analysis.sd7` rather
+than retyped, so the probe cannot drift from the server — and `LEAD` —
+`$ include "seed7_05.s7i";` then the file's own text, what a buffer would be. Each row carries
+`CLEAN`/`NOISY`, `errorCount`, `length(globalObjects(prog))`, the records whose `file(obj)` is
+`BUFFER_FILE`, and the first error message. Deliberately not in `make test`: one analyze phase per
+route per library.
+
+The committed artifact is `docs/rf10-measurement.md` (434 lines, header
+`# seed7 tree: /home/username/seed7 c93282a6`). Its reproducibility claim has two halves measured in
+two environments, and they must not be read as one: the original **three consecutive runs byte-identical**
+were three runs in this shell's collation, before anything set `LC_ALL=C`. The `LC_ALL=C` export came
+later, in the fix wave, because the row order is the shell's collation of the `lib/*.s7i` glob and not
+anything the probe decides — `tools/rf10_probe.sh` exports it itself. The artifact was then regenerated
+under `C`, and four further runs under `C` are byte-identical; that regeneration moved **44 lines** of
+position with no row and no figure changed — verified from the two committed artifacts, where
+`git diff --numstat 20a058d 8d00014 -- docs/rf10-measurement.md` reports 44 added and 44 removed and
+the sorted files are identical, so it is a pure reorder — `aes.s7i` before `aes_gcm.s7i` being one
+moved pair rather than the total. Five named rows
+and the aggregate, taken from the artifact (`string=` there counts the records whose `file(obj)` is
+`BUFFER_FILE`, and it is 0 for the two `NOISY` libraries — nothing was attributed to the buffer):
+
+| file | `DRIVER` | `LEAD` |
+|---|---|---|
+| `lib/strifile.s7i` | `CLEAN errors=0 records=3132` | `CLEAN errors=0 records=3132`, 17 records report `STRING` |
+| `lib/json.s7i` | `CLEAN errors=0 records=4903` | `CLEAN errors=0 records=4903`, 92 `STRING` |
+| `lib/bigint.s7i` | `CLEAN errors=0 records=3472` | `CLEAN errors=0 records=3472`, 66 `STRING` |
+| `lib/basearray.s7i` | `CLEAN errors=0 records=3060` | `NOISY errors=2 records=3060`, first `Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"` |
+| `lib/null_file.s7i` | `CLEAN errors=0 records=3060` | `NOISY errors=44 records=3060`, first `Redeclaration of "null_file"` |
+| the 214 top-level libraries | — | **184 `CLEAN` / 30 `NOISY`**; records agree for 213 |
+
+    SENTINEL files=214 leadClean=184 leadNoisy=30 recordsSame=213
+
+Two caveats a sentinel cannot carry, both readable in the artifact. 29 of the 30 `NOISY` rows begin
+`Redeclaration of …`; the 30th is `lib/multiscr.s7i` (`errors=2 records=4094 string=5 first=Match for
+openWindow(SCR, 2, 2, 10, 78) failed`), which is `NOISY` on **both** routes — `SCR` is `var file:` at
+`multiscr.s7i:41` while `window.s7i:57` wants `ref text: outText`, so the no-match belongs to the
+library and not to the route — and so it is not a route split: the count of libraries whose own text is
+not analysable while the driver route is clean is 29. And the record counts agree for 213 of 214: the
+one disagreement gets its own row, `RECORDS-DIFF …/lib/seed7_05.s7i driver=3060 lead=3061`.
+
+Two figures were refuted on the way and must not be restated: `recordsSame=178` came from comparing the
+two formatted rows at a fixed byte position, so it read "different" whenever the two error counts had
+different digit widths; and the first run's `leadNoisy=46` counted 16 rows the probe's own reader had
+contaminated — a plain `open(path, "r")` yields one character per byte, and the C1 characters that
+produces inside string and char literals are what the analyzer then refused. `readAll` now uses
+`openUtf8` and `requireDecoded` fails the run on any character in U+0080..U+009F rather than grading it:
+that is where 46 became 30.
+
+**The probe grades the route, not the file list.** Re-measured on this tree by mutating one line
+(`led := grade(own, dirs)` — `LEAD` loses the essential include), writing the output outside the repo
+and restoring the script from a saved copy:
+
+    SENTINEL files=214 leadClean=1 leadNoisy=213 recordsSame=1
+    LEAD /home/username/seed7/lib/strifile.s7i NOISY errors=1731 records=0 string=0 first=Expression expected found const
+    CONTROL /home/username/seed7/prg/hello.sd7 CLEAN errors=0 records=3061 string=1 first=
+
+A library is not a whole program: stripped of the include, `LEAD` parses nothing — the `strifile.s7i`
+row above answers `records=0`, so nothing is attributed to the buffer — and 213 of the 214 go `NOISY`,
+while the program control stays `CLEAN` with its one `STRING` record. Restoring the include returns the
+sentinel to `184 / 30 / 213`.
+
+**A scratch path is not an escape.** The tempting fix for the staleness — write the buffer's text to a
+temp file and analyse *that* path — was measured with the same probe over two copies placed outside
+`lib/`, in a scratch directory, nothing written into the repo. Each gave the `DRIVER` route the same
+counts as `LEAD`, and the same first messages as the real paths: `basearray.s7i` **2** errors
+(`Redeclaration of "array [ (val integer: minIdx) .. ] (val type: baseType)"`) and `null_file.s7i`
+**44** (`Redeclaration of "null_file"`), where the identical `DRIVER` route on the real `lib/` path is
+`CLEAN`. The reason is the closure: `seed7_05.s7i` has already read `lib/basearray.s7i`, so a second
+path carrying the same declarations is a second declaration set rather than a way around the driver.
+The driver route is clean for a library only when the path is the one the closure already read — which
+is R-F10 in one sentence, and why the temp-file route, like comparing buffer to disk, buys nothing.
+
+**The disclosure, and what pins it.** `src/lsp_server.sd7`'s `LIB_STALE_MESSAGE` is the whole sentence
+the user reads, quoted verbatim in `README.md`'s *What does not work yet*. It is appended after
+`mapDiagnostics`, so a document capped at `MAX_DIAGNOSTICS` still sees it; it fires on `uris.sd7`'s
+`isLibraryBufferPath` and on no other document, and inside `analysable(uri)`, so an untrusted buffer
+still publishes nothing. The record is `SEV_INFORMATION` at `column1 := 0` and
+`line1 := doc_store.firstNonEmptyLine(openDocs[uri])`; the publish path lands on the whole first
+NON-EMPTY line of the buffer — or on line 1 when the buffer holds no character at all, where no
+width exists to anchor on and the range collapses again by necessity, not by oversight — and
+`didClose` publishes the empty list that clears it. Line 1 is NOT that
+line in any real library: `find ~/seed7/lib -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; |
+sort -u` prints only `1` — a bare newline — for all 265 of them (214 top level), and an anchor on an
+empty line has no width: `charColumnForBytes` returns column 1 without entering its loop, so
+`lspRangeBytes` collapses both bounds to 0 and **no `column1` value fixes it**. The shipped
+`transcript` library fixture began with a real declaration, so its range pin was truthful about the
+fixture and blind to the domain — the defect was measured on `lib/aes.s7i` and five other libraries as
+`{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}`, the only diagnostic in the
+publish. What pins it now: three `lsp_server` checks grade the decision (a `.s7i` gains exactly one, a
+`.sd7` gains nothing, the severity is `Information`), four `doc_store` checks grade the anchor (two
+blank leading lines name the third, a line 1 that holds text stays 1, an all-blank buffer falls back to
+1, and a CRLF blank prefix is blank too), and eight `transcript` checks pin it on frames — once per
+publish, `severity` 3, the whole sentence
+(the Seed7 unit suite prints ASCII, so only two words of it are comparable there), that the fixture's
+line 1 IS empty (the anchor expectations are DERIVED from the fixture, so its shape is a premise and not
+a coincidence, which is why it gets its own check rather than hiding in the range's description), that
+the range has non-zero width, that it is the whole first non-empty line, the
+`didClose` clear, and that no other document in the run receives it. Not measured: whether a client
+drops a `start == end` range or only fails to squiggle it — `start == end` is legal LSP and no client
+exists in this environment.
+
+**Why the `-32603` bullet is conditional.** `doc_index.readLinesOf` reads library prose with `openUtf8`
+— the plain `open` was the mojibake: `lib/asn1.s7i`'s euro sign in its own `(** … *)` comment reached
+hover as three characters — and `readln` on a `utf8File` raises `RANGE_ERROR` at the first byte sequence
+that is not valid UTF-8. Re-measured here with no handler, reading `~/seed7/prg/err.sd7` the way
+`readLinesOf` does: 88 lines, then `Uncaught exception RANGE_ERROR raised at ut8_rtl.c(771)`. The raiser
+is therefore **line 89**, whose bytes are `ED 80 41` — a lead byte whose second continuation is missing,
+which is that line's own labelled case (`*UTF-8 continuation byte expected found "A"*`). Re-take the
+bytes:
+
+    sed -n '86,89p' ~/seed7/prg/err.sd7 | od -An -tx1
+
+The first group holds `c0 80` (line 86) and the last two hold `ed 80` then `41` (line 89, split across
+`od`'s 16-byte rows); `~/seed7/src/striutl.c:850-930` — `utf8_to_stri` — is the decoder that decides
+which of the two raises. It is **not** the `C0 80` at line 86, and the 88 clean lines cover lines 87 and
+88 (`ED A0 80`, `F4 90 80 80`) too:
+this decoder reads the overlong pair as `chr(0)` and does not raise on any of those three. No
+library is like that — `iconv -f UTF-8 -t UTF-8` over all 265 `lib/*.s7i` (recursive) fails on none of
+them — but one `prg/*.sd7` of 129 does, `err.sd7`, and a client may open anything inside its root. So
+without `doc_index.sd7`'s `catch RANGE_ERROR` the hover of a symbol declared in such a file costs the
+request a `-32603` (`main.sd7`'s `catch RANGE_ERROR` answers it through
+`handlerFailed("range", body, msg)`, which is the observed answer), and the bullet's claim that no
+input reaches the net would be false; with it, hover keeps the signature and
+loses the prose, which is what an unreadable comment already answers. Two `doc_index` checks reach the
+arm and they pin its two halves separately. The twelfth is a scratch file holding one `FF` byte, a lone
+UTF-8 start byte, asked at the line the decoder raises on — neutralize the arm and the raise escapes,
+the suite prints no graded line, and `make test` cannot pass. The thirteenth asks at a declaration
+ABOVE the raising line, in a file whose `(** … *)` is clean UTF-8 with the `FF` below it: `readln`
+accumulates the good lines and then raises, so the `lines := 0 times ""` reset inside the arm is what
+makes the answer `""` — delete only that reset and the check answers its expected `""` against
+`"Documents early."` while the other thirteen stay green. `doc_index`'s fourteenth is the control that
+the same four lines are readable prose at all (`proseForText`, in memory, nothing erases them), so the
+thirteenth cannot pass on a comment no walk would ever find. That is why AGENTS.md records the net as
+reached-but-silent rather than unreachable, and why the next section exists.
+
+## Do not "fix" these — the `-32603` net, reached by `readJson`
+
+The rule is AGENTS.md's `-32603` bullet. Its premise — that no input reaches the net — was measured
+wrong here, while the safety it asserts still holds, so both halves are recorded.
+
+**The raiser is `readJson`, not `parseStri`.** `readJson` recurses, and a body nested deep enough
+exhausts memory and raises `MEMORY_ERROR`. Probed with no handler, `s7 -q <file>`, where `nest(d)`
+is `d` opens, `7`, `d` closes:
+
+    depth  5 000 array -> PARSED        depth 11 000 array -> PARSED
+    depth 11 500 array -> MEMORY_ERROR
+    depth  7 500 object -> PARSED       depth  8 000 object -> MEMORY_ERROR
+
+The bound is the interpreter running out of memory, so those rows are a property of this machine and
+this build, not a language constant — re-measure before quoting them. Objects reach it sooner than
+arrays because each level costs `{"a":` as well as `}`. `MAX_FRAME_BYTES` is 67 108 864, so the
+30 000-deep array body used below — 60 057 bytes — is an ordinary, in-limits frame: nothing about
+the transport refuses it.
+
+**What the server does with it.** `s7 -q -l src src/main.sd7`, each session `initialize(id 1)`, then
+the deep body with `"params"` holding `d` nested arrays and `"id":"deep<d>"`, then
+`"id":"after"`, then `shutdown(id "s1")`, then `exit`:
+
+    d =     500  1 055 bytes -> -32601 under "deep500",   code 0, junk 0
+    d =   5 000 10 056 bytes -> -32601 under "deep5000",  code 0, junk 0
+    d =  30 000 60 057 bytes -> NO FRAME for "deep30000", code 0, junk 0
+
+At 30 000 the only trace is `handler failed (memory): {…}` on **stderr**; `"after"` and `"s1"` are
+answered normally, so the session survives, and no non-frame byte reaches stdout.
+
+**Why no `-32603` frame appears.** `parseMessage`'s guard wraps its own `readJson` call and names
+`RANGE_ERROR`, `INDEX_ERROR`, `ILLEGAL_ACTION` — `MEMORY_ERROR` is not among them, so the raise
+escapes to `main.sd7`'s block, whose `catch MEMORY_ERROR` calls `handlerFailed("memory", body, msg)`.
+`handlerFailed` sends `-32603` through `sendError`, and `sendError` answers `msg.idJson` — but the
+raise happened before any id was read, so `msg.idJson` is what the loop-carried reset left it:
+`"null"`, which the guard answers with silence. Silence is the right outcome and it rests on one
+line. Deleting `main.sd7`'s `msg := rpcMsg.value;` and re-running the 30 000 session produces
+
+    {"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"internal error: memory"}}
+
+— a second response under `initialize`'s id, beside the result already sent: the four frames of
+that session become five, and `1` answers twice. That mutation is what proves the comment above the
+reset true; nothing in `tests/transcript.py` reaches it, so the proof lives here.
+
+**A raise from the *id* read would behave the same way.** Mutating `idJsonOf`'s number arm back to a
+Seed7 integer parse — `out := str(integer(str(idValue)));` — raises `RANGE_ERROR` inside
+`parseMessage` but *outside* its guard, so on the server it lands in `catch RANGE_ERROR` and answers
+`handler failed (range)` with the same null-id silence; in `tests/rpc_test.sd7` it dies before its
+graded line (uncaught at `tests/rpc_test.sd7(36)`, the float-id check, which is the first non-integer
+numeric id the suite reads). The caught version of the same mutant — `catch RANGE_ERROR: out := "0"`,
+which is what the retired `intAt(root, "id", 0)` did — reddens three `rpc` checks, the new
+`an id too wide for integer() echoes its own text` among them, and leaves the other 20 suites green.
+
+## Protocol decisions — the exit code and the id on the wire, measured
+
+The rules are AGENTS.md's `exit` bullet and its `-32700`/`-32002` bullet.
+
+**The spec sentence, quoted.** *exit*: "The server should exit with **success code 0** if the
+shutdown request has been received before; **otherwise with error code 1**." Provenance matters here:
+that wording reaches us through this branch's LSP 3.18 spec notes (its *exit* section, citing
+`L4885`–`L4891` of a plain-text extraction held at `/tmp/lsp318.txt`), and that file is no longer on
+disk, so nobody in this tree has re-read it since. The behaviour is pinned by measurement and by two
+`transcript` checks, not by the quotation — which is why `AGENTS.md` states the contract it measured
+rather than citing a spec file it cannot open. Treat the quote as a pointer to verify against a live
+copy before repeating it in new prose.
+
+**Where the code is decided is `lsp_server.sd7`, not `main.sd7`.** The `exit` arm reads
+`if gotInitialize and gotShutdown then exit(0); else exit(1); end if;` and `main.sd7`'s gate names
+`exit` beside `initialize`, so the notification reaches that arm in every session shape. Measured
+with well-framed sessions against `s7 -q -l src src/main.sd7`:
+
+    hover(id "x1"), shutdown(id "s1"), exit        [no initialize]  -> code 1, 2 frames, stderr empty
+    initialize, shutdown, exit                                      -> code 0, 3 frames
+    initialize, exit                              [no shutdown]     -> code 1, 1 frame
+    exit                                            [nothing before]  -> code 1, 0 frames
+
+The first row is the one a client author reads: the two refusals are
+`-32002` **carrying the ids that asked** — `"id":"x1"` and `"id":"s1"`, strings intact — with
+`junk = 0`. `main.sd7`'s tail is a different ending, for a stream that stops without any `exit`
+notification: `exit(0)` for a completed session, `exit(2)` for `framingFatal`, and otherwise no
+`exit()` at all, which is **0** — measured, because a Seed7 `main` that merely returns reports 0,
+both interpreted (`s7 -q`) and compiled (`s7c -O3`). So the two calls that must never be merged into
+one `exit(0)` are `lsp_server.sd7`'s; `main.sd7`'s tail is where the framing-fatal `exit(2)` lives.
+Already pinned by harness checks: `tests/transcript.py:168` (`exit` after `shutdown` is 0) and `:175`
+and `:1056` (status 1 without it — sessions that have no `initialize` either).
+
+**Number and string ids on the wire.** `"id":99999999999999999999` is answered
+`"id":99999999999999999999`, `code 0`, `junk 0` — the same literal that `integer()` refuses with
+`RANGE_ERROR` (measured directly, as it refuses `"10.5"` and `"1e3"`), which is why the retired
+`intAt(root, "id", 0)` answered id `0` and the text arm answers the client's own digits. An `"id"`
+holding a surrogate pair is echoed **as it was sent**, not folded: a body whose id is the escapes
+`\ud83d\ude00` answers the 14 ASCII bytes `22 5c 75 64 38 33 64 5c 75 64 65 30 30 22`, and a body
+whose id is the raw character answers `22 f0 9f 98 80 22` — the same four UTF-8 bytes it came in.
+`strAt` folds a pair to one character; the id path never does, and `tests/rpc_test.sd7`'s
+14-against-3 length comparison is the pin (`idJsonOf`'s comment holds both numbers).

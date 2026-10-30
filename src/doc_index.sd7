@@ -1,9 +1,13 @@
 $ include "seed7_05.s7i";
-  include "osfiles.s7i";
+  include "utf8.s7i";
 
 # The (** ... *) comment above a declaration, which is the only documentation Seed7
 # libraries carry. Hover asks for it by (file, declaration line) -- both come straight out
 # of reflection -- and gets "" when there is none.
+#
+# readLinesOf opens with openUtf8: the .s7i files hold UTF-8 and plain open() yields one
+# character per byte, which is how the euro sign in lib/asn1.s7i's own comment for
+# genAsn1String reached hover as U+00E2 U+0082 U+00AC (310 characters became 314).
 
 const func array string: readLinesOf (in string: path) is func
   result
@@ -13,7 +17,7 @@ const func array string: readLinesOf (in string: path) is func
     var string: one is "";
   begin
     block
-      f := open(path, "r");
+      f := openUtf8(path, "r");
       while not eof(f) do
         readln(f, one);
         lines &:= one;
@@ -21,6 +25,20 @@ const func array string: readLinesOf (in string: path) is func
       close(f);
     exception
       catch FILE_ERROR:
+        lines := 0 times "";
+      # readln on a utf8File raises RANGE_ERROR at the first byte sequence that is not valid
+      # UTF-8 (measured raising at ut8_rtl.c(771): a lone FF, the pair FF FE, C3 28, a lone
+      # 80; the overlong pair C0 80 does NOT raise, it decodes to chr(0)). The empty list is
+      # what an unreadable comment already answers, so hover keeps the signature and loses the
+      # prose instead of costing the request a -32603. Do not fall back to open() here -- that
+      # is the one byte per character read whose mojibake the reader above exists to remove.
+      # The close below is hygiene, not an outage, and it must not be read as either: under
+      # `ulimit -n 64' 5 000 raising proseFor calls produced no exhaustion, and asn1.s7i's prose
+      # measured 310 characters both before and after them -- that equality is the detector, not
+      # any fd-table figure. It bounds the descriptor held at one time -- the raise skips the
+      # in-block close, and close(f) here was measured to raise nothing -- and it changes no answer.
+      catch RANGE_ERROR:
+        close(f);
         lines := 0 times "";
     end block;
   end func;

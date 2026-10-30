@@ -875,7 +875,14 @@ expect(len(U16_DIAGS) == 0 and len(U16_BMP_DIAGS) == 0,
 # a half-applied edit is not. Both halves need the wire, because the frame path is where the
 # uri's `.s7i' suffix is decided.
 RN_LIB_PATH = "/tmp/seed7_lsp_transcript_rn_lib.s7i"
-RN_LIB_TEXT = ('const type: Counter is new struct\n'
+# The first line is EMPTY because that is the shape of every real library: `find ~/seed7/lib
+# -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u' prints only `1' -- a bare
+# newline -- for all 265 of them. A range anchored on a blank line collapses to (0,0)->(0,0) in
+# the `lspRangeBytes' clamp, so it must land on the first line that holds a character. Whether a
+# client drops a zero-width range or merely draws no squiggle was NOT measured -- no client exists
+# in this environment -- so this fixture pins the wire property, not a rendering.
+RN_LIB_TEXT = ('\n'
+               'const type: Counter is new struct\n'
                '    var integer: amount is 0;\n'
                '  end struct;\n'
                '\n'
@@ -889,20 +896,31 @@ RN_LIB_TEXT = ('const type: Counter is new struct\n'
 with open(RN_LIB_PATH, "w") as f:
     f.write(RN_LIB_TEXT)
 RN_LIB_URI = "file://" + RN_LIB_PATH
+# The whole sentence the user reads, verbatim as src/lsp_server.sd7's LIB_STALE_MESSAGE spells it.
+# The Seed7 unit suite prints ASCII, so it can only compare two words of it; this is the one place
+# the tail is pinned.
+LIB_STALE = ("unsaved edits in this library are not analysed: the outline, hover, completion"
+             " and the diagnostics come from the file on disk")
 RL = RN_LIB_TEXT.split("\n")
+# The 0-based line the disclosure must be drawn on: the first one that is not empty.
+RN_LIB_ANCHOR = next(idx for idx, text in enumerate(RL) if text != "")
 RN_LIB_DECL = RL.index("var integer: ticks is 0;")
 RN_LIB_USE = RL.index("    ticks +:= 1;")
 RN_LIB_DECL_COL = u16(RL[RN_LIB_DECL][:RL[RN_LIB_DECL].index("ticks")])
 RN_LIB_USE_COL = u16(RL[RN_LIB_USE][:RL[RN_LIB_USE].index("ticks")])
 RN_LIB_COL = RN_LIB_USE_COL + 2
-S7I_MSGS = [APPLY, msgs[1], opened(RN_LIB_URI, RN_LIB_TEXT),
+# msgs[2] and msgs[3] -- the .sd7 didOpen/didChange of /tmp/tt_a.sd7 -- are the control document
+# for the disclosure's negative check: with no second uri publishing in this very run, "no other
+# document receives it" could only pass, and the `disclose to every buffer' mutant that proves it
+# can fail would redden nothing here.
+S7I_MSGS = [APPLY, msgs[1], msgs[2], msgs[3], opened(RN_LIB_URI, RN_LIB_TEXT),
             req(120, "textDocument/references",
                 dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL),
                      context={"includeDeclaration": True})),
             req(121, "textDocument/prepareRename", pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL)),
             req(122, "textDocument/rename",
                  dict(pos(RN_LIB_URI, RN_LIB_USE, RN_LIB_COL), newName="beats")),
-            shutdown(123), exit_()]
+            closed(RN_LIB_URI), shutdown(123), exit_()]
 replies, code, err, junk = run([frame(m) for m in S7I_MSGS])
 by_id = {r.get("id"): r for r in replies if "id" in r}
 lib_refs = by_id.get(120, {}).get("result")
@@ -917,6 +935,58 @@ expect(answered_null(by_id, 121),
        "prepareRename refuses the same cursor in a .s7i buffer (%r)" % by_id.get(121, {}))
 expect(answered_null(by_id, 122),
        "and rename refuses it too, so no edit can land on a stale line (%r)" % by_id.get(122, {}))
+
+# Graded from the frames, not from LIB_MSGS, which holds log text only. Grouped per publish
+# notification, so "once" means once per publish rather than once per session. The three checks
+# below that grade RN_DIS use all(), which is TRUE over an empty list, so they say nothing until
+# the >= 2 / == 1 holds -- the same vacuity the astral fixture's guard names for its own checks.
+RN_PUBS = [r["params"]["diagnostics"] for r in replies
+           if r.get("method") == "textDocument/publishDiagnostics"
+           and r["params"]["uri"] == RN_LIB_URI]
+RN_DIS = [[d for d in p if "unsaved edits in this library" in d.get("message", "")]
+          for p in RN_PUBS]
+expect(len(RN_PUBS) >= 2 and all(len(x) == 1 for x in RN_DIS[:-1]),
+       "the .s7i buffer is told once per publish that its analysis is the file on disk (%s)"
+       % [len(x) for x in RN_DIS])
+expect(all(d["severity"] == 3 for x in RN_DIS for d in x),
+       "and the disclosure is Information, so a client does not badge it as a code error")
+expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
+       "and it is the whole sentence the user reads, not a prefix of it (%s)"
+       % [d["message"] for x in RN_DIS for d in x])
+# The anchor expectations below are DERIVED from the fixture, so the fixture's shape is a premise
+# and not a coincidence: delete the leading blank line and every range check stays green with the
+# production anchor reverted. This check passed on sight when it was written (the fixture already had
+# the blank line) and is here because the original zero-width defect survived for want of it.
+expect(RL[0] == "",
+       "and the fixture opens like every real library does: an empty line 1 (%r)" % RL[0])
+# `all()' is TRUE over an empty list, so the count is repeated as a conjunct in the two checks
+# below: without it both range checks pass on a build that discloses nothing at all.
+expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
+       all(d["range"]["end"]["character"] > d["range"]["start"]["character"]
+           for x in RN_DIS[:-1] for d in x),
+       "and its range has the width a squiggle needs (%s)"
+       % [d["range"] for x in RN_DIS for d in x])
+expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
+       all(d["range"] == {"start": {"line": RN_LIB_ANCHOR, "character": 0},
+                          "end": {"line": RN_LIB_ANCHOR,
+                                   "character": u16(RL[RN_LIB_ANCHOR])}}
+           for x in RN_DIS for d in x),
+       "and its range is the whole first NON-EMPTY line of the buffer -- line %d, not the blank "
+       "line 1 every real .s7i opens with (%s)"
+       % (RN_LIB_ANCHOR, [d["range"] for x in RN_DIS for d in x]))
+expect(RN_PUBS and RN_PUBS[-1] == [],
+       "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
+# Per uri and per publish, and requiring the control to have published: the disclosure is a property
+# of a .s7i path, never of a buffer analysed from the client's own text, and a third document that
+# never published cannot make this pass.
+RN_STALE_BY_URI = [(r["params"]["uri"],
+                    len([d for d in r["params"]["diagnostics"]
+                         if "unsaved edits in this library" in d.get("message", "")]))
+                   for r in replies if r.get("method") == "textDocument/publishDiagnostics"]
+expect(all(n == 0 for uri, n in RN_STALE_BY_URI if uri != RN_LIB_URI)
+       and any(uri != RN_LIB_URI for uri, _ in RN_STALE_BY_URI),
+       "and no other document in the run receives it: the disclosure is a property of a .s7i path, "
+       "never of a buffer analysed from the client's own text (%s)" % RN_STALE_BY_URI)
 LIB_MSGS = [r.get("params", {}).get("message", "") for r in replies
             if r.get("method") == "window/logMessage"]
 LIB_WHY = " is a library buffer whose symbols come from disk while R-F10"
@@ -953,6 +1023,42 @@ expect(LIB_RENAME_LOG is not None and LIB_RENAME_ANS is not None and
 expect(junk == 0, "the library-buffer run put only frames on stdout (junk=%d)" % junk)
 one_answer_per_request(S7I_MSGS, replies, "the library-buffer run")
 
+# --- Task 5's reader, on the wire: a library comment's non-ASCII arrives whole ----------------
+# The defect was in a DISK read, not in a request body, so no frame this suite can send carries a
+# `€' the server would then degrade: `frame' escapes non-ASCII on the way IN and jsonw escapes only
+# control chars and lone surrogates -- `€' goes out as raw UTF-8. So the pin goes on the DECODED
+# hover prose from a real library -- lib/asn1.s7i's `(** ... *)' above `genAsn1String' (line 372)
+# holds a euro at 369. It is the one cover for reader -> prose -> raw UTF-8 out -> Content-Length,
+# all four in play, so the wire value is characters, not bytes. Decoded, the euro is one
+# character (U+20AC); read one byte per character it becomes three (U+00E2 U+0082 U+00AC) and no
+# U+20AC survives, while U+0082 -- which no decoded Seed7 source holds -- appears. Measured, the
+# decoded value is 372 characters with three above U+007F; the byte read is 376 with seven.
+ASN1_URI = "file:///tmp/tt_asn1_prose.sd7"
+ASN1_TEXT = ('$ include "seed7_05.s7i";\n  include "asn1.s7i";\n\n'
+             'const proc: main is func\n  begin\n'
+             '    writeln(genAsn1String("abc"));\n  end func;\n')
+ASN1_LINES = ASN1_TEXT.split("\n")
+ASN1_USE = ASN1_LINES.index('    writeln(genAsn1String("abc"));')
+ASN1_MSGS = [initialize(), opened(ASN1_URI, ASN1_TEXT),
+             req(170, "textDocument/hover",
+                 pos(ASN1_URI, ASN1_USE,
+                     ASN1_LINES[ASN1_USE].index("genAsn1String") + len("genAsn1String"))),
+             shutdown(171), exit_()]
+replies, code, err, junk = run([frame(m) for m in ASN1_MSGS])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+ASN1_HOVER = (by_id.get(170, {}).get("result") or {}).get("contents", {}).get("value", "")
+# The column is the token's END, computed from the fixture: `wordAt' is left-of-character, so on
+# this text genAsn1String occupies 0-based columns 12..24 and 25 is the cursor that names it --
+# measured, 12 and 26 answer null. The index + len(word) form is used, as in the other hovers, so
+# a reformatted fixture cannot silently drift onto a position that answers nothing.
+ASN1_ABOVE127 = sum(1 for ch in ASN1_HOVER if ord(ch) > 127)
+expect("\u20ac" in ASN1_HOVER and ASN1_ABOVE127 == 3 and "\u0082" not in ASN1_HOVER,
+       "hover prose read from lib/asn1.s7i arrives as characters, not bytes: the euro sign is ONE "
+       "character, the comment's three above-U+007F codepoints (U+20AC, U+00E2, U+00AC) are three, "
+       "and no C1 decomposition appears (%d chars, above-U+007F %d, U+20AC x%d, U+0082 x%d)"
+       % (len(ASN1_HOVER), ASN1_ABOVE127, ASN1_HOVER.count("\u20ac"),
+          ASN1_HOVER.count("\u0082")))
+
 # --- M5 Task 10 gap 3: the two lifecycle edges, per method --------------------------
 # main.sd7 gates before handle(), so it cannot tell a new method from an old one -- and a pin
 # on `hover' alone cannot see a method that joins the chain on the other side of the gate. All
@@ -985,6 +1091,61 @@ expect([by_id.get(i, {}).get("error", {}).get("code") for i, _, _ in LIFE_PARAMS
        % [(i, by_id.get(i, {}).get("error")) for i, _, _ in LIFE_PARAMS])
 expect(junk == 0, "the after-shutdown run put only frames on stdout (junk=%d)" % junk)
 one_answer_per_request(LIFE_POST, replies, "the after-shutdown run")
+
+# --- Task 2: string ids on the wire, the -32601 a string id used to lose, and silence ---------
+# Task 1 made "was this a request?" a property of the id, and 27 call sites follow from that.
+# Only frames can show a client would now be answered -- and that a notification still is not.
+# The whole session uses string ids because a wrong id in `initialize' is fatal to a client, and
+# it holds four notifications (`initialized', `didOpen', the idless hover, and a rename whose
+# newName is rejected) beside its five requests. `frame' writes json.dumps with ensure_ascii=True,
+# so every id here is ASCII and the byte-framing blind spot noted above does not apply to it.
+TRIVIAL = ('$ include "seed7_05.s7i";\n'
+           'const proc: main is func\n'
+           '  begin\n'
+           '    writeln("trivial");\n'
+           '  end func;\n')
+STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
+            "params": {"capabilities": {}, "rootUri": "file:///tmp"}},
+           {"jsonrpc": "2.0", "method": "initialized", "params": {}},
+           opened("/tmp/tt_strid.sd7", TRIVIAL),
+           {"jsonrpc": "2.0", "id": "h1", "method": "textDocument/hover",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "id": "u1", "method": "not/a/method", "params": {}},
+           {"jsonrpc": "2.0", "method": "textDocument/hover",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "method": "textDocument/rename",
+            "params": dict(pos("/tmp/tt_strid.sd7", 3, 10), newName="1bad")},
+           {"jsonrpc": "2.0", "id": "d1", "method": "textDocument/definition",
+            "params": pos("/tmp/tt_strid.sd7", 3, 10)},
+           {"jsonrpc": "2.0", "id": "s1", "method": "shutdown"},
+           exit_()]
+replies, code, err, junk = run([frame(m) for m in STR_IDS])
+# Only RESPONSES: `publishDiagnostics' and `window/logMessage' are frames with a `method' and
+# no `id', so collecting on "id" or "method" would put bare `None' entries in the list and the
+# equality below could never hold. Measured on this branch: a session with two notification-only
+# method calls yields responses exactly ['i1', 's1'].
+# Line 3 character 10 lands inside `writeln', so the hover carries its signature and `definition'
+# its library locations (measured). The id checks need only that a frame arrives, but a reader who
+# trims TRIVIAL to a bare main gets a null hover and a scenario that reads as broken while it is not.
+ids = [r.get("id") for r in replies if "result" in r or "error" in r]
+by_id = {r.get("id"): r for r in replies if "result" in r or "error" in r}
+expect(ids == ["i1", "h1", "u1", "d1", "s1"],
+       "every reply carries the string id it answers (%s)" % ids)
+# `next' without a default is not an option here: a mutant that drops the -32601 frame, or answers
+# it under another id, would abort the whole suite on StopIteration and no graded line would print.
+# The `.get(id, {})' idiom of the lifecycle block (:1049) fails the named check instead.
+expect((by_id.get("u1", {}).get("error") or {}).get("code") == -32601,
+       "the unknown string-id method is answered with -32601, not with silence")
+expect("capabilities" in (by_id.get("i1", {}).get("result") or {}),
+       "and initialize answered under its own id, so the client finishes starting up")
+expect(not any(r.get("id") == 0 for r in replies if "result" in r or "error" in r),
+       "and nothing is answered under a borrowed integer id 0 (%s)" % ids)
+expect(not any("error" in r and r["error"]["code"] == -32602 and r.get("id") is None
+               for r in replies),
+       "and the rename notification with a rejected newName is not answered either (%s)"
+       % [r for r in replies if "error" in r])
+expect(code == 0 and junk == 0, "the string-id session exits clean (code=%d junk=%d)" % (code, junk))
+one_answer_per_request(STR_IDS, replies, "the string-id session")
 
 # --- M5 Task 10 gap 4: `workspace': null, the malformed client shape ----------------
 # A missing `workspace' key is pinned by the refusal runs above (msgs[0] has no such key). This

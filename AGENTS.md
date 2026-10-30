@@ -25,7 +25,10 @@ check: when a safety net becomes unreachable from real input, delete the asserti
 rather than inventing a synthetic trigger. To prove an assertion can fail, mutate one
 production branch and require that named check to go FAIL. Do it after
 committing, and revert per file — `git checkout -- .` restores from the index and will
-silently undo work you have not committed yet. When a review or a probe contradicts a
+silently undo work you have not committed yet. `git checkout HEAD -- <file>` is the same trap one
+level finer: it discards your uncommitted edits to *that* file, so mutate-and-revert that way only
+when nothing in the file is uncommitted — otherwise restore the exact bytes you changed, or the
+check you just proved vanishes together with the mutation. When a review or a probe contradicts a
 commit message, correct the message in the next commit — the correction is the finding.
 
 Two mutation-proofing rules this branch learned the hard way: (1) before demanding a
@@ -50,6 +53,14 @@ or fixed by someone who left no report — it passes on sight, which proves noth
 fail. Label it in the commit, and prove it by mutation: revert or widen the specific production
 decision and name the check that goes red. If no mutation reddens anything, the check is decorative and
 should be said so out loud.
+
+A green check on a fixture the product never produces is decorative the same way, and no mutation of
+production code will tell you. When a check pins a position, a range or an offset, measure the corpus
+for its shape and give the fixture that shape: the disclosure telling the user their unsaved library
+edits are invisible was pinned against a library whose first line held a declaration, while all 265
+`lib/*.s7i` begin with an empty line — so its range collapsed to zero width on every real input and the
+suite stayed green. The story and the measurement: *The disclosure, and what pins it* in
+`docs/seed7-cli.md`.
 
 ## Seed7 traps
 
@@ -197,9 +208,20 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - An absent `Content-Length` logs and keeps reading. An unparsable, negative, or
   over-`MAX_FRAME_BYTES` value makes the frame's end unknowable: log, stop reading,
   exit **2**. Recovering a desynced byte-counted stream is not possible.
-- `-32700` with a `null` id for a non-JSON body; `-32600` for a request after
-  `shutdown`; `-32002` for traffic before `initialize`; `-32601` for an unknown
-  request, and silence for an unknown notification.
+- `-32700` with a `null` id for a non-JSON body; `-32600` for a request after `shutdown`;
+  `-32002` for traffic before `initialize` — answered under the id that traffic sent, string or
+  number, measured with `"id":"x1"` and `"id":"s1"` in a session that never initializes;
+  `-32601` for an unknown request, and silence for an unknown notification.
+- The `exit` notification's status code is a decision, not a side effect. `lsp_server.sd7`'s
+  `exit` arm answers `exit(0)` only for a session that saw both `initialize` and `shutdown`, and
+  `exit(1)` otherwise — and it runs even before `initialize`, because `main.sd7`'s gate names
+  `exit` beside `initialize`. Do not collapse those two calls to one `exit(0)`: the spec's rule
+  keys on `shutdown` having been received, and this server refuses `shutdown` before `initialize`,
+  so a refused shutdown can never earn the 0. `main.sd7`'s tail is the *other* ending, a stream that
+  stops without an `exit` notification, and a Seed7 `main` that simply returns reports 0 (measured,
+  interpreted and compiled) — so that path is 0 unless `framingFatal` makes it 2. The sessions, the
+  frames, and the two `transcript` checks that already pin the 1: *Protocol decisions — the exit
+  code and the id on the wire, measured* in `docs/seed7-cli.md`.
 - Full text sync: the **last** `contentChanges` element holds the whole text.
 - A truncated buffer is the normal state while typing, so `END OF FILE`-class analyzer
   messages publish as `DiagnosticSeverity.Information`. Match that class by substring:
@@ -268,14 +290,37 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   analysis still executes code inside the roots.
 - A `.s7i` buffer is analysed through a synthetic driver that reads the file from disk,
   so unsaved library edits report stale diagnostics. Known, recorded as R-F10; it was
-  scheduled for M3 and split into its own plan, so it is still open.
-- The `-32603` containment net in `main.sd7` is still unreachable: `parseStri` does not
-  raise on any input the server can receive (a truncated buffer is the normal state while
-  typing, and the scanner terminates at EOF without raising), and the reflection walk is
-  wrapped in a guard that catches `RANGE_ERROR`, `INDEX_ERROR`, and `ILLEGAL_ACTION`. The
-  `parseStri` call is deliberately outside the guard — wrapping it would turn a raise into
-  an empty diagnostic list, which publishes a falsely clean document. Keep the net. When
-  you add a handler that can raise, add the check that reaches it — and never let the
+  scheduled for M3 and split into its own plan, so it is still open — what closes is the
+  silence, not the staleness: `refresh` appends one `Information` diagnostic per publish,
+  `src/lsp_server.sd7`'s `LIB_STALE_MESSAGE`, for a `.s7i` buffer and for no other document,
+  and `didClose` publishes the empty list. The route stays because the interpreter will not
+  take a library's own text once that library sits inside `seed7_05.s7i`'s include closure:
+  184 of the 214 top-level libraries analyse clean from text and 29 redeclare
+  (`basearray.s7i` 2 names, `null_file.s7i` 44); the 30th NOISY row, `multiscr.s7i`, is NOISY
+  on either route, so it is not a route split. Probe, figures and the scratch-path control:
+  *R-F10 — the two routes, measured* in `docs/seed7-cli.md`.
+- The `-32603` containment net in `main.sd7` is reached by one raise, and that raise answers no
+  frame — so the bullet's old word `unreachable` was measured wrong while its safety holds. What it
+  claimed held of `parseStri`, which does not raise on any input the server can receive (a
+  truncated buffer is the normal state while typing, and the scanner terminates at EOF without
+  raising), and of the reflection walk, wrapped in a guard that catches `RANGE_ERROR`,
+  `INDEX_ERROR`, and `ILLEGAL_ACTION`; the `parseStri` call stays deliberately outside that guard —
+  wrapping it would turn a raise into an empty diagnostic list, which publishes a falsely clean
+  document. What reaches the block is `MEMORY_ERROR` from `readJson` on a request body nested deeply
+  enough: `parseMessage`'s guard wraps only its own `readJson` call and names three other classes,
+  so the raise arrives at `main.sd7`. The observable is `handler failed (memory)` on stderr and
+  **no frame**: the raise happens before the id is read, `handlerFailed` echoes `msg.idJson`, and
+  the loop-carried reset leaves it `null`, which `sendError`'s guard answers with silence. Keep the
+  net, keep the reset — deleting the reset turns that same body into a second `-32603` frame under
+  the *previous* message's id. And keep the bullet understood as conditional in its other
+  direction too: `doc_index.sd7`'s `openUtf8` reader raises `RANGE_ERROR` on a file whose bytes
+  are not valid UTF-8 (the measured raiser is `prg/err.sd7:89`), and the `catch` beside that open
+  is what stops
+  it reaching the request path, so it is not dead code.
+  The byte sequence, the refuted `C0 80` claim and the command:
+  *R-F10 — the two routes, measured* in `docs/seed7-cli.md`; the nesting depths, the frames and
+  the reset mutant: *Do not "fix" these — the `-32603` net, reached by `readJson`* in the same file.
+  When you add a handler that can raise, add the check that reaches it — and never let the
   raise find stdout.
 
 ## Milestones

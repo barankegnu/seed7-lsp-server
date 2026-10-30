@@ -5,13 +5,13 @@ $ include "seed7_05.s7i";
   include "jsonw.sd7";
   include "transport.sd7";
 
-# ponytail: request ids are handled as integers only; every client tested
-# (VS Code, eglot, lsp-mode, nvim) sends integers. A string id echoes back as
-# 0, which the client ignores. Add raw-id text if a client ever needs it.
+# The request id travels as its JSON TEXT, never as an integer. LSP 3.18 (RequestMessage.id,
+# L1501-1520) allows integer | string, and the two are echoed by different rules -- see idJsonOf.
 
 const type: rpcMsg is new struct
     var string: method is "";
-    var integer: id is 0;
+    # "null" means "no usable id": a notification, or an id that is neither number nor string.
+    var string: idJson is "null";
     var boolean: isRequest is FALSE;
     var boolean: parseOkay is TRUE;
     var jsonValue: params is jsonValue.value;
@@ -179,6 +179,35 @@ const func jsonValue: itemAt (in jsonValue: arr, in integer: index) is func
     end if;
   end func;
 
+# The JSON text to echo as this message's id. A number's is readJson's own source text
+# (measured: str() of 10.5 is "10.5", of 1e3 is "1e3", of 99999999999999999999 is its own 20
+# digits -- a text Seed7's integer() refuses with RANGE_ERROR, which is how the retired integer
+# arm answered id 0), so a number round-trips untouched.
+# A string's must NOT be str(idValue): measured, str() of {"id":"Ид"} is Seed7's decimal
+# literal form "\1048;\1076;", which is not JSON and raises RANGE_ERROR if printed. So the
+# string arm goes through jsonw, whose escape rules the writer and the reader already agree
+# on (AGENTS.md invariant 7). "null" means "no usable id" -- a notification, or a bool.
+#
+# And the string arm does NOT fold a surrogate pair the way strAt above does, because an id is
+# echoed, never interpreted. Measured on the wire: a body whose id is the escapes "\ud83d\ude00"
+# answers the same 14 ASCII bytes, and one whose id is the raw character answers 22 F0 9F 98 80 22
+# -- jsonw escapes only the lone surrogates, which it must, since the UTF-8 writer would otherwise
+# emit a pair's CESU-8 bytes. The 14-against-3 contrast in tests/rpc_test.sd7 is what pins it.
+const func string: idJsonOf (in jsonValue: idValue) is func
+  result
+    var string: out is "null";
+  local
+    var jsonWriter: w is jsonWriter.value;
+  begin
+    if category(idValue) = JSON_NUMBER then
+      out := str(idValue);
+    elsif category(idValue) = JSON_STRING then
+      addStr(w, string(idValue));
+      trimComma(w.buf);
+      out := w.buf;
+    end if;
+  end func;
+
 const func rpcMsg: parseMessage (in string: body) is func
   result
     var rpcMsg: msg is rpcMsg.value;
@@ -198,10 +227,8 @@ const func rpcMsg: parseMessage (in string: body) is func
     msg.method := strAt(root, "method", "");
     msg.params := atKey(root, "params");
     idValue := atKey(root, "id");
-    msg.isRequest := category(idValue) = JSON_NUMBER;
-    if msg.isRequest then
-      msg.id := intAt(root, "id", 0);
-    end if;
+    msg.idJson := idJsonOf(idValue);
+    msg.isRequest := msg.idJson <> "null";
     end if;
   end func;
 
@@ -221,32 +248,39 @@ const proc: sendParseError (in integer: code, in string: message) is func
     writeMessage(finishJson(w));
   end func;
 
-const proc: sendResult (in integer: id, in string: resultJson) is func
+# A notification must never be answered (LSP 3.18, ResponseMessage is for requests), and
+# "was this a request?" is now a property of the id, so both senders are silent on idJson
+# "null". A bare `return' in a proc is PROC_EXPECTED, hence the guard around the body.
+const proc: sendResult (in rpcMsg: msg, in string: resultJson) is func
   local
     var jsonWriter: w is jsonWriter.value;
   begin
-    openObject(w);
-      field(w, "jsonrpc"); addStr(w, "2.0");
-      field(w, "id");      addInt(w, id);
-      field(w, "result");  raw(w, resultJson);
-    closeObject(w);
-    writeMessage(finishJson(w));
+    if msg.idJson <> "null" then
+      openObject(w);
+        field(w, "jsonrpc"); addStr(w, "2.0");
+        field(w, "id");      raw(w, msg.idJson);
+        field(w, "result");  raw(w, resultJson);
+      closeObject(w);
+      writeMessage(finishJson(w));
+    end if;
   end func;
 
-const proc: sendError (in integer: id, in integer: code, in string: message) is func
+const proc: sendError (in rpcMsg: msg, in integer: code, in string: message) is func
   local
     var jsonWriter: w is jsonWriter.value;
   begin
-    openObject(w);
-      field(w, "jsonrpc"); addStr(w, "2.0");
-      field(w, "id");      addInt(w, id);
-      field(w, "error");
+    if msg.idJson <> "null" then
       openObject(w);
-        field(w, "code");    addInt(w, code);
-        field(w, "message"); addStr(w, message);
+        field(w, "jsonrpc"); addStr(w, "2.0");
+        field(w, "id");      raw(w, msg.idJson);
+        field(w, "error");
+        openObject(w);
+          field(w, "code");    addInt(w, code);
+          field(w, "message"); addStr(w, message);
+        closeObject(w);
       closeObject(w);
-    closeObject(w);
-    writeMessage(finishJson(w));
+      writeMessage(finishJson(w));
+    end if;
   end func;
 
 const proc: sendNotification (in string: method, in string: paramsJson) is func

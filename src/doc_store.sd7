@@ -98,6 +98,31 @@ const proc: setVersion (inout lsDoc: doc, in string: text, in integer: version) 
 const func integer: lineCount (in lsDoc: doc) is
   return length(doc.lineStart);
 
+# The 1-based number of the first line that holds a character, or 1 when every line is blank.
+# A range anchored on an EMPTY line has no width: `lspRangeBytes' clamps both bounds to 0, because
+# `charColumnForBytes' returns column 1 without entering its loop. Every real library is like that
+# on line 1 -- `find ~/seed7/lib -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u'
+# prints only `1' (a bare newline) for all 265 of them -- so a diagnostic pinned to line 1 of a
+# library carries an empty range, and `Diagnostic.range' IS the range a message applies to: an
+# anchor over no characters names nothing the disclosure is about. (What a client *draws* for an
+# empty range was not measured -- no client exists in this environment.) The
+# walk is one `lineWidth' per leading blank line, so it costs O(the blank prefix) and never
+# O(document) (invariant 8).
+const func integer: firstNonEmptyLine (in lsDoc: doc) is func
+  result
+    var integer: line1 is 1;
+  local
+    var integer: i is 0;
+  begin
+    i := 1;
+    while i <= lineCount(doc) and lineWidth(doc.text, doc.lineStart[i]) = 0 do
+      i +:= 1;
+    end while;
+    if i <= lineCount(doc) then
+      line1 := i;
+    end if;
+  end func;
+
 # The line index for a 1-based line number, clamped. Written once because lspRange and
 # lspRangeBytes both start from an analyzer-supplied line that can be past the buffer.
 # It sits above lspRange because Seed7 cannot call a function defined later in the file.

@@ -42,3 +42,4 @@ s7c -p -l src tests/occurrences_test.sd7
 s7c -s x
 s7c -t
 usecs / calls / place / name
+R-F10 — the two routes, measured

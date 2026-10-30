@@ -10,36 +10,42 @@ const proc: main is func
     while readMessage(body) do
       if body = "" then
       else
+        # `msg' is loop-carried, so it must not survive into the next frame: handlerFailed echoes
+        # msg.idJson, and the raise measured to reach this block -- MEMORY_ERROR, from readJson
+        # inside parseMessage on a body that nests arrays 30 000 deep -- arrives before any id is
+        # read. Without this reset that raise is answered under the PREVIOUS message's id: measured,
+        # a second frame, -32603, beside the initialize result already sent.
+        msg := rpcMsg.value;
         block
           msg := parseMessage(body);
           if not msg.parseOkay then
             sendParseError(-32700, "Parse error: body is not JSON");
           elsif not gotInitialize and msg.method <> "initialize" and msg.method <> "exit" then
             if msg.isRequest then
-              sendError(msg.id, -32002, "Server was not initialized");
+              sendError(msg, -32002, "Server was not initialized");
             end if;
           elsif gotShutdown and msg.method <> "exit" then
             if msg.isRequest then
-              sendError(msg.id, -32600, "InvalidRequest: server is shut down");
+              sendError(msg, -32600, "InvalidRequest: server is shut down");
             end if;
           else
             handle(msg);
           end if;
         exception
-          catch MEMORY_ERROR:    handlerFailed("memory", body);
-          catch ASSERTION_ERROR: handlerFailed("assertion", body);
-          catch NUMERIC_ERROR:   handlerFailed("numeric", body);
-          catch OVERFLOW_ERROR:  handlerFailed("overflow", body);
-          catch RANGE_ERROR:     handlerFailed("range", body);
-          catch INDEX_ERROR:     handlerFailed("index", body);
-          catch FILE_ERROR:      handlerFailed("file", body);
-          catch DATABASE_ERROR:  handlerFailed("database", body);
-          catch GRAPHIC_ERROR:   handlerFailed("graphic", body);
-          catch ILLEGAL_ACTION:  handlerFailed("illegal action", body);
-          catch CREATE_ERROR:    handlerFailed("create", body);
-          catch DESTROY_ERROR:   handlerFailed("destroy", body);
-          catch COPY_ERROR:      handlerFailed("copy", body);
-          catch IN_ERROR:        handlerFailed("input", body);
+          catch MEMORY_ERROR:    handlerFailed("memory", body, msg);
+          catch ASSERTION_ERROR: handlerFailed("assertion", body, msg);
+          catch NUMERIC_ERROR:   handlerFailed("numeric", body, msg);
+          catch OVERFLOW_ERROR:  handlerFailed("overflow", body, msg);
+          catch RANGE_ERROR:     handlerFailed("range", body, msg);
+          catch INDEX_ERROR:     handlerFailed("index", body, msg);
+          catch FILE_ERROR:      handlerFailed("file", body, msg);
+          catch DATABASE_ERROR:  handlerFailed("database", body, msg);
+          catch GRAPHIC_ERROR:   handlerFailed("graphic", body, msg);
+          catch ILLEGAL_ACTION:  handlerFailed("illegal action", body, msg);
+          catch CREATE_ERROR:    handlerFailed("create", body, msg);
+          catch DESTROY_ERROR:   handlerFailed("destroy", body, msg);
+          catch COPY_ERROR:      handlerFailed("copy", body, msg);
+          catch IN_ERROR:        handlerFailed("input", body, msg);
         end block;
       end if;
     end while;
