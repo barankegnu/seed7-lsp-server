@@ -418,12 +418,14 @@ const proc: main is func
     # says so. Pure function, pure inputs -- refresh writes to the protocol channel, which
     # a unit suite cannot capture.
     check("a .s7i buffer gains exactly the disclosure",
-          describe(discloseStaleLibrary(oneError(), libUri)), "1|syntax error|3|unsaved edits");
+          describe(discloseStaleLibrary(oneError(), libUri, openDocs[libUri])),
+          "1|syntax error|3|unsaved edits");
     check("a .sd7 document gains nothing",
-          describe(discloseStaleLibrary(oneError(), "file:///tmp/seed7_lsp_syms.sd7")),
+          describe(discloseStaleLibrary(oneError(), truncUri, openDocs[truncUri])),
           "1|syntax error");
     check("and the disclosure is Information, not Error",
-          describe(discloseStaleLibrary(0 times lspDiag.value, libUri)), "3|unsaved edits");
+          describe(discloseStaleLibrary(0 times lspDiag.value, libUri, openDocs[libUri])),
+          "3|unsaved edits");
     # ---- past the occurrence cap ------------------------------------------------
     # 2 002 statements, so occurrencesOf stops at its 2 001st record and the cursor on the LAST
     # line has no record to find. The refusal is right and so is `refused'; only the old sentence

@@ -51,6 +51,14 @@ fail. Label it in the commit, and prove it by mutation: revert or widen the spec
 decision and name the check that goes red. If no mutation reddens anything, the check is decorative and
 should be said so out loud.
 
+A green check on a fixture the product never produces is decorative the same way, and no mutation of
+production code will tell you. When a check pins a position, a range or an offset, measure the corpus
+for its shape and give the fixture that shape: the disclosure telling the user their unsaved library
+edits are invisible was pinned against a library whose first line held a declaration, while all 265
+`lib/*.s7i` begin with an empty line — so its range collapsed to zero width on every real input and the
+suite stayed green. The story and the measurement: *The disclosure, and what pins it* in
+`docs/seed7-cli.md`.
+
 ## Seed7 traps
 
 Each of these cost a debugging cycle. Seed7 is not Python and will not warn you first.

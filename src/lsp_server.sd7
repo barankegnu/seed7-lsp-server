@@ -288,9 +288,12 @@ const string: LIB_STALE_MESSAGE is
   <& " and the diagnostics come from the file on disk";
 
 # Pure, not inlined into `refresh`: a unit suite grades this decision and cannot capture the
-# protocol channel.
+# protocol channel. It is handed the buffer because the anchor is a property of the buffer: every
+# real .s7i opens with an empty line, and a record anchored there collapses to a zero-width range
+# (doc_store.firstNonEmptyLine). The caller already holds openDocs[uri] to publish with.
 const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
-                                                in string: uri) is func
+                                                in string: uri,
+                                                in lsDoc: doc) is func
   result
     var array lspDiag: out is 0 times lspDiag.value;
   local
@@ -298,7 +301,7 @@ const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
   begin
     out := mapped;
     if isLibraryBufferPath(pathOf(uri)) then
-      stale.line1 := 1;
+      stale.line1 := firstNonEmptyLine(doc);
       stale.column1 := 0;
       stale.message := LIB_STALE_MESSAGE;
       stale.severity := SEV_INFORMATION;
@@ -316,7 +319,7 @@ const proc: refresh (in string: uri) is func
     if analysable(uri) then
       a := analyzeDocument(uri);
       mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
-      publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri));
+      publish(uri, openDocs[uri], discloseStaleLibrary(mapped, uri, openDocs[uri]));
     end if;
   end func;
 

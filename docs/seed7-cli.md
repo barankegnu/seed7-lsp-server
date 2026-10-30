@@ -391,7 +391,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 342 (213 `lib/*.s7i` + 129 `prg/*.sd7`, unchanged) | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1077 checks — these six are the suites that moved, not an enumeration of the 21: `scan` 66, `features` 191, `lsp_server` 82, `transcript` 203, `doc_index` 12, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read) | `make test` |
+| suite totals | 21 suites, 1106 checks — these eight are the suites that moved or that carry a figure here, not an enumeration of the 21: `rpc` 47, `scan` 66, `doc_store` 80, `features` 191, `lsp_server` 82, `doc_index` 14, `transcript` 211, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read; 1 077 → 1 100 is the request-id wave, measured 2026-10-31 at HEAD and against the tree at `8d00014`, where the 1 077 was taken: `rpc` 31 → 47 — the largest single growth on the branch, the id-fidelity pins (string, float, exponent, over-wide, surrogate pair) plus the notification-silence pins — and `transcript` 203 → 210; the other 18 suites are unmoved, which the two endpoints force arithmetically (1 100 − 47 − 210 = 1 077 − 31 − 203 = 843). That correction is the id plan's own Task 2 Step 2 rule — if the run disagrees, the run wins — landing one wave late. 1 100 → 1 106 is the disclosure-anchor and `RANGE_ERROR`-half fix wave, measured 2026-10-31: `transcript` 210 → 211 (the disclosure's non-zero-width pin, on a library fixture whose line 1 is empty as every real `.s7i` has it), `doc_store` 77 → 80 (the three cases of `firstNonEmptyLine`), `doc_index` 12 → 14 (the `catch` arm and the empty-list reset inside it, pinned separately)) | `make test`; the 31 and the 203: `git archive 8d00014 src tests \| tar -x -C /tmp/at1077` then `s7 -q -l /tmp/at1077/src /tmp/at1077/tests/rpc_test.sd7` and `python3 /tmp/at1077/tests/transcript.py` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -658,12 +658,25 @@ is R-F10 in one sentence, and why the temp-file route, like comparing buffer to 
 the user reads, quoted verbatim in `README.md`'s *What does not work yet*. It is appended after
 `mapDiagnostics`, so a document capped at `MAX_DIAGNOSTICS` still sees it; it fires on `uris.sd7`'s
 `isLibraryBufferPath` and on no other document, and inside `analysable(uri)`, so an untrusted buffer
-still publishes nothing. The record is `SEV_INFORMATION` at `line1 := 1, column1 := 0`, which the
-publish path lands on the buffer's whole first line, and `didClose` publishes the empty list that
-clears it. Three `lsp_server` checks grade the decision (a `.s7i` gains exactly one, a `.sd7` gains
-nothing, the severity is `Information`) and six `transcript` checks pin it on frames — once per publish,
-`severity` 3, the whole sentence (the Seed7 unit suite prints ASCII, so only two words of it are
-comparable there), the range, the `didClose` clear, and that no other document in the run receives it.
+still publishes nothing. The record is `SEV_INFORMATION` at `column1 := 0` and
+`line1 := doc_store.firstNonEmptyLine(openDocs[uri])`, which the publish path lands on the whole first
+NON-EMPTY line of the buffer, and `didClose` publishes the empty list that clears it. Line 1 is NOT that
+line in any real library: `find ~/seed7/lib -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; |
+sort -u` prints only `1` — a bare newline — for all 265 of them (214 top level), and an anchor on an
+empty line has no width: `charColumnForBytes` returns column 1 without entering its loop, so
+`lspRangeBytes` collapses both bounds to 0 and **no `column1` value fixes it**. The shipped
+`transcript` library fixture began with a real declaration, so its range pin was truthful about the
+fixture and blind to the domain — the defect was measured on `lib/aes.s7i` and five other libraries as
+`{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}`, the only diagnostic in the
+publish. What pins it now: three `lsp_server` checks grade the decision (a `.s7i` gains exactly one, a
+`.sd7` gains nothing, the severity is `Information`), three `doc_store` checks grade the anchor (two
+blank leading lines name the third, a line 1 that holds text stays 1, an all-blank buffer falls back to
+1), and seven `transcript` checks pin it on frames — once per publish, `severity` 3, the whole sentence
+(the Seed7 unit suite prints ASCII, so only two words of it are comparable there), that the range has
+non-zero width, that it is the whole first non-empty line of a fixture whose line 1 IS empty, the
+`didClose` clear, and that no other document in the run receives it. Not measured: whether a client
+drops a `start == end` range or only fails to squiggle it — `start == end` is legal LSP and no client
+exists in this environment.
 
 **Why the `-32603` bullet is conditional.** `doc_index.readLinesOf` reads library prose with `openUtf8`
 — the plain `open` was the mojibake: `lib/asn1.s7i`'s euro sign in its own `(** … *)` comment reached
@@ -687,11 +700,17 @@ without `doc_index.sd7`'s `catch RANGE_ERROR` the hover of a symbol declared in 
 request a `-32603` (`main.sd7`'s `catch RANGE_ERROR` answers it through
 `handlerFailed("range", body, msg)`, which is the observed answer), and the bullet's claim that no
 input reaches the net would be false; with it, hover keeps the signature and
-loses the prose, which is what an unreadable comment already answers. The check that reaches the arm is
-`doc_index`'s twelfth: a scratch file holding one `FF` byte, a lone UTF-8 start byte, asked at the line
-the decoder raises on — neutralize the arm and the raise escapes, the suite prints no graded line, and
-`make test` cannot pass. That is why AGENTS.md records the net as reached-but-silent rather than
-unreachable, and why the next section exists.
+loses the prose, which is what an unreadable comment already answers. Two `doc_index` checks reach the
+arm and they pin its two halves separately. The twelfth is a scratch file holding one `FF` byte, a lone
+UTF-8 start byte, asked at the line the decoder raises on — neutralize the arm and the raise escapes,
+the suite prints no graded line, and `make test` cannot pass. The thirteenth asks at a declaration
+ABOVE the raising line, in a file whose `(** … *)` is clean UTF-8 with the `FF` below it: `readln`
+accumulates the good lines and then raises, so the `lines := 0 times ""` reset inside the arm is what
+makes the answer `""` — delete only that reset and the check answers its expected `""` against
+`"Documents early."` while the other thirteen stay green. `doc_index`'s fourteenth is the control that
+the same four lines are readable prose at all (`proseForText`, in memory, nothing erases them), so the
+thirteenth cannot pass on a comment no walk would ever find. That is why AGENTS.md records the net as
+reached-but-silent rather than unreachable, and why the next section exists.
 
 ## Do not "fix" these — the `-32603` net, reached by `readJson`
 

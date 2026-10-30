@@ -34,6 +34,11 @@ const proc: main is func
     # the line below the comment opener, written plain because a plain Seed7 write emits that
     # one byte. (The overlong pair C0 80 would NOT do: this decoder reads it as chr(0).)
     var string: invalidPath is "/tmp/seed7_lsp_docindex_invalid.sd7";
+    # A fourth fixture, and the bad byte is BELOW the comment instead of inside it. The reader
+    # still raises and the catch still empties the list, but the prose WAS read before the raise:
+    # this is the input that separates the `catch RANGE_ERROR' arm from the `lines := 0 times ""'
+    # reset inside it, which is the half docs/seed7-cli.md calls "loses the prose".
+    var string: lateInvalidPath is "/tmp/seed7_lsp_docindex_late_invalid.sd7";
     var file: rawOut is STD_NULL;
   begin
     out := open(path, "w");
@@ -67,6 +72,13 @@ const proc: main is func
     write(rawOut, " *)\n");
     write(rawOut, "const proc: eight is func\n");
     close(rawOut);
+    rawOut := open(lateInvalidPath, "w");
+    write(rawOut, "(**\n");
+    write(rawOut, " *  Documents early.\n");
+    write(rawOut, " *)\n");
+    write(rawOut, "const proc: ten is func\n");
+    write(rawOut, "  writeln(\"bad byte " <& chr(255) <& " below\");\n");
+    close(rawOut);
     check("prose of the doc comment", proseFor(path, 8), "Adds two numbers.");
     check("multi-line prose keeps both lines in order", proseFor(path, 15),
           "First line.\nSecond line.");
@@ -91,5 +103,17 @@ const proc: main is func
     # checks answer the same question.
     check("a file that is not valid UTF-8 yields no prose and no raise",
           proseFor(invalidPath, 2), "");
+    # The empty-list half of the same catch, which the check above cannot see: here the comment is
+    # clean UTF-8 and sits ABOVE the raising line, so the lines read before the raise would answer
+    # "Documents early." if the reset did not erase them. Delete only the reset and this FAILs with
+    # that prose; delete the whole arm and the raise escapes, so the suite prints no graded line.
+    check("prose read before a later bad byte is erased, not kept",
+          proseFor(lateInvalidPath, 4), "");
+    # ...and the shape is a documented declaration: the same four lines in memory, where nothing
+    # erases them, do answer with the prose. Without this the check above could pass on a fixture
+    # whose comment is simply unreadable.
+    check("the same four lines in memory keep the prose",
+          proseForText("(**\n *  Documents early.\n *)\nconst proc: ten is func\n", 4),
+          "Documents early.");
     report("doc_index");
   end func;

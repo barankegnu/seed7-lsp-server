@@ -875,7 +875,13 @@ expect(len(U16_DIAGS) == 0 and len(U16_BMP_DIAGS) == 0,
 # a half-applied edit is not. Both halves need the wire, because the frame path is where the
 # uri's `.s7i' suffix is decided.
 RN_LIB_PATH = "/tmp/seed7_lsp_transcript_rn_lib.s7i"
-RN_LIB_TEXT = ('const type: Counter is new struct\n'
+# The first line is EMPTY because that is the shape of every real library: `find ~/seed7/lib
+# -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u' prints only `1' -- a bare
+# newline -- for all 265 of them. A range anchored on a blank line collapses to (0,0)->(0,0) in
+# the `lspRangeBytes' clamp, and the disclosure exists to put a squiggle where the user can see it,
+# so it must land on the first line that holds a character.
+RN_LIB_TEXT = ('\n'
+               'const type: Counter is new struct\n'
                '    var integer: amount is 0;\n'
                '  end struct;\n'
                '\n'
@@ -895,6 +901,8 @@ RN_LIB_URI = "file://" + RN_LIB_PATH
 LIB_STALE = ("unsaved edits in this library are not analysed: the outline, hover, completion"
              " and the diagnostics come from the file on disk")
 RL = RN_LIB_TEXT.split("\n")
+# The 0-based line the disclosure must be drawn on: the first one that is not empty.
+RN_LIB_ANCHOR = next(idx for idx, text in enumerate(RL) if text != "")
 RN_LIB_DECL = RL.index("var integer: ticks is 0;")
 RN_LIB_USE = RL.index("    ticks +:= 1;")
 RN_LIB_DECL_COL = u16(RL[RN_LIB_DECL][:RL[RN_LIB_DECL].index("ticks")])
@@ -944,11 +952,20 @@ expect(all(d["severity"] == 3 for x in RN_DIS for d in x),
 expect(all(d["message"] == LIB_STALE for x in RN_DIS for d in x),
        "and it is the whole sentence the user reads, not a prefix of it (%s)"
        % [d["message"] for x in RN_DIS for d in x])
-expect(all(d["range"] == {"start": {"line": 0, "character": 0},
-                          "end": {"line": 0, "character": u16(RL[0])}}
-           for x in RN_DIS for d in x),
-       "and its range is the whole first line of the buffer (%s)"
+# `all()' is TRUE over an empty list, so the count is repeated as a conjunct: without it both
+# range checks below pass on a build that discloses nothing at all.
+expect(all(len(x) == 1 for x in RN_DIS[:-1]) and
+       all(d["range"]["end"]["character"] > d["range"]["start"]["character"]
+           for x in RN_DIS[:-1] for d in x),
+       "and its range has the width a squiggle needs (%s)"
        % [d["range"] for x in RN_DIS for d in x])
+expect(all(d["range"] == {"start": {"line": RN_LIB_ANCHOR, "character": 0},
+                          "end": {"line": RN_LIB_ANCHOR,
+                                   "character": u16(RL[RN_LIB_ANCHOR])}}
+           for x in RN_DIS for d in x),
+       "and its range is the whole first NON-EMPTY line of the buffer -- line %d, not the blank "
+       "line 1 every real .s7i opens with (%s)"
+       % (RN_LIB_ANCHOR, [d["range"] for x in RN_DIS for d in x]))
 expect(RN_PUBS and RN_PUBS[-1] == [],
        "and didClose still clears the buffer, disclosure included (%s)" % RN_PUBS[-1:])
 # Per uri and per publish, and requiring the control to have published: the disclosure is a property

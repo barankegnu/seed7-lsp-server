@@ -257,5 +257,14 @@ const proc: main is func
     # above is not a comparison of a function with itself.
     checkTrue("the same sweep does disagree on the astral line",
               unitDisagreements(doc, 0, 30) > 0);
+    # The anchor the stale-library disclosure is pinned to (src/lsp_server.sd7). A range on an
+    # EMPTY line has no width, so the helper that picks the line is what keeps that message
+    # visible -- and every real .s7i begins with an empty line 1 (doc_store.firstNonEmptyLine).
+    setVersion(doc, "\n\nconst integer: a is 1;\n", 1);
+    check("past two blank leading lines it names the third", str(firstNonEmptyLine(doc)), "3");
+    setVersion(doc, "const integer: a is 1;\n\n", 1);
+    check("a buffer whose line 1 holds text keeps line 1", str(firstNonEmptyLine(doc)), "1");
+    setVersion(doc, "\n\n", 1);
+    check("an all-blank buffer falls back to line 1", str(firstNonEmptyLine(doc)), "1");
     report("doc_store");
   end func;
