@@ -37,6 +37,14 @@ const proc: main is func
     check("a float id echoes the source text", m.idJson, "10.5");
     m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":1e3,\"method\":\"x\"}");
     check("an exponent id echoes the source text", m.idJson, "1e3");
+    # The OTHER class of the retired bug. A JSON number is not necessarily a Seed7 `integer', and
+    # routing the number arm back through integer() is what used to answer id 0 (intAt -> integer()
+    # -> RANGE_ERROR -> the caught fallback). Measured on this tree, text arm: 20 characters, the
+    # digits as the client wrote them; on the wire the same id is answered
+    # "id":99999999999999999999 with junk=0 and exit 0.
+    m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":99999999999999999999,\"method\":\"x\"}");
+    check("an id too wide for integer() echoes its own text", m.idJson,
+          "99999999999999999999");
     m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"x\"}");
     check("a bool id is not a request",      str(m.isRequest), "FALSE");
     check("and it echoes null",              m.idJson, "null");
@@ -56,6 +64,10 @@ const proc: main is func
     m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\u0418\\u0434\",\"method\":\"x\"}");
     check("a non-ASCII id is 4 characters, quoted, not Seed7's decimal literal form",
           str(length(m.idJson)) <& "/" <& m.idJson[1 .. 1], "4/\"");
+    # This is the id path's no-fold pin: jsonw escapes each lone surrogate, so the echo is the 14
+    # characters "\ud83d\ude00" -- and folding, which strAt does (see "strAt joins the pair a client
+    # escaped" at the end of this file), would make it 3. The pair of numbers is the decision, so
+    # widening either bound cannot pass silently.
     m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"\\ud83d\\ude00\",\"method\":\"x\"}");
     check("a surrogate-pair id escapes both halves", str(length(m.idJson)), "14");
     # boolAt -- `context.includeDeclaration' (references) and `workspace.applyEdit'

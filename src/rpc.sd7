@@ -180,11 +180,19 @@ const func jsonValue: itemAt (in jsonValue: arr, in integer: index) is func
   end func;
 
 # The JSON text to echo as this message's id. A number's is readJson's own source text
-# (measured: str() of 10.5 is "10.5", of 1e3 is "1e3"), so it round-trips untouched. A
-# string's must NOT be str(idValue): measured, str() of {"id":"Ид"} is Seed7's decimal
+# (measured: str() of 10.5 is "10.5", of 1e3 is "1e3", of 99999999999999999999 is its own 20
+# digits -- a text Seed7's integer() refuses with RANGE_ERROR, which is how the retired integer
+# arm answered id 0), so a number round-trips untouched.
+# A string's must NOT be str(idValue): measured, str() of {"id":"Ид"} is Seed7's decimal
 # literal form "\1048;\1076;", which is not JSON and raises RANGE_ERROR if printed. So the
 # string arm goes through jsonw, whose escape rules the writer and the reader already agree
 # on (AGENTS.md invariant 7). "null" means "no usable id" -- a notification, or a bool.
+#
+# And the string arm does NOT fold a surrogate pair the way strAt above does, because an id is
+# echoed, never interpreted. Measured on the wire: a body whose id is the escapes "\ud83d\ude00"
+# answers the same 14 ASCII bytes, and one whose id is the raw character answers 22 F0 9F 98 80 22
+# -- jsonw escapes only the lone surrogates, which it must, since the UTF-8 writer would otherwise
+# emit a pair's CESU-8 bytes. The 14-against-3 contrast in tests/rpc_test.sd7 is what pins it.
 const func string: idJsonOf (in jsonValue: idValue) is func
   result
     var string: out is "null";

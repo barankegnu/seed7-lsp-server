@@ -684,10 +684,98 @@ this decoder reads the overlong pair as `chr(0)` and does not raise on any of th
 library is like that — `iconv -f UTF-8 -t UTF-8` over all 265 `lib/*.s7i` (recursive) fails on none of
 them — but one `prg/*.sd7` of 129 does, `err.sd7`, and a client may open anything inside its root. So
 without `doc_index.sd7`'s `catch RANGE_ERROR` the hover of a symbol declared in such a file costs the
-request a `-32603` (`main.sd7:33` catches `RANGE_ERROR` into `handlerFailed("range", body)`, which is
-the observed answer), and AGENTS.md's "still unreachable" would be false; with it, hover keeps the signature and
+request a `-32603` (`main.sd7`'s `catch RANGE_ERROR` answers it through
+`handlerFailed("range", body, msg)`, which is the observed answer), and the bullet's claim that no
+input reaches the net would be false; with it, hover keeps the signature and
 loses the prose, which is what an unreadable comment already answers. The check that reaches the arm is
 `doc_index`'s twelfth: a scratch file holding one `FF` byte, a lone UTF-8 start byte, asked at the line
 the decoder raises on — neutralize the arm and the raise escapes, the suite prints no graded line, and
-`make test` cannot pass. That is why AGENTS.md now records the unreachability as conditional rather than
-plain.
+`make test` cannot pass. That is why AGENTS.md records the net as reached-but-silent rather than
+unreachable, and why the next section exists.
+
+## Do not "fix" these — the `-32603` net, reached by `readJson`
+
+The rule is AGENTS.md's `-32603` bullet. Its premise — that no input reaches the net — was measured
+wrong here, while the safety it asserts still holds, so both halves are recorded.
+
+**The raiser is `readJson`, not `parseStri`.** `readJson` recurses, and a body nested deep enough
+exhausts memory and raises `MEMORY_ERROR`. Probed with no handler, `s7 -q <file>`, where `nest(d)`
+is `d` opens, `7`, `d` closes:
+
+    depth  5 000 array -> PARSED        depth 11 000 array -> PARSED
+    depth 11 500 array -> MEMORY_ERROR
+    depth  7 500 object -> PARSED       depth  8 000 object -> MEMORY_ERROR
+
+The bound is the interpreter running out of memory, so those rows are a property of this machine and
+this build, not a language constant — re-measure before quoting them. Objects reach it sooner than
+arrays because each level costs `{"a":` as well as `}`. `MAX_FRAME_BYTES` is 67 108 864, so the
+30 000-deep array body used below — 60 057 bytes — is an ordinary, in-limits frame: nothing about
+the transport refuses it.
+
+**What the server does with it.** `s7 -q -l src src/main.sd7`, each session `initialize(id 1)`, then
+the deep body with `"params"` holding `d` nested arrays and `"id":"deep<d>"`, then
+`"id":"after"`, then `shutdown(id "s1")`, then `exit`:
+
+    d =     500  1 055 bytes -> -32601 under "deep500",   code 0, junk 0
+    d =   5 000 10 056 bytes -> -32601 under "deep5000",  code 0, junk 0
+    d =  30 000 60 057 bytes -> NO FRAME for "deep30000", code 0, junk 0
+
+At 30 000 the only trace is `handler failed (memory): {…}` on **stderr**; `"after"` and `"s1"` are
+answered normally, so the session survives, and no non-frame byte reaches stdout.
+
+**Why no `-32603` frame appears.** `parseMessage`'s guard wraps its own `readJson` call and names
+`RANGE_ERROR`, `INDEX_ERROR`, `ILLEGAL_ACTION` — `MEMORY_ERROR` is not among them, so the raise
+escapes to `main.sd7`'s block, whose `catch MEMORY_ERROR` calls `handlerFailed("memory", body, msg)`.
+`handlerFailed` sends `-32603` through `sendError`, and `sendError` answers `msg.idJson` — but the
+raise happened before any id was read, so `msg.idJson` is what the loop-carried reset left it:
+`"null"`, which the guard answers with silence. Silence is the right outcome and it rests on one
+line. Deleting `main.sd7`'s `msg := rpcMsg.value;` and re-running the 30 000 session produces
+
+    {"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"internal error: memory"}}
+
+— a second response under `initialize`'s id, beside the result already sent: the four frames of
+that session become five, and `1` answers twice. That mutation is what proves the comment above the
+reset true; nothing in `tests/transcript.py` reaches it, so the proof lives here.
+
+**A raise from the *id* read would behave the same way.** Mutating `idJsonOf`'s number arm back to a
+Seed7 integer parse — `out := str(integer(str(idValue)));` — raises `RANGE_ERROR` inside
+`parseMessage` but *outside* its guard, so on the server it lands in `catch RANGE_ERROR` and answers
+`handler failed (range)` with the same null-id silence; in `tests/rpc_test.sd7` it dies before its
+graded line (uncaught at `tests/rpc_test.sd7(36)`, the float-id check, which is the first non-integer
+numeric id the suite reads). The caught version of the same mutant — `catch RANGE_ERROR: out := "0"`,
+which is what the retired `intAt(root, "id", 0)` did — reddens three `rpc` checks, the new
+`an id too wide for integer() echoes its own text` among them, and leaves the other 20 suites green.
+
+## Protocol decisions — the exit code and the id on the wire, measured
+
+The rules are AGENTS.md's `exit` bullet and its `-32700`/`-32002` bullet.
+
+**Where the code is decided is `lsp_server.sd7`, not `main.sd7`.** The `exit` arm reads
+`if gotInitialize and gotShutdown then exit(0); else exit(1); end if;` and `main.sd7`'s gate names
+`exit` beside `initialize`, so the notification reaches that arm in every session shape. Measured
+with well-framed sessions against `s7 -q -l src src/main.sd7`:
+
+    hover(id "x1"), shutdown(id "s1"), exit        [no initialize]  -> code 1, 2 frames, stderr empty
+    initialize, shutdown, exit                                      -> code 0, 3 frames
+    initialize, exit                              [no shutdown]     -> code 1, 1 frame
+    exit                                            [nothing before]  -> code 1, 0 frames
+
+The first row is the one a client author reads: the two refusals are
+`-32002` **carrying the ids that asked** — `"id":"x1"` and `"id":"s1"`, strings intact — with
+`junk = 0`. `main.sd7`'s tail is a different ending, for a stream that stops without any `exit`
+notification: `exit(0)` for a completed session, `exit(2)` for `framingFatal`, and otherwise no
+`exit()` at all, which is **0** — measured, because a Seed7 `main` that merely returns reports 0,
+both interpreted (`s7 -q`) and compiled (`s7c -O3`). So the two calls that must never be merged into
+one `exit(0)` are `lsp_server.sd7`'s; `main.sd7`'s tail is where the framing-fatal `exit(2)` lives.
+Already pinned by harness checks: `tests/transcript.py:168` (`exit` after `shutdown` is 0) and `:175`
+and `:1056` (status 1 without it — sessions that have no `initialize` either).
+
+**Number and string ids on the wire.** `"id":99999999999999999999` is answered
+`"id":99999999999999999999`, `code 0`, `junk 0` — the same literal that `integer()` refuses with
+`RANGE_ERROR` (measured directly, as it refuses `"10.5"` and `"1e3"`), which is why the retired
+`intAt(root, "id", 0)` answered id `0` and the text arm answers the client's own digits. An `"id"`
+holding a surrogate pair is echoed **as it was sent**, not folded: a body whose id is the escapes
+`\ud83d\ude00` answers the 14 ASCII bytes `22 5c 75 64 38 33 64 5c 75 64 65 30 30 22`, and a body
+whose id is the raw character answers `22 f0 9f 98 80 22` — the same four UTF-8 bytes it came in.
+`strAt` folds a pair to one character; the id path never does, and `tests/rpc_test.sd7`'s
+14-against-3 length comparison is the pin (`idJsonOf`'s comment holds both numbers).

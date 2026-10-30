@@ -10,9 +10,11 @@ const proc: main is func
     while readMessage(body) do
       if body = "" then
       else
-        # `msg' is loop-carried, so it must not survive into the next frame: handlerFailed now
-        # echoes msg.idJson, and without this reset a raise inside parseMessage would answer the
-        # PREVIOUS message's id -- a second response to a request already answered.
+        # `msg' is loop-carried, so it must not survive into the next frame: handlerFailed echoes
+        # msg.idJson, and the raise measured to reach this block -- MEMORY_ERROR, from readJson
+        # inside parseMessage on a body that nests arrays 30 000 deep -- arrives before any id is
+        # read. Without this reset that raise is answered under the PREVIOUS message's id: measured,
+        # a second frame, -32603, beside the initialize result already sent.
         msg := rpcMsg.value;
         block
           msg := parseMessage(body);

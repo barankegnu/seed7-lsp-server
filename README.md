@@ -108,7 +108,9 @@ extra `Information` diagnostic, appended once per publish, telling an open `.s7i
 that its analysis comes from the file on disk. Error handling is spec-shaped: `-32002`
 before initialize, `-32600` after shutdown, `-32700`
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
-a frame whose `Content-Length` cannot be trusted.
+a frame whose `Content-Length` cannot be trusted. Every answer comes back under the id the client
+sent — LSP 3.18 allows an integer or a string, and a request tagged `"42"` is answered `"42"`, even
+for the `-32002` that arrives before `initialize` — and a notification is never answered at all.
 
 On top of that, the symbol features, all read from the analyzer's own object table:
 `documentSymbol` for the declarations in the open file, `definition` — including jumps
