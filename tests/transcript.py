@@ -1000,11 +1000,11 @@ one_answer_per_request(S7I_MSGS, replies, "the library-buffer run")
 
 # --- Task 5's reader, on the wire: a library comment's non-ASCII arrives whole ----------------
 # The defect was in a DISK read, not in a request body, so no frame this suite can send carries a
-# `€' the server would then degrade: `frame' escapes non-ASCII on the way IN and jsonw escapes it
-# on the way OUT. So the pin goes on the DECODED value of a hover whose prose comes from a real
-# library -- lib/asn1.s7i's own `(** ... *)' comment above `genAsn1String' (line 372) holds a euro
-# sign at line 369, and this buffer only has to include the library and call the func. It is the
-# single end-to-end cover for reader -> prose -> jsonw -> Content-Length. Decoded, the euro is one
+# `€' the server would then degrade: `frame' escapes non-ASCII on the way IN and jsonw escapes only
+# control chars and lone surrogates -- `€' goes out as raw UTF-8. So the pin goes on the DECODED
+# hover prose from a real library -- lib/asn1.s7i's `(** ... *)' above `genAsn1String' (line 372)
+# holds a euro at 369. It is the one cover for reader -> prose -> raw UTF-8 out -> Content-Length,
+# all four in play, so the wire value is characters, not bytes. Decoded, the euro is one
 # character (U+20AC); read one byte per character it becomes three (U+00E2 U+0082 U+00AC) and no
 # U+20AC survives, while U+0082 -- which no decoded Seed7 source holds -- appears. Measured, the
 # decoded value is 372 characters with three above U+007F; the byte read is 376 with seven.
@@ -1024,8 +1024,8 @@ by_id = {r.get("id"): r for r in replies if "id" in r}
 ASN1_HOVER = (by_id.get(170, {}).get("result") or {}).get("contents", {}).get("value", "")
 # The column is the token's END, computed from the fixture: `wordAt' is left-of-character, so on
 # this text genAsn1String occupies 0-based columns 12..24 and 25 is the cursor that names it --
-# measured, 12 and 26 answer null. Hard-code 26 as "one past the end" and the hover is null, which
-# would make this check pass by reading nothing; hence index + len(word), as the other hovers here.
+# measured, 12 and 26 answer null. The index + len(word) form is used, as in the other hovers, so
+# a reformatted fixture cannot silently drift onto a position that answers nothing.
 ASN1_ABOVE127 = sum(1 for ch in ASN1_HOVER if ord(ch) > 127)
 expect("\u20ac" in ASN1_HOVER and ASN1_ABOVE127 == 3 and "\u0082" not in ASN1_HOVER,
        "hover prose read from lib/asn1.s7i arrives as characters, not bytes: the euro sign is ONE "

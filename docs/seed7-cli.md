@@ -590,12 +590,16 @@ than retyped, so the probe cannot drift from the server — and `LEAD` —
 route per library.
 
 The committed artifact is `docs/rf10-measurement.md` (434 lines, header
-`# seed7 tree: /home/username/seed7 c93282a6`, three consecutive runs byte-identical — a claim that now
-carries its condition: `LC_ALL=C`, which `tools/rf10_probe.sh` exports itself before the `lib/*.s7i`
-glob, because the row order is the shell's collation of that glob and not anything the probe decides.
-Four consecutive runs under `C` are byte-identical; the artifact was regenerated under it, and the
-regeneration moved 44 lines of position with no row and no figure changed — the visible difference
-being `aes.s7i` before `aes_gcm.s7i`). Five named rows
+`# seed7 tree: /home/username/seed7 c93282a6`). Its reproducibility claim has two halves measured in
+two environments, and they must not be read as one: the original **three consecutive runs byte-identical**
+were three runs in this shell's collation, before anything set `LC_ALL=C`. The `LC_ALL=C` export came
+later, in the fix wave, because the row order is the shell's collation of the `lib/*.s7i` glob and not
+anything the probe decides — `tools/rf10_probe.sh` exports it itself. The artifact was then regenerated
+under `C`, and four further runs under `C` are byte-identical; that regeneration moved **44 lines** of
+position with no row and no figure changed — verified from the two committed artifacts, where
+`git diff --numstat 20a058d 8d00014 -- docs/rf10-measurement.md` reports 44 added and 44 removed and
+the sorted files are identical, so it is a pure reorder — `aes.s7i` before `aes_gcm.s7i` being one
+moved pair rather than the total. Five named rows
 and the aggregate, taken from the artifact (`string=` there counts the records whose `file(obj)` is
 `BUFFER_FILE`, and it is 0 for the two `NOISY` libraries — nothing was attributed to the buffer):
 
