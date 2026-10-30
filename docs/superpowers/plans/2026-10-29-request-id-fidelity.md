@@ -227,6 +227,14 @@ Restore `raw(w, msg.idJson)` to `addInt(w, msg.id)` in `sendResult` alone and ke
 
 Then the second mutant: widen `isRequest` back to `category(idValue) = JSON_NUMBER` and rerun — the `ids ==` check and `-32601` check go red, because the unknown string-id request is once again dropped without a reply. That is the hang this plan exists to remove.
 
+Third mutant, and the one that justifies this scenario existing: delete `if msg.idJson <> "null"` from
+`sendResult` **only**. The idless-hover check must go red — the notification is answered again, with
+`"id": null`, which appears in the collected `ids` as `None` — while `make test-rpc` stays green. Task 1
+proved this is the *only* reachable half of the notification rule: all four `sendError` call sites sit behind
+`if msg.isRequest`, which is the same predicate the guard replaced, so removing the guard there is
+semantically identical from outside and no black-box input can redden it (`AGENTS.md` mutation rule 1). Do
+not force a check for the unreachable half.
+
 - [ ] **Step 4: Commit**
 
 ```bash
