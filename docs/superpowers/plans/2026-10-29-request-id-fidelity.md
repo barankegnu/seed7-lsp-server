@@ -58,8 +58,6 @@ check("and it is a request",             str(m.isRequest), "TRUE");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\":\"x\"}");
 check("a string id echoes quoted",       m.idJson, "\"42\"");
 check("and it too is a request",         str(m.isRequest), "TRUE");
-m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":10}");
-check("a number id still echoes bare",      m.idJson, "10");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":10.5,\"method\":\"x\"}");
 check("a float id echoes the source text", m.idJson, "10.5");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":1e3,\"method\":\"x\"}");
@@ -104,7 +102,7 @@ the value is a quoted string rather than the word `null`. `14` is `"` + `\ud83d`
 
 - [ ] **Step 4: Stub `idJsonOf`, so the checks run on values**
 
-Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 45 checks, 9 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab) and the surrogate length check. The other six pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
+Add the signature with `out := "null";` as its only body line, replace `var integer: id is 0;` in `rpcMsg` with `var string: idJson is "null";`, set `msg.isRequest := FALSE;` unconditionally in `parseMessage`, and give `sendResult`/`sendError` the `rpcMsg` parameter with the body unchanged apart from `addInt(w, id)` → `raw(w, "0")`. `make test-rpc` → `rpc: 46 checks, 10 failed`: the six echo/request checks (number, number-is-request, string, string-is-request, float, exponent), the two escaping checks (dquote, tab) and **both** length checks. The other five pass because the stub answers `"null"`, which is what they expect — which is why Step 7's mutants, not this stub, are what prove the bool/array/absent checks.
 
 - [ ] **Step 5: Implement**
 
@@ -145,7 +143,7 @@ const func string: idJsonOf (in jsonValue: idValue) is func
 make test-rpc && make graph && make test-graph
 ```
 
-Expected: `rpc: 45 checks, 0 failed` (31 baseline, +12 in Step 1 once the `m.id` check is dropped, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` becomes `check("id", m.idJson, "7")` in this commit — it is the only reader of the deleted field besides `firstUnhandled`, which does not touch ids.
+Expected: `rpc: 46 checks, 0 failed` (31 baseline, +13 in Step 1, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` becomes `check("id", m.idJson, "7")` in this commit — it is the only reader of the deleted field besides `firstUnhandled`, which does not touch ids.
 
 - [ ] **Step 7: Prove the checks can fail**
 
