@@ -210,14 +210,18 @@ STR_IDS = [{"jsonrpc": "2.0", "id": "i1", "method": "initialize",
            {"jsonrpc": "2.0", "id": "s1", "method": "shutdown"},
            exit_()]
 replies, code, err, junk = run([frame(m) for m in STR_IDS])
-ids = [r.get("id") for r in replies if "id" in r or "method" in r]
+# Only RESPONSES: `publishDiagnostics` and `window/logMessage` are frames with a `method` and
+# no `id`, so collecting on "id" or "method" would put bare `None` entries in the list and the
+# equality below could never hold. Measured on this branch: a session with two notification-only
+# method calls yields responses exactly `['i1', 's1']`.
+ids = [r.get("id") for r in replies if "result" in r or "error" in r]
 expect(ids == ["i1", "h1", "u1", "d1", "s1"],
        "every reply carries the string id it answers (%s)" % ids)
 expect(next(r for r in replies if r.get("id") == "u1")["error"]["code"] == -32601,
        "the unknown string-id method is answered with -32601, not with silence")
 expect("capabilities" in next(r for r in replies if r.get("id") == "i1").get("result", {}),
        "and initialize answered under its own id, so the client finishes starting up")
-expect(not any(r.get("id") == 0 for r in replies),
+expect(not any(r.get("id") == 0 for r in replies if "result" in r or "error" in r),
        "and nothing is answered under a borrowed integer id 0 (%s)" % ids)
 expect(not any("error" in r and r["error"]["code"] == -32602 and r.get("id") is None
                for r in replies),
