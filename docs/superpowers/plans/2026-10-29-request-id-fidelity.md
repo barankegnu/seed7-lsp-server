@@ -236,16 +236,19 @@ git commit -m "transcript: pin string-id fidelity, the -32601 a string id used t
 
 ---
 
-### Task 3: Retire the recorded shortcut
+### Task 3: Confirm the retired shortcut stays retired
 
 **Files:**
-- Modify: `src/rpc.sd7` (the `ponytail: request ids are handled as integers only` note at `8-11`)
 - Modify: `README.md` (§ *What works*)
-- Modify: `docs/PROJECT_GRAPH.md` (only if a line count moved; Task 1 already regenerated it)
+- Verify: `src/rpc.sd7` — Task 1's own file list already deleted the `ponytail: request ids are handled as
+  integers only` note and replaced it with the rule above `rpcMsg`, so this task has nothing to remove
 
-- [ ] **Step 1: Delete the note, and check nothing else repeats it**
+- [ ] **Step 1: Check nothing repeats the retired claim**
 
-The note records a limit that no longer exists, so it goes — replacing a `ponytail:` note with a rule is the expected end of that comment's life. Then:
+Task 1 removed the note, so Step 1 is a verification. First confirm the replacement rule is present where a
+reader will find it — a comment above `rpcMsg` stating that a request is a message whose id is echoable and
+that `"null"` means "notification, answer nothing" — and that `grep -c ponytail src/rpc.sd7` prints `0`.
+Then check no other file carries the old behaviour:
 
 ```bash
 grep -rn 'integers only\|echoes back as 0\|echoed back as' src/ tests/ README.md AGENTS.md docs/
