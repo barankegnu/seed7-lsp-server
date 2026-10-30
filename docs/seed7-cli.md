@@ -345,7 +345,8 @@ for it; the s7c mechanism and its citation are here and in the CLI reference abo
 
 ## Milestones
 
-The M1-M5 record in full: what is merged, what is still open from M3, why R-F10 is a
+The M1-M5 record in full, plus what `m5-containment-and-rf10` merged on top of it: what is
+merged, what is still open from M3, why R-F10 is a
 conformance violation as well as stale data, the M5 reflection re-measurement, the measured
 cost of filling every library scope record, and how scan.sd7 carries the UTF-16 column of a
 token without a cumulative table. What is true today for a reader is the What works / What does
@@ -382,6 +383,19 @@ projection of it. A token's UTF-16 column is carried forward incrementally by `n
 stamps `out.col16 := cur.col16`), so no cumulative table is built and scanning a whole
 document is O(document), not O(document × tokens). The reflection API yields declarations
 only, never use sites, which is why references and rename stay M5.
+
+`m5-containment-and-rf10` merges two waves over M5. The R-F10 *disclosure*: `refresh` appends one
+`Information` diagnostic per publish, for a `.s7i` buffer and for no other document
+(`src/lsp_server.sd7`'s `LIB_STALE_MESSAGE`), anchored by `doc_store.firstNonEmptyLine` because all
+265 real libraries open with an empty line and a range over an empty line has no width; with it,
+`doc_index`'s prose read catches `RANGE_ERROR`, so an unreadable comment costs the prose and not
+the whole hover. Request-id *fidelity*: `rpc.sd7` echoes the id as the JSON text `readJson` saw
+(a string, a float, an exponent, an integer too wide for Seed7's `integer`), treats any echoable id
+as a request, and answers nothing at all when there is nothing to echo — which is what removed the
+string-id `-32601` silence and the answer delivered under a borrowed id. R-F10 itself stays open:
+what closed is the silence, not the staleness. The measurements are the sections below — *R-F10 —
+the two routes, measured*, *Do not "fix" these — the `-32603` net, reached by `readJson`*, and
+*Protocol decisions — the exit code and the id on the wire, measured*.
 ```
 
 ## Figures re-measured against the sibling checkouts, 2026-10-21
