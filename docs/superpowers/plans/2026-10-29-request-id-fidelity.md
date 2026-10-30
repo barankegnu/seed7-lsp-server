@@ -25,7 +25,7 @@
 - A string id must come back quoted, a number id bare. Both are echoed as the JSON text the client sent, so `1e3` and `10.5` come back as `1e3` and `10.5` — the source text, not a re-formatted number. Pinned in Task 1.
 - A non-ASCII string id must not echo Seed7's literal form. Measured: `str(jsonValue)` of `{"id":"Ид"}` is `"\1048;\1076;"` — not JSON, and printing it on a plain stdout raises `RANGE_ERROR` at `fil_rtl.c(2912)`. The string arm therefore goes through `jsonw`, which emits raw UTF-8. Pinned in Task 1.
 - An id holding a client-escaped surrogate pair must round-trip as the same two escapes. Measured: `jsonw` turns the pair `("\ud83d\ude00"`) into `"\ud83d\ude00"` and a real astral character into raw UTF-8, so the reply is valid JSON either way. Pinned in Task 1.
-- An unusable id (`true`, `null`, `[1]`, `{…}`, absent) must produce no frame — today `true` and `null` are answered `id: 0`. Pinned in Task 1 and Task 2.
+- An unusable id (`true`, `null`, `[1]`, `{…}`, absent) must produce no frame — measured today a `textDocument/hover` **notification** with no `id`, and one with `"id":[1]`, are each answered `{"id":0,…}`, which LSP forbids (L1674: a notification must not be answered). Pinned in Task 1 and Task 2.
 - An unknown method asked with a string id must produce `-32601`, not silence. That is the hang this plan exists to remove. Pinned in Task 2.
 
 ---
@@ -58,6 +58,8 @@ check("and it is a request",             str(m.isRequest), "TRUE");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\":\"x\"}");
 check("a string id echoes quoted",       m.idJson, "\"42\"");
 check("and it too is a request",         str(m.isRequest), "TRUE");
+m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":10}");
+check("a number id still echoes bare",      m.idJson, "10");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":10.5,\"method\":\"x\"}");
 check("a float id echoes the source text", m.idJson, "10.5");
 m := parseMessage("{\"jsonrpc\":\"2.0\",\"id\":1e3,\"method\":\"x\"}");
@@ -143,7 +145,7 @@ const func string: idJsonOf (in jsonValue: idValue) is func
 make test-rpc && make graph && make test-graph
 ```
 
-Expected: `rpc: 46 checks, 0 failed` (31 baseline, +13 in Step 1, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` becomes `check("id", m.idJson, "7")` in this commit — it is the only reader of the deleted field besides `firstUnhandled`, which does not touch ids.
+Expected: `rpc: 45 checks, 0 failed` (31 baseline, +12 in Step 1 once the `m.id` check is dropped, +2 in Step 3), `graph: 21 checks, 0 failed`. `tests/rpc_test.sd7:17`'s existing `check("id", str(m.id), "7")` becomes `check("id", m.idJson, "7")` in this commit — it is the only reader of the deleted field besides `firstUnhandled`, which does not touch ids.
 
 - [ ] **Step 7: Prove the checks can fail**
 
@@ -269,7 +271,7 @@ Expected: 21 graded lines each `0 failed`, `git status --porcelain -uall` empty 
 ## Definition of done
 
 - `{"id":"42"}` is answered `"id":"42"`, at every method including `initialize`; `{"id":10.5}` is answered `10.5`, not `10` and not `0`.
-- A request with no usable id (`true`, `null`, `[1]`, absent) produces **no** frame, and a notification for a method that has a response produces no frame.
+- A message with no usable id (`true`, `null`, `[1]`, `{…}`, absent) produces **no** frame, which also ends the spec violation where a `textDocument/hover` notification was answered `id: 0`.
 - An unknown method asked with a string id produces `-32601`.
 - Fifteen unit checks and six wire checks exist; four named mutants in Task 1 Step 7 (whose stub-step counterpart reddens 9) and two in Task 2 Step 3 each redden a named check, and Task 2 Step 3 records that `junk == 0` cannot see a wrong id.
 - The `ponytail:` note at `src/rpc.sd7:8-11` is gone and `grep -rn 'integers only' src/ tests/ README.md AGENTS.md docs/` prints nothing.
