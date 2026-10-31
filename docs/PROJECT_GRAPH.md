@@ -16,7 +16,7 @@ main.sd7                       57  lsp_server.sd7
 occurrences.sd7               558  analysis.sd7 blocks.sd7 keywords.sd7 scan.sd7
 rpc.sd7                       296  jsonw.sd7 transport.sd7 utf8bytes.sd7 +stdlib: json.s7i strifile.s7i
 scan.sd7                      519  utf8bytes.sd7
-transport.sd7                 184  utf8bytes.sd7 +stdlib: utf8.s7i
+transport.sd7                 187  utf8bytes.sd7 +stdlib: utf8.s7i
 uris.sd7                       83  +stdlib: encoding.s7i
 utf8bytes.sd7                  66
 features/completion.sd7       124  analysis.sd7 doc_store.sd7 features/kinds.sd7 jsonw.sd7 keywords.sd7

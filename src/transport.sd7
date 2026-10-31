@@ -155,8 +155,11 @@ const func boolean: readMessage (inout string: body) is func
   begin
     # One header block per pass. A block with no Content-Length is reported and passed over:
     # the spec requires the header, not the stream, so the frames behind it are still read.
-    # `framingFatal' belongs in this condition -- left out, a header line the reader cannot
-    # decode spins here, re-raising and re-logging `is not valid UTF-8' forever.
+    # `framingFatal' here is the policy "once fatal, stop reading" applied to the whole request,
+    # not a spin guard: deleting this clause alone reddens nothing and does not hang (measured at
+    # a1753f1: 225 checks, 0 failed), because the inner clause and the fatal arm below already keep
+    # a later pass from parsing a length, so nothing behind a fatal frame is ever answered and the
+    # stream is only drained line by line to EOF instead of ending the read here.
     while not okay and not framingFatal and hasNext(STD_UTF8_IN) do
       # First statement of the pass. `contentLength' is a local, so a length parsed for an
       # earlier frame would read the NEXT frame's body with the wrong byte count.
