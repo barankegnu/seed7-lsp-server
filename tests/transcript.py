@@ -1465,6 +1465,21 @@ expect(code == 2 and junk == 0,
        "invalid UTF-8 in a header line: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
 expect("header line is not valid UTF-8" in err, "and stderr names the header line")
 
+# The desync shape the header comment names: the raise lands on a CONTINUATION header line,
+# AFTER a valid Content-Length was parsed. The body's framing is then already lost, so
+# readFrameBody must not read it -- without that loop guard the bytes behind the bad line do
+# decode, readMessage returns TRUE, and main.sd7 answers a frame whose header was never
+# finished (measured: a second reply, the -32700 for that garbage, while code and junk stay
+# at their good values -- so the count of ANSWERED frames is what can see this case).
+BAD_CONT = b"Content-Length: 60\r\n\xff\r\n\r\n" + b"x" * 70
+replies, code, err, junk = run([frame(msgs[0]), BAD_CONT,
+                                frame({"jsonrpc": "2.0", "id": 15, "method": "shutdown"})])
+expect(code == 2 and junk == 0 and "header line is not valid UTF-8" in err,
+       "invalid UTF-8 on a continuation header line: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+answered = [r.get("id") for r in replies if "result" in r or "error" in r]
+expect(answered == [msgs[0]["id"]],
+       "and the body behind a fatal header line is never answered (%s)" % answered)
+
 # --- Task 1/2 wire proofs: analyzer byte columns arrive as UTF-16 character ranges,
 # --- and code after a based literal is visible to wordAt again ---
 # A line whose error sits behind two 2-byte characters: the analyzer counts bytes,
