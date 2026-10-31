@@ -17,7 +17,7 @@ const type: blockRef is new struct
     # "func" for the body of a routine, "" for everything else. `kind' cannot carry this:
     # features/folding_range.sd7:31-32 serialises it into FoldingRange.kind, so it may only hold
     # what a client is meant to read. blockRegions has one `# Strip internal marker' assignment
-    # (:390), blanking a CLAUSE region and a SECTION; a routine body is pushed with kind "" (:256),
+    # (:392), blanking a CLAUSE region and a SECTION; a routine body is pushed with kind "" (:256),
     # so it was never marked to begin with. Seed7 closes a proc body with `end func' too -- there is
     # no `end proc' -- so "proc" is a value no input reaches.
     var string: closer is "";
@@ -284,6 +284,8 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
 # window, not only the ones whose own enclosing control is `control': a clause two levels down sits
 # in this window too, and leaving it out changes which clauses are emitted -- measured, the
 # direct-owner tally dropped a clause region in 86 of the 344 corpus files (lib/ar.s7i lost 175-184).
+# Pinned inside `make test' by the `while TRUE do' fixture in tests/blocks_test.sd7, which reddens
+# when this counts direct owners only; tools/regions_gate.sh carries the corpus side of that claim.
 # ponytail: one scan of `clauses' per DISTINCT control window, memoised in `tally' below. Measured
 # on prg/chkarr.sd7, interpreted: one blockRegions call costs 3.97 s -- 1.57 s of it walkRegions'
 # own pass over the tokens, 2.38 s these counts, and the sort, split, owner walk and appends share

@@ -5,9 +5,9 @@
 #   <path>\t<region count>\t<start-end[:kind] ...>
 # for every `lib/*.s7i` and `prg/*.sd7` in the Seed7 checkout. The value is the diff between two
 # runs: a refactor of the post-passes in `src/blocks.sd7` may move no answer, and 344 real files
-# (3.6 MB of source, 4 847 regions in the worst one) is the widest such check this tree can build.
-# The regions come from `blockRegions` in `src/blocks.sd7` itself -- a retyped copy would gate a
-# machine the server does not have.
+# (24 981 055 bytes of source; 4 881 regions in the worst one, prg/chkarr.sd7) is the widest such
+# check this tree can build. The regions come from `blockRegions` in `src/blocks.sd7` itself -- a
+# retyped copy would gate a machine the server does not have.
 #
 # Files are read with openUtf8 and a readln loop, the same decoded text the server sees. A plain
 # open(path, "r") decodes one character per byte; `tools/rf10_probe.sh`'s header documents what that
@@ -28,13 +28,15 @@
 # text's own newline count -- so the gate's input shape is the unit suite's input shape.
 #
 # Not wired into `make test`, and it must not be: it is a measurement over an external corpus, it
-# takes minutes, and it compares against a baseline file rather than asserting anything by itself.
-# Run it before and after any change to blockRegions, and diff the two artifacts.
+# takes ~23 s on this tree (41.4 s measured against the quadratic post-passes it gated), and it
+# compares against a baseline file rather than asserting anything by itself. Run it before and after
+# any change to blockRegions, and diff the two artifacts.
 #
-#   sh tools/regions_gate.sh [OUTFILE] [SEED7_DIR]   # OUTFILE default /dev/stdout,
+#   sh tools/regions_gate.sh [OUTFILE] [SEED7_DIR]   # OUTFILE default stdout,
 #                                                    # SEED7_DIR default /home/username/seed7
 #
-# The last line is the sentinel, and no payload counts as a result without it:
+# The last line is the sentinel, and no payload counts as a result without it -- absent, the script
+# exits 3 and writes nothing to OUT:
 #   SENTINEL files=<rows written> regions=<regions across them>
 set -eu
 
@@ -43,7 +45,7 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
-OUT=${1:-/dev/stdout}
+OUT=${1:-}
 SEED7=${2:-/home/username/seed7}
 SRC=$(cd "$(dirname "$0")/.." && pwd)/src
 WORK=$(mktemp -d)
@@ -162,4 +164,19 @@ const proc: main is func
   end func;
 SD7
 
-s7 -q -l "$SRC" "$WORK/regions_gate.sd7" "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 > "$OUT"
+s7 -q -l "$SRC" "$WORK/regions_gate.sd7" "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 > "$WORK/out.txt"
+
+# The sentinel is DEMANDED, not hoped for: AGENTS.md forbids judging a run by its status code, and
+# only the sentinel proves `main' ran to the end. Measured with a `blocks.sd7' that does not parse,
+# the plain redirect left a 0-byte artifact for the next reader to diff (s7 exited 1 there); an
+# absent sentinel now stops the run with exit 3 and writes nothing to OUT.
+grep -q '^SENTINEL files=' "$WORK/out.txt" || {
+  echo "regions_gate: no SENTINEL line -- s7 did not complete" >&2
+  exit 3
+}
+
+if [ -n "$OUT" ]; then
+  cat "$WORK/out.txt" > "$OUT"
+else
+  cat "$WORK/out.txt"
+fi
