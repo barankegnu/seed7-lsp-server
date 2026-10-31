@@ -1446,6 +1446,25 @@ expect(all(r.get("id") is None or "method" in r for r in replies
            if r.get("error", {}).get("code") == -32700),
        "parse error carries a null id, per JSON-RPC")
 
+# --- a byte sequence that is not valid UTF-8 must never reach stdout (audit finding 1/2) ---
+# utf8.s7i's getln/gets raise RANGE_ERROR at the first undecodable byte (measured:
+# readln -> RANGE_ERROR ut8_rtl.c(771)); the read sits in transport, outside main.sd7's
+# handler net, so today the trace lands on stdout. The frames are hand-built bytes because
+# json.dumps cannot emit an invalid one.
+BAD_BODY = b'{"jsonrpc":"2.0","id":9,"method":"textDocument/hover","params":{"a":"\xff"}}'
+replies, code, err, junk = run([frame(msgs[0]),
+                                b"Content-Length: %d\r\n\r\n" % len(BAD_BODY) + BAD_BODY,
+                                frame({"jsonrpc": "2.0", "id": 13, "method": "shutdown"})])
+expect(code == 2 and junk == 0,
+       "invalid UTF-8 in a body: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+expect("frame body is not valid UTF-8" in err, "and stderr names the frame body")
+BAD_HDR = b"Content-Length: \xff7\r\n\r\n"
+replies, code, err, junk = run([frame(msgs[0]), BAD_HDR,
+                                frame({"jsonrpc": "2.0", "id": 14, "method": "shutdown"})])
+expect(code == 2 and junk == 0,
+       "invalid UTF-8 in a header line: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+expect("header line is not valid UTF-8" in err, "and stderr names the header line")
+
 # --- Task 1/2 wire proofs: analyzer byte columns arrive as UTF-16 character ranges,
 # --- and code after a based literal is visible to wordAt again ---
 # A line whose error sits behind two 2-byte characters: the analyzer counts bytes,
