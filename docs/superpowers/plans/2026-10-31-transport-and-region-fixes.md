@@ -203,11 +203,13 @@ Finally add `and not framingFatal` to both `while` conditions in `readMessage` (
 - [ ] **Step 4: run the suite and confirm green**
 
 Run: `make transcript` then `make test`
-Expected: `transcript: 217 checks, 0 failed` (213 + the four new checks). 21 suites `0 failed`. The pre-existing check at line 184 (`frame lacking Content-Length is reported`) must still pass — it is the case this task does *not* touch.
+Expected: `transcript: 217 checks, 0 failed` (213 + the four new checks). 21 suites `0 failed`. Measured at `8d9e630`: 1 113 checks across 21 suites (Task 1 moved the total to 1 109; four more here). One consequence worth knowing rather than fixing: after a fatal byte in a BODY the partial body is still handed to `main`, which answers one `-32700` frame and then exits 2 — `junk=0`, stdout frame-clean. The pre-existing check at line 184 (`frame lacking Content-Length is reported`) must still pass — it is the case this task does *not* touch.
 
-- [ ] **Step 5: prove the guards can fail (mutation)**
+- [ ] **Step 5: prove what is and is not load-bearing (mutation)**
 
-Delete `and not framingFatal` from the inner header `while` only, and run `make transcript`: expect the header-line check to hang or fail. Restore the exact bytes (`git checkout -- src/transport.sd7` is safe here — the file is committed except that one clause, so `git diff` first and confirm nothing else is uncommitted). Record the mutation in the commit message.
+Delete `and not framingFatal` from the inner header `while` only, and run `make transcript`; then do the same for the outer one. Record what actually happens for each — do not report a prediction.
+
+Measured on this branch at `8d9e630`, so the expectation is a result rather than a guess: **neither clause hangs or reddens anything.** Removing either leaves 217 green. The reason is that a `getln` raise leaves `line` as `""`, which ends the inner block loop on its own; the clauses state the policy "once fatal, stop reading", they are not the thing that stops the spin. What IS mutation-proven in this task are the two `catch` arms — deleting either turns its pair of checks from `exit 2` to `exit 0`. RULING (ledger): keep both clauses as the policy statement Task 3's loop depends on, and say in the commit which parts are proven and which are not. The alternative — deleting the clauses — would make `readMessage` rely on an incidental `line <> ""` side effect to stop reading after a fatal byte, which is the kind of coupling AGENTS.md calls a defect.
 
 - [ ] **Step 6: commit**
 
