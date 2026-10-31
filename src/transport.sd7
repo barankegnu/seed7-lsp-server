@@ -153,7 +153,14 @@ const func boolean: readMessage (inout string: body) is func
     var string: line is "";
     var integer: contentLength is 0;
   begin
-    if hasNext(STD_UTF8_IN) then
+    # One header block per pass. A block with no Content-Length is reported and passed over:
+    # the spec requires the header, not the stream, so the frames behind it are still read.
+    # `framingFatal' belongs in this condition -- left out, a header line the reader cannot
+    # decode spins here, re-raising and re-logging `is not valid UTF-8' forever.
+    while not okay and not framingFatal and hasNext(STD_UTF8_IN) do
+      # First statement of the pass. `contentLength' is a local, so a length parsed for an
+      # earlier frame would read the NEXT frame's body with the wrong byte count.
+      contentLength := 0;
       line := getlnSafe(STD_UTF8_IN);
       while line <> "" and hasNext(STD_UTF8_IN) and not framingFatal do
         if startsWith(line, "Content-Length: ") then
@@ -161,7 +168,11 @@ const func boolean: readMessage (inout string: body) is func
         end if;
         line := getlnSafe(STD_UTF8_IN);
       end while;
-      if contentLength = 0 then
+      if framingFatal then
+        # headerNumber or noteBadUtf8 has already printed this frame's one line, and its end is
+        # unknowable -- reporting it as length-less would say the wrong thing. main.sd7's
+        # framingFatal arm is what ends the session, with exit 2.
+      elsif contentLength = 0 then
         # A header block with no Content-Length has no knowable end; report it
         # rather than swallowing the messages behind it in silence.
         writeln(STD_UTF8_ERR, "seed7-lsp: frame without Content-Length ignored");
@@ -169,5 +180,5 @@ const func boolean: readMessage (inout string: body) is func
         body := readFrameBody(STD_UTF8_IN, contentLength);
         okay := length(body) <> 0;
       end if;
-    end if;
+    end while;
   end func;

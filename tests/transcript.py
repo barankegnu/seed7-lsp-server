@@ -182,6 +182,9 @@ replies, code, err, junk = run([
     frame({"jsonrpc": "2.0", "method": "exit"}),
 ])
 expect("without Content-Length" in err, "frame lacking Content-Length is reported")
+expect(any(r.get("id") == 9 and "result" in r for r in replies),
+       "the frame after a length-less header block is still answered")
+expect(code == 0, "a length-less block does not end the session (code=%d)" % code)
 
 # --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
 replies, code, err, junk = run([
@@ -1432,6 +1435,8 @@ for label, hdr in [("non-numeric", b"Content-Length: abc"),
                               frame({"jsonrpc": "2.0", "method": "exit"})])
     expect(code == 2 and junk == 0 and "invalid Content-Length" in err,
            "%s Content-Length: clean fatal exit, stdout uncorrupted" % label)
+    expect("without Content-Length" not in err,
+           "%s Content-Length prints one framing line, not two" % label)
 
 # --- malformed JSON body is a Parse error (-32700), not an internal error ---
 replies, code, err, junk = run([frame(msgs[0]),
@@ -1471,6 +1476,8 @@ expect("header line is not valid UTF-8" in err, "and stderr names the header lin
 # decode, readMessage returns TRUE, and main.sd7 answers a frame whose header was never
 # finished (measured: a second reply, the -32700 for that garbage, while code and junk stay
 # at their good values -- so the count of ANSWERED frames is what can see this case).
+# The 70 trailing bytes must stay MORE than the declared 60: the proof is that decodable bytes
+# remain behind the bad line, so a shortening of the tail turns this into EOF-in-frame and rots it.
 BAD_CONT = b"Content-Length: 60\r\n\xff\r\n\r\n" + b"x" * 70
 replies, code, err, junk = run([frame(msgs[0]), BAD_CONT,
                                 frame({"jsonrpc": "2.0", "id": 15, "method": "shutdown"})])
