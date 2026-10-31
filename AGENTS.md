@@ -106,12 +106,19 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   so a `-te` build writes non-frame bytes into the LSP stream. Trace a running server with `-tfs`.
   The release and debug lines, and the measurement that separated them: *Build — the two flag sets*
   in `docs/seed7-cli.md`.
-- `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
-  **stdout** and exit 1. Never judge a run by its status code, and never let an
-  exception reach stdout — it corrupts the protocol channel.
-  A test suite inherits the trap: one that fails to analyse prints nothing, exits 0,
-  and would pass the recipe unread, so `Makefile`'s `test-%` rule grades the suite's
-  own `N checks, M failed` line.
+- `s7` reports analysis errors on stderr **and exits 1**, with nothing on stdout — measured for a
+  syntax error, a `NO_MATCH`-style failure, an unclosed comment, a redeclaration and a missing
+  `include` (upstream `da2feb38`, "Errors trigger an exit code of 1", 2026-09-25). The exit-0
+  shapes both print on **stdout**: `*** Declaration for main missing`, what a `main` that fails to
+  declare reports, and `*** Sourcefile missing` for an invocation with no file at all. Uncaught
+  exceptions print to **stdout** and exit 1, unchanged — and so does a file that does not exist,
+  which reports `*** File "<path>" not found` at exit 1. So never judge a run by its status code,
+  and never let an exception reach stdout — it corrupts the protocol channel. A test suite inherits
+  the exit-0 half: one whose `main` does not declare prints that line, exits 0, and would pass the
+  recipe unread, so `Makefile`'s `test-%` rule grades the suite's own `N checks, M failed` line — a
+  grading that holds whichever way the interpreter exits.
+  The ten probes, their commands and their stdout byte counts: *Seed7 traps — the exit code,
+  re-measured* in `docs/seed7-cli.md`.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
   (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
@@ -126,6 +133,13 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `gets` on a UTF-8 file counts CHARACTERS, not bytes (`utf8.s7i:132` → `utf8_gets`), so handing
   it a `Content-Length` over-reads any body holding non-ASCII. `transport.readFrameBody` exists
   because of this; `readln` and `getl` are the safe reads.
+- Safe is about the count, not the bytes: `getln`/`gets` on a `STD_UTF8_IN` stream raise
+  `RANGE_ERROR` at the first byte sequence the decoder refuses, and those reads live in
+  `transport.sd7` — **outside** `main.sd7`'s handler block, so an unguarded one writes its trace
+  onto the protocol channel (one `0xFF` in a frame body did, and the session exited 1). Guard a new
+  inbound read at its own site. Which sequences the reader refuses is measured, and an overlong
+  `C0 80` is not one of them (*Protocol decisions — the framing outcomes, measured* in
+  `docs/seed7-cli.md`).
 - A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
   block, so a brace-form array declaration fails somewhere far away in the error tree.
 - `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
@@ -205,9 +219,21 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `STD_UTF8_IN/OUT/ERR` are mandatory (plain `STD_OUT` raises `RANGE_ERROR` on
   non-ASCII), and `Content-Length` is the **byte** count while `length()` counts
   characters.
-- An absent `Content-Length` logs and keeps reading. An unparsable, negative, or
-  over-`MAX_FRAME_BYTES` value makes the frame's end unknowable: log, stop reading,
-  exit **2**. Recovering a desynced byte-counted stream is not possible.
+- Framing is three-way, and each way is pinned by a named check in `tests/transcript.py`. An
+  absent `Content-Length` logs `frame without Content-Length ignored` and **keeps reading** — the
+  frame behind it is still answered and the session can still end at 0. An unparsable value —
+  non-digits, negative, over `MAX_FRAME_BYTES`, or **digits too wide for `integer()`** — makes the
+  frame's end unknowable: log `invalid Content-Length '<value>'`, stop reading, exit **2**; the
+  branch order in `readMessage` is what keeps that to ONE framing line per fatal frame. A byte
+  sequence the reader refuses, in a header line or in a body, logs `<where> is not valid UTF-8` and
+  exits **2** with only frames on stdout — that is the case which used to write an
+  `Uncaught exception` trace onto the protocol channel and exit 1. Recovering a desynced
+  byte-counted stream is not possible. Two limits, stated rather than hidden: "refuses" is the
+  reader's own set, not every invalid sequence (an overlong `C0 80` decodes to `chr(0)` and is
+  served); and a fatal byte in a **body** leaves the bytes already read in hand, so the server
+  answers one `-32700` and then exits 2 — a body that arrived and does not parse is a real Parse
+  error, and from outside the pair looks like a bug. The sessions, the frames and the commands:
+  *Protocol decisions — the framing outcomes, measured* in `docs/seed7-cli.md`.
 - `-32700` with a `null` id for a non-JSON body; `-32600` for a request after `shutdown`;
   `-32002` for traffic before `initialize` — answered under the id that traffic sent, string or
   number, measured with `"id":"x1"` and `"id":"s1"` in a session that never initializes;

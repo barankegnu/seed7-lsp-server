@@ -5,9 +5,10 @@
 #   <path>\t<region count>\t<start-end[:kind] ...>
 # for every `lib/*.s7i` and `prg/*.sd7` in the Seed7 checkout. The value is the diff between two
 # runs: a refactor of the post-passes in `src/blocks.sd7` may move no answer, and 344 real files
-# (24 981 055 bytes of source; 4 881 regions in the worst one, prg/chkarr.sd7) is the widest such
-# check this tree can build. The regions come from `blockRegions` in `src/blocks.sd7` itself -- a
-# retyped copy would gate a machine the server does not have.
+# (24 981 055 bytes of source -- `LC_ALL=C wc -c ~/seed7/lib/*.s7i ~/seed7/prg/*.sd7 | tail -1', the
+# same two globs the run below passes; 4 881 regions in the worst one, prg/chkarr.sd7) is the widest
+# such check this tree can build. The regions come from `blockRegions` in `src/blocks.sd7` itself --
+# a retyped copy would gate a machine the server does not have.
 #
 # Files are read with openUtf8 and a readln loop, the same decoded text the server sees. A plain
 # open(path, "r") decodes one character per byte; `tools/rf10_probe.sh`'s header documents what that
@@ -33,7 +34,11 @@
 # any change to blockRegions, and diff the two artifacts.
 #
 #   sh tools/regions_gate.sh [OUTFILE] [SEED7_DIR]   # OUTFILE default stdout,
-#                                                    # SEED7_DIR default /home/username/seed7
+#                                                    # SEED7_DIR default /home/username/seed7.
+#                                                    # There is no /dev/stdout default any more, so
+#                                                    # naming SEED7_DIR alone needs an explicit
+#                                                    # empty first argument:
+#                                                    #   sh tools/regions_gate.sh "" ~/seed7
 #
 # The last line is the sentinel, and no payload counts as a result without it -- absent, the script
 # exits 3 and writes nothing to OUT:
@@ -167,9 +172,15 @@ SD7
 s7 -q -l "$SRC" "$WORK/regions_gate.sd7" "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 > "$WORK/out.txt"
 
 # The sentinel is DEMANDED, not hoped for: AGENTS.md forbids judging a run by its status code, and
-# only the sentinel proves `main' ran to the end. Measured with a `blocks.sd7' that does not parse,
-# the plain redirect left a 0-byte artifact for the next reader to diff (s7 exited 1 there); an
-# absent sentinel now stops the run with exit 3 and writes nothing to OUT.
+# only the sentinel proves `main' ran to the end. The two failure paths catch different failures, and
+# neither writes OUT. `set -eu' catches a nonzero s7 -- an analysis error exits 1, measured in "Seed7
+# traps -- the exit code, re-measured" in docs/seed7-cli.md -- and aborts on the run line, before this
+# grep and before the copy to OUT; that is what the old one-line redirect could not do, and why it
+# left a 0-byte artifact for the next reader to diff (measured at 3b64d54 with a `blocks.sd7' that did
+# not parse). Exit 3 is therefore reachable only when s7 exits 0 and still printed no sentinel, whose
+# measured shape is `*** Declaration for main missing' on stdout -- this gate's own `main' failed to
+# declare. Because OUT survives both paths, a STALE artifact is what the next reader diffs: check its
+# SENTINEL row and line count against the new run, not only the diff between them.
 grep -q '^SENTINEL files=' "$WORK/out.txt" || {
   echo "regions_gate: no SENTINEL line -- s7 did not complete" >&2
   exit 3

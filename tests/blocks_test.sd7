@@ -327,7 +327,9 @@ const proc: main is func
     check("a declaration below every routine body pairs with nothing",
           regionOfDeclaration(demo(), 26), "none");
     # The no-match answer, pinned as a record. startLine 0 alone cannot mean "nothing": a real
-    # region may start at line 0 (fixture 1 is exactly that), so `closer' is the discriminator.
+    # region may start at line 0 -- "a routine on the first line still pairs" below pins one as
+    # "0/3//func", and it is fixture 2's text, not fixture 1 (the empty text, which shows nothing) --
+    # so `closer' is the discriminator.
     check("an unpaired declaration answers the empty region",
           regionPin(routineRegionFor(blockRegions(demo(), pred(linesIn(demo()))), 26)), "0/0//");
     check("a routine on the first line still pairs",

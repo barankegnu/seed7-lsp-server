@@ -414,7 +414,7 @@ numbers elsewhere in these documents are not errors — they are measurements of
 | distinct `$ syntax` terminals | 77 (unchanged) | the M4 §6.2 pipeline |
 | `CANNOT_BE_NAME` entries | 63 (unchanged) | `sh tools/keyword_gate.sh` |
 | `corpus_scan.sh`'s file set | 343 (214 `lib/*.s7i` + 129 `prg/*.sd7`), re-measured 2026-10-31; the row read 342 / 213 for the life of the branch, and what moved is the installed library set, not the tool: `lib/pixel.s7i`, last touched at Seed7 `f849fc6a` (2026-10-23), is the file the older row did not count | `ls lib/*.s7i prg/*.sd7 \| wc -l` |
-| suite totals | 21 suites, 1108 checks — these eight are the suites that moved or that carry a figure here, not an enumeration of the 21: `rpc` 47, `scan` 66, `doc_store` 81, `features` 191, `lsp_server` 82, `doc_index` 14, `transcript` 212, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read; 1 077 → 1 100 is the request-id wave, measured 2026-10-31 at HEAD and against the tree at `8d00014`, where the 1 077 was taken: `rpc` 31 → 47 — the largest single growth on the branch, the id-fidelity pins (string, float, exponent, over-wide, surrogate pair) plus the notification-silence pins — and `transcript` 203 → 210; the other 19 suites are unmoved — which per-suite measurement shows and arithmetic does NOT: equal sums at the two endpoints bound the total, they do not force each member, since one suite could grow while another shrank (1 100 − 47 − 210 = 1 077 − 31 − 203 = 843). That correction is the id plan's own Task 2 Step 2 rule — if the run disagrees, the run wins — landing one wave late. 1 100 → 1 106 is the disclosure-anchor and `RANGE_ERROR`-half fix wave, measured 2026-10-31: `transcript` 210 → 211 (the disclosure's non-zero-width pin, on a library fixture whose line 1 is empty as every real `.s7i` has it), `doc_store` 77 → 80 (the three cases of `firstNonEmptyLine`), `doc_index` 12 → 14 (the `catch` arm and the empty-list reset inside it, pinned separately); 1 106 → 1 108 is the minors pass on that review: `transcript` 211 → 212 and `doc_store` 80 → 81. The first is the pin that the library fixture's line 1 IS empty — the anchor checks DERIVE their line from the fixture, so deleting the blank line keeps every one of them green while the production helper is reverted; the original defect survived precisely because nothing pinned that property. The second pins a CRLF blank prefix, which was right on the wire by inheritance from the line-break model and had no check at all. | `make test`; the 31 and the 203: `git archive 8d00014 src tests \| tar -x -C /tmp/at1077` then `s7 -q -l /tmp/at1077/src /tmp/at1077/tests/rpc_test.sd7` and `python3 /tmp/at1077/tests/transcript.py` |
+| suite totals | 21 suites, 1133 checks — these nine are the suites that moved or that carry a figure here, not an enumeration of the 21: `rpc` 47, `scan` 66, `doc_store` 81, `features` 191, `lsp_server` 82, `doc_index` 14, `transcript` 225, `blocks` 83, `agents` 45 (the 1040 row was measured 2026-10-21 on this suite set, before these checks existed; 1 061 → 1 064 is the test-discipline wave's `hover` and `signatureHelp` wire pins plus `libFirstLength`'s path-declared `definition` pin; 1 064 → 1 075 is the R-F10 disclosure wave, measured 2026-10-30: `lsp_server` 79 → 82, `transcript` 196 → 202, `doc_index` 10 → 12, `scan` and `features` unmoved; 1 075 → 1 076 is the gate's own list growing by the one token that freezes the heading of the section below, so the `agents` figure in this row is the number `make test-agents` prints, not a suite's assertions; 1 076 → 1 077 is the fix wave's one `transcript` check, the hover of a func declared in `lib/asn1.s7i`, which reads its prose from disk and is the only wire pin on that read; 1 077 → 1 100 is the request-id wave, measured 2026-10-31 at HEAD and against the tree at `8d00014`, where the 1 077 was taken: `rpc` 31 → 47 — the largest single growth on the branch, the id-fidelity pins (string, float, exponent, over-wide, surrogate pair) plus the notification-silence pins — and `transcript` 203 → 210; the other 19 suites are unmoved — which per-suite measurement shows and arithmetic does NOT: equal sums at the two endpoints bound the total, they do not force each member, since one suite could grow while another shrank (1 100 − 47 − 210 = 1 077 − 31 − 203 = 843). That correction is the id plan's own Task 2 Step 2 rule — if the run disagrees, the run wins — landing one wave late. 1 100 → 1 106 is the disclosure-anchor and `RANGE_ERROR`-half fix wave, measured 2026-10-31: `transcript` 210 → 211 (the disclosure's non-zero-width pin, on a library fixture whose line 1 is empty as every real `.s7i` has it), `doc_store` 77 → 80 (the three cases of `firstNonEmptyLine`), `doc_index` 12 → 14 (the `catch` arm and the empty-list reset inside it, pinned separately); 1 106 → 1 108 is the minors pass on that review: `transcript` 211 → 212 and `doc_store` 80 → 81. The first is the pin that the library fixture's line 1 IS empty — the anchor checks DERIVE their line from the fixture, so deleting the blank line keeps every one of them green while the production helper is reverted; the original defect survived precisely because nothing pinned that property. The second pins a CRLF blank prefix, which was right on the wire by inheritance from the line-break model and had no check at all. 1 108 → 1 133 is the transport-and-region wave, measured 2026-10-31 at `3b64d54` by `make test` (21 suites, 1 133 checks, 0 failed): `transcript` 212 → 225 and `blocks` 71 → 83, and the other 19 unmoved because nothing could move them: `git diff --name-only 5d8b72c..HEAD` touches only `src/blocks.sd7`, `src/transport.sd7` and those two suites' own files — so the two deltas (+13, +12) sum to the total's +25 rather than merely happening to. `transcript`'s 13 are the framing pins, one commit at a time: +1 for the fourth hostile label, `over-wide` (`e24e464`), +4 for the two undecodable-byte sessions (`8d9e630`), +2 for the continuation-header session (`676ff57`), and +2 for the length-less block with +4 for the one-framing-line-per-fatal-frame pin across the four labels (`a1753f1`). `blocks`'s 12 are three fixtures at three checks each (the region list, the region invariant, `linesIn` matches `lineCount`): Task 4's two `is <value>` fixtures (`311b34e`, 71 → 77), Task 5's `is new enum` pin (`007812f`, 77 → 80) and its round-1 per-window fixture 6 (`3b64d54`, 80 → 83). | `make test`; the 31 and the 203: `git archive 8d00014 src tests \| tar -x -C /tmp/at1077` then `s7 -q -l /tmp/at1077/src /tmp/at1077/tests/rpc_test.sd7` and `python3 /tmp/at1077/tests/transcript.py` |
 
 Two measurement traps found while taking these, both of which produce a confidently wrong number:
 
@@ -858,8 +858,16 @@ gate's own wall time went 41.4 s → 22.6 s. Two facts that run produced, both l
 - `prg/chkarr.sd7` holds **4 881** regions on this tree, not the 4 847 the plan quotes for
   `5d8b72c`. Task 4 moved the `pending` branch, so a construct keyword after `is <value>` now opens
   its own region; the plan's figure is history, and every before/after claim here is against this
-  tree's own baseline. The mean across `lib/*.s7i` is 102 (21 975 regions over 215 files), not the
-  ~95 the deleted `ponytail:` note called a ceiling — it was always the mean, of a 213-file set.
+  tree's own baseline. The largest `lib/*.s7i` is `lib/tiff.s7i` at **754**, not the 719 the plan
+  quotes for `5d8b72c` (`docs/superpowers/plans/2026-10-31-transport-and-region-fixes.md:374` —
+  history, and not re-measured here), and the mean across `lib/*.s7i` is 102 (21 975 regions over
+  215 files), not the ~95 the deleted `ponytail:` note called a ceiling — it was always the mean,
+  of a 213-file set. Both are read out of the artifact this gate already wrote, not out of a second
+  run, in `~/.cache/seed7-lsp-investigation/work/gate/`:
+  `awk -F'\t' '$1 ~ /\/lib\// {print $2 "\t" $1}' regions-final.txt | sort -nr | head -1` for the
+  754, the same awk with `{n += $2; c++} END {printf "%.1f", n/c}` for the mean.
+  `regions-before.txt`, `regions-final.txt` and `regions-round1.txt` there are one md5
+  (`c6cabda22a9bcdea3571902dbf0a3b86`), which is the empty diff above restated as a checksum.
 - `skips=1` is `prg/err.sd7`, the interpreter's own invalid-encoding test program: the one corpus
   file that is NOT valid UTF-8. `readln` over an `openUtf8` handle raises `RANGE_ERROR` at
   `ut8_rtl.c(771)` ("The file contains an invalid encoding") — a different raiser from the
@@ -894,3 +902,128 @@ are ~2.38 s of the remaining ~2.4 s and the sort, split, owner walk and appends 
 Absolute seconds move between runs of identical binaries — the caveat at the top of
 *Every change — the two hot paths, measured* applies to every row above, which is why each one names
 its tree, its shape and its rep count.
+
+## Protocol decisions — the framing outcomes, measured (2026-10-31)
+
+The rules are AGENTS.md's framing bullet and the `getln`/`gets` raise trap beside it. Four wire
+sessions, each pinned by the named checks in the last column; `python3 tests/transcript.py`
+(`make transcript`, 225 checks) runs them. The reply lists quoted here were taken with
+`~/.cache/seed7-lsp-investigation/work/gate/framing_probe.py`, which copies `frame`, `split_frames`
+and `run` out of that suite verbatim and sends the same four sessions to `s7 -q -l src src/main.sd7`;
+`python3 <that file>` prints one `exit= junk= replies=` line plus the stderr per session.
+
+| input, after a good `initialize` | at `5d8b72c` (the audit — history, not re-taken) | at `3b64d54`, re-measured here | the checks that pin the third column |
+|---|---|---|---|
+| `Content-Length: 99999999999999999999999`, then `shutdown`, `exit` | `exit 0`, 2 frames, stderr `frame without Content-Length ignored` — 23 digits read as *absent*, so the session ended as though the client had closed it | `exit 2`, `junk 0`, one line `seed7-lsp: invalid Content-Length '99999999999999999999999'`, `shutdown` unanswered | `over-wide Content-Length: clean fatal exit, stdout uncorrupted`; `over-wide Content-Length prints one framing line, not two` |
+| a frame body holding one raw `0xFF` | `exit 1`, stdout carrying `Uncaught exception … main.sd7(10)`, i.e. `junk 1` | `exit 2`, `junk 0`, stderr `seed7-lsp: frame body is not valid UTF-8`, and **one `-32700` answered first** (below) | `invalid UTF-8 in a body: exit 2 and only frames on stdout`; `and stderr names the frame body` |
+| a header line holding one raw `0xFF` | `exit 1`, the same trace on stdout (`junk 1`) | `exit 2`, `junk 0`, stderr `seed7-lsp: header line is not valid UTF-8`, nothing answered behind it | `invalid UTF-8 in a header line: exit 2 and only frames on stdout`; `and stderr names the header line`; and for a raise that lands *after* a parsed length, `invalid UTF-8 on a continuation header line: exit 2 and only frames on stdout` with `and the body behind a fatal header line is never answered` |
+| a `Content-Type`-only header block, then `shutdown`, `exit` | `shutdown` never answered — 2 frames, ids `[1, null]` | `exit 0`, `junk 0`, stderr `seed7-lsp: frame without Content-Length ignored`, `shutdown` answered (`{"jsonrpc":"2.0","id":13,"result":null}`) | `frame lacking Content-Length is reported`; `the frame after a length-less header block is still answered`; `a length-less block does not end the session` |
+
+The second column is the audit's measurement at `5d8b72c`, quoted from rows 1-4 of the Findings table
+in `docs/superpowers/plans/2026-10-31-transport-and-region-fixes.md`. It is history and was not
+re-taken: the fixes are in the tree, so that behaviour is no longer reachable from it. Rows 5-8 of
+the same table (the three region fixtures and the folding cost) are answered by *Every change — the
+two `blockRegions` post-passes, measured* above, which carries this tree's own counts — 4 881 for
+`prg/chkarr.sd7`, not the table's 4 847.
+
+**One `-32700`, then exit 2 — disclosed, not hidden.** A fatal byte in a *body* is found by
+`readFrameBody`'s own `gets` guard, which sets `chunk := ""`; that is the loop's EOF-in-frame path,
+whose rule is "what arrived goes back to the caller", so `readMessage` returns TRUE with the
+truncated body, `main.sd7` parses it, fails, and answers
+
+    {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: body is not JSON"}}
+
+before `framingFatal` ends the session at 2. Ruled acceptable: a body that arrived and does not parse
+*is* a Parse error, and the id is null because no id was ever read. From outside it looks like a
+server that answers and then dies, which is why it is written down. No check pins that reply — the
+two body checks assert the exit code, `junk` and the stderr string — so this paragraph and the probe
+above are its only record.
+
+**"Refuses" names the reader's set, not every invalid sequence.** Measured at `ut8_rtl.c(771)` and
+recorded in-tree at `src/doc_index.sd7:29-31`: a lone `FF`, the pair `FF FE`, `C3 28` and a lone `80`
+raise `RANGE_ERROR`; the **overlong** pair `C0 80` does not — it decodes to `chr(0)` and is served
+normally. So the honest phrasing of the rule is "the byte sequences the reader refuses", never "any
+invalid UTF-8": a client can still put a `NUL` in a frame and get an answer.
+
+**Do not build a standalone decode probe.** Two attempts at a program calling `gets`/`readln` on an
+`openUtf8` handle over invalid UTF-8 hung this host and cost two tool results; the disabled probe is
+at `~/.cache/seed7-lsp-investigation/work/DO-NOT-RUN-raise.sd7.freezes-os` and must stay unexecuted.
+The wire suite is the replacement: it runs the real server under `communicate(timeout=90)`, so a hang
+costs a timeout instead of a session.
+
+**One framing line per fatal frame is the branch order, not the messages.** At `676ff57` a fatal
+`Content-Length` printed `headerNumber`'s line *and* `frame without Content-Length ignored`, because
+both states arrive as `contentLength = 0`. `a1753f1` put `if framingFatal then … elsif contentLength
+= 0 then …` in front of the length-less arm, and the four `… prints one framing line, not two` checks
+(one per hostile label) are what hold it there.
+
+**Which clause is proven.** Three `and not framingFatal` clauses sit on the read path and they do
+not have the same status. The one in `readFrameBody`'s loop is load-bearing: deleting it reddens
+`and the body behind a fatal header line is never answered` (measured at `676ff57` — stdout then
+holds a second reply, the `-32700` for a body whose header was never finished). The one in the header
+loop is unreached by any fixture, because `getlnSafe` returns an empty line on a raise and
+`line <> ""` ends that loop first — `8d9e630` measured both clauses together (removing either left
+217 checks green and nothing hanging) and `676ff57` separated them. The one in `readMessage`'s outer
+loop reddens nothing and hangs nothing either (measured at `a1753f1` and again at `8a6ef16`: 225
+checks, 0 failed, no session reaching the harness's 90 s timeout); what its absence does is drain the
+rest of the stream line by line to EOF, answering nothing, so it states the policy "once fatal, stop
+reading" rather than guarding a spin. The per-pass `contentLength := 0;` reset is required by
+the loop — the variable is a local, so a length parsed for an earlier frame would read the next
+frame's body with the wrong byte count — but it could not be proven by mutation: no wire input in the
+suite reaches a second pass after a pass that parsed a length, because that needs an empty body with
+`hasNext` still TRUE, and both EOF and a fatal read end the loop first.
+
+## Seed7 traps — the exit code, re-measured (2026-10-31)
+
+AGENTS.md's bullet said "`s7` reports analysis errors on stderr **and exits 0**". Against this
+interpreter that was wrong, and wrong in the direction that makes a silent run look clean. Upstream
+`da2feb38` ("Errors trigger an exit code of 1", 2026-09-25) is in the local checkout —
+`git -C ~/seed7 log --oneline -1 da2feb38` prints it — and analysis errors now exit 1.
+
+Probes: `sh ~/.cache/seed7-lsp-investigation/work/exitcode/run.sh`, which runs each of the ten
+shapes beside it — eight files as `s7 -q <file>`, two as bare invocations — and prints `exit=` and
+`stdout_bytes=` per shape. The byte count is stdout alone, stderr discarded, because the split *is*
+the finding. SEED7 INTERPRETER Version 5.4.10:
+
+| probe | what it provokes | exit | bytes on stdout |
+|---|---|---|---|
+| `raise.sd7` | an uncaught `raise RANGE_ERROR` | 1 | 200 (the trace; the path is part of it) |
+| `truncated.sd7` | `"end" expected found "END OF FILE"` | 1 | 0 |
+| `nosemi.sd7` | `";" expected found "END OF FILE"` | 1 | 0 |
+| `comment.sd7` | `Unclosed comment` — an unterminated `(*` | 1 | 0 |
+| `nomatch.sd7` | `Match for nonsenseFn(n) failed` + `Declaration of "main" failed` | 1 | 0 |
+| `badinclude.sd7` | `Include file "no_such_module.s7i" not found` | 1 | 0 |
+| `dupmain.sd7` | `Redeclaration of "main"` + `Previous declaration of "main"` | 1 | 0 |
+| `nomain.sd7` | `*** Declaration for main missing` | **0** | **32** |
+| `s7 -q` with no sourcefile | `*** Sourcefile missing` | **0** | **22** |
+| `s7 -q /nonexistent.sd7` | `*** File "/nonexistent.sd7" not found` | 1 | 37 |
+
+The two exit-0 shapes both print on **stdout**, and the first is the interpreter's own `printf`:
+`grep -n "Declaration for main missing" ~/seed7/src/s7.c` gives line 467. Two more shapes write to
+stdout and were never in dispute: an uncaught exception (trace, exit 1) and a command-line file that
+does not exist (exit 1). What the old bullet got wrong is the analysis-error class: a syntax error,
+a `NO_MATCH`, a redeclaration, an unclosed comment and a missing include all exit 1 with nothing on
+stdout — a missing `include` complains on stderr, while a missing *command-line* file complains on
+stdout — so "never judge a run by its status code" survives while "exits 0" does not.
+
+Two consequences, both already true of the tree and now stated rather than assumed:
+
+- `Makefile`'s `test-%` grading is unchanged and still load-bearing. A suite that fails to analyse
+  still fails its recipe, and the mechanism is the grep, not `s7`'s status: the recipe merges
+  `2>&1` into `out`, prints it, and the shell's exit status is the final `grep -q` on the total line
+  — measured with a `tests/broken_test.sd7` holding that `NO_MATCH`, which printed the error text and
+  exited 1. The exit-0 rows above are why the grep must stay: a suite whose `main` does not declare
+  prints `*** Declaration for main missing` on stdout, exits 0, and has no total line either, so a
+  recipe grading `s7`'s status would pass it unread — as it would the `*** Sourcefile missing`
+  shape, 22 bytes on stdout and exit 0. Only the comment at `Makefile:13` was corrected
+  here (it repeated "still exits 0"); the grading logic was not touched.
+- `tools/keyword_gate.sh:62` already said 1 — "`|| true`: s7 exits 1 for an analysis error, and
+  `set -e` would abort on the first refusal" — and was the only in-tree statement matching this
+  interpreter. AGENTS.md and this file were the outliers, and `tools/regions_gate.sh`'s sentinel
+  comment now names the same measurement for its two failure paths.
+
+The shape to keep: an exit code without a stdout byte count is half a measurement. `1` with 0 bytes
+is an analysis error, `0` with a line on stdout is a run that never analysed anything — a `main` that
+never declared, or no sourcefile at all — and `1` with a trace on stdout is an uncaught exception.
+Only the third is a defect in the server, and only the second can pass a recipe that grades the
+status code.
