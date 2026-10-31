@@ -236,7 +236,14 @@ const func array fixture: allFixtures is func
     f.text := "(* unclosed\n"; f.expected := "0-1:comment"; out &:= f;
     f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
     f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; out &:= f;
-    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; out &:= f;
+    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-2"; out &:= f;
+    # A declaration whose `is' is followed by a value, not a name: the keyword that opens the
+    # next block must still reach its own branch. At HEAD the `begin' branch never runs and
+    # the body region is missing from the answer.
+    f.text := "const proc: q is func\n  var integer: a is 0;\nbegin\n  writeln(a);\nend func;\n";
+    f.expected := "0-4 2-4"; out &:= f;
+    f.text := "const proc: p is func\n  local\n    var integer: a is 0;\n  begin\n    writeln(a);\n  end func;\n";
+    f.expected := "0-5 1-3 3-5"; out &:= f;
     f.text := demo();
     f.expected := "0-1:imports 2-5 3-5 6-14 7-12 8-11 9-11 12-14 17-24 18-24 19-23 20-21 22-23";
     out &:= f;

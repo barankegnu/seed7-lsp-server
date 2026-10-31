@@ -234,13 +234,6 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
             end if;
           elsif word = "is" or word = "new" or word = "sub" then
             pending := "func";
-          elsif pending = "func" then
-            pending := "";
-            if word = "func" then
-              pushBlock(st, "end func", tk.line0, "");
-            elsif isTypeBody(word) then
-              pushBlock(st, "end " & word, tk.line0, "");
-            end if;
           elsif isControl(word) then
             pushBlock(st, "end " & word, tk.line0, "");
           elsif word = "repeat" then
@@ -255,6 +248,13 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
           elsif isClause(word) then
             closeFrom(st, out, firstAtOrAbove(st, "clause"), tk.line0);
             pushBlock(st, "clause", succ(tk.line0), "clause");
+          elsif pending = "func" then
+            pending := "";
+            if word = "func" then
+              pushBlock(st, "end func", tk.line0, "");
+            elsif isTypeBody(word) then
+              pushBlock(st, "end " & word, tk.line0, "");
+            end if;
           end if;
         end if;
         if tk.kind <> TK_LINE_COMMENT and inRun then
