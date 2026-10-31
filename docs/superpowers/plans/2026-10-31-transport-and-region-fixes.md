@@ -243,10 +243,17 @@ expect(any(r.get("id") == 9 and "result" in r for r in replies),
 expect(code == 0, "a length-less block does not end the session (code=%d)" % code)
 ```
 
+Then make the branch ORDER provable, in the hostile-framing loop Task 1 extended. At HEAD a fatal value prints TWO lines — `headerNumber` logs `invalid Content-Length '<text>'` and then `readMessage`'s `contentLength = 0` branch logs `frame without Content-Length ignored`, because both states arrive as `0`. Step 3's `if framingFatal` branch, placed before the length-less branch, is what separates them, so pin it:
+
+```python
+    expect("without Content-Length" not in err,
+           "%s Content-Length prints one framing line, not two" % label)
+```
+
 - [ ] **Step 2: run it and confirm it fails for the named reason**
 
 Run: `make transcript`
-Expected: `FAIL the frame after a length-less header block is still answered`. Measured at HEAD: 2 frames, ids `[1, null]` — `shutdown` (id 9) was never read, because `readMessage` returned FALSE after logging.
+Expected: `FAIL the frame after a length-less header block is still answered`, and `FAIL non-numeric Content-Length prints one framing line, not two` (plus the same FAIL for `negative`, `oversized` and `over-wide`) — measured at `5d8b72c`: 2 frames with ids `[1, null]`, `shutdown` never read, and both framing lines on stderr for a fatal value.
 
 - [ ] **Step 3: implement the pass-over**
 
@@ -434,7 +441,7 @@ Add one trap line: `getln`/`gets` on a `STD_UTF8_IN` stream raise `RANGE_ERROR` 
 
 - [ ] **Step 3: write the measurement section in `docs/seed7-cli.md`**
 
-One dated section holding, with the command beside every number: the Findings table above (HEAD vs branch), the four wire outcomes, the three `foldingRange` session timings, the region counts (4 847 `prg/chkarr.sd7`, 719 largest `lib`), and the `tools/regions_gate.sh` invocation. Note in the section that the standalone `gets`-over-invalid-UTF-8 probe hangs this host and that the wire suite is the replacement — the next reader will otherwise try it.
+One dated section holding, with the command beside every number: the Findings table above (HEAD vs branch), the four wire outcomes, the three `foldingRange` session timings, the region counts (4 847 `prg/chkarr.sd7`, 719 largest `lib`), and the `tools/regions_gate.sh` invocation. Also refresh the suite-totals row (`docs/seed7-cli.md:417`, which records `transcript 212` and `21 suites, 1 108 checks`) to the branch's final counts — review finding on Task 1: the row drifted by one check at `e24e464` and will drift again with Tasks 2-4. Note in the section that the standalone `gets`-over-invalid-UTF-8 probe hangs this host and that the wire suite is the replacement — the next reader will otherwise try it.
 
 - [ ] **Step 4: gate the docs against the repo's own rule, then commit**
 
