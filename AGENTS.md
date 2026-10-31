@@ -109,15 +109,20 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
 - `s7` reports analysis errors on stderr **and exits 1**, with nothing on stdout — measured for a
   syntax error, a `NO_MATCH`-style failure, an unclosed comment, a redeclaration and a missing
   `include` (upstream `da2feb38`, "Errors trigger an exit code of 1", 2026-09-25). The exit-0
-  shapes both print on **stdout**: `*** Declaration for main missing`, what a `main` that fails to
-  declare reports, and `*** Sourcefile missing` for an invocation with no file at all. Uncaught
-  exceptions print to **stdout** and exit 1, unchanged — and so does a file that does not exist,
-  which reports `*** File "<path>" not found` at exit 1. So never judge a run by its status code,
-  and never let an exception reach stdout — it corrupts the protocol channel. A test suite inherits
-  the exit-0 half: one whose `main` does not declare prints that line, exits 0, and would pass the
-  recipe unread, so `Makefile`'s `test-%` rule grades the suite's own `N checks, M failed` line — a
-  grading that holds whichever way the interpreter exits.
-  The ten probes, their commands and their stdout byte counts: *Seed7 traps — the exit code,
+  shapes both print on **stdout**: `*** Declaration for main missing`, which a program that analysed
+  CLEAN but holds no `main` the interpreter recognises reports — a file with no `main` at all, or a
+  parameterised one — and `*** Sourcefile missing` for an invocation with no file at all. That
+  `printf` is gated on a zero error count (`s7.c:459-460`, message at `:467`; `returnCode = 1` at
+  `:485-486`), so a
+  `main` whose declaration FAILS is the exit-1 shape above and not this one: it reports
+  `Declaration of "main" failed` on stderr with 0 bytes on stdout. Uncaught exceptions print to
+  **stdout** and exit 1, unchanged — and so does a file that does not exist, which reports
+  `*** File "<path>" not found` at exit 1. So never judge a run by its status code, and never let an
+  exception reach stdout — it corrupts the protocol channel. A test suite inherits the exit-0 half:
+  one that declares no `main` prints that line, exits 0, and would pass the recipe unread, so
+  `Makefile`'s `test-%` rule grades the suite's own `N checks, M failed` line — a grading that holds
+  whichever way the interpreter exits.
+  The twelve probes, their commands and their stdout byte counts: *Seed7 traps — the exit code,
   re-measured* in `docs/seed7-cli.md`.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
@@ -132,13 +137,15 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   only "Declaration of main failed", which reads like a broken body.
 - `gets` on a UTF-8 file counts CHARACTERS, not bytes (`utf8.s7i:132` → `utf8_gets`), so handing
   it a `Content-Length` over-reads any body holding non-ASCII. `transport.readFrameBody` exists
-  because of this; `readln` and `getl` are the safe reads.
-- Safe is about the count, not the bytes: `getln`/`gets` on a `STD_UTF8_IN` stream raise
-  `RANGE_ERROR` at the first byte sequence the decoder refuses, and those reads live in
-  `transport.sd7` — **outside** `main.sd7`'s handler block, so an unguarded one writes its trace
-  onto the protocol channel (one `0xFF` in a frame body did, and the session exited 1). Guard a new
-  inbound read at its own site. Which sequences the reader refuses is measured, and an overlong
-  `C0 80` is not one of them (*Protocol decisions — the framing outcomes, measured* in
+  because of this; `readln` and `getl` are the safe reads — for the count, not for the bytes.
+- Safe there is about the count: `getln`, `gets` and `readln` on a decoded stream (`STD_UTF8_IN`,
+  `openUtf8`) all raise `RANGE_ERROR` at the first byte sequence the decoder refuses, and the
+  inbound ones live in `transport.sd7` — **outside** `main.sd7`'s handler block, so an unguarded read
+  writes its trace onto the protocol channel (one `0xFF` in a frame body did, and the session
+  exited 1). Guard a new inbound read at its own site. `readln` raising is not a prediction:
+  `doc_index.sd7:29-30` and `tools/regions_gate.sh:18-19` each catch it in code that ships, and the
+  corpus gate labels `prg/err.sd7` SKIP for it. Which sequences the reader refuses is measured, and
+  an overlong `C0 80` is not one of them (*Protocol decisions — the framing outcomes, measured* in
   `docs/seed7-cli.md`).
 - A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
   block, so a brace-form array declaration fails somewhere far away in the error tree.

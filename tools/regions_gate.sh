@@ -177,10 +177,13 @@ s7 -q -l "$SRC" "$WORK/regions_gate.sd7" "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 >
 # traps -- the exit code, re-measured" in docs/seed7-cli.md -- and aborts on the run line, before this
 # grep and before the copy to OUT; that is what the old one-line redirect could not do, and why it
 # left a 0-byte artifact for the next reader to diff (measured at 3b64d54 with a `blocks.sd7' that did
-# not parse). Exit 3 is therefore reachable only when s7 exits 0 and still printed no sentinel, whose
-# measured shape is `*** Declaration for main missing' on stdout -- this gate's own `main' failed to
-# declare. Because OUT survives both paths, a STALE artifact is what the next reader diffs: check its
-# SENTINEL row and line count against the new run, not only the diff between them.
+# not parse). Exit 3 is therefore reachable only when s7 exits 0 and still printed no sentinel, and
+# the shape that does that is a probe which analysed CLEAN but whose `main' the interpreter does not
+# recognise: it prints `*** Declaration for main missing' on stdout instead of any row. That printf is
+# gated on a zero error count, so a `main' that FAILED to analyse exits 1 and `set -eu' already caught
+# it on the run line above -- it cannot reach this grep. Because OUT survives both paths, a STALE
+# artifact is what the next reader diffs: check its SENTINEL row and line count against the new run,
+# not only the diff between them.
 grep -q '^SENTINEL files=' "$WORK/out.txt" || {
   echo "regions_gate: no SENTINEL line -- s7 did not complete" >&2
   exit 3

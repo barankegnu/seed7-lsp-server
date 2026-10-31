@@ -926,18 +926,27 @@ the same table (the three region fixtures and the folding cost) are answered by 
 two `blockRegions` post-passes, measured* above, which carries this tree's own counts — 4 881 for
 `prg/chkarr.sd7`, not the table's 4 847.
 
-**One `-32700`, then exit 2 — disclosed, not hidden.** A fatal byte in a *body* is found by
-`readFrameBody`'s own `gets` guard, which sets `chunk := ""`; that is the loop's EOF-in-frame path,
-whose rule is "what arrived goes back to the caller", so `readMessage` returns TRUE with the
-truncated body, `main.sd7` parses it, fails, and answers
+**One `-32700`, then exit 2 — disclosed, not hidden, and only when a prefix decoded.** A fatal byte
+in a *body* is found by `readFrameBody`'s own `gets` guard, which sets `chunk := ""`; that is the
+loop's EOF-in-frame path, whose rule is "what arrived goes back to the caller". When at least one byte
+decoded before the fatal one, the body that comes back is non-empty, `readMessage`'s
+`okay := length(body) <> 0` is TRUE, `main.sd7` parses it, fails, and answers
 
     {"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: body is not JSON"}}
 
-before `framingFatal` ends the session at 2. Ruled acceptable: a body that arrived and does not parse
-*is* a Parse error, and the id is null because no id was ever read. From outside it looks like a
-server that answers and then dies, which is why it is written down. No check pins that reply — the
-two body checks assert the exit code, `junk` and the stderr string — so this paragraph and the probe
-above are its only record.
+before `framingFatal` ends the session at 2. When the fatal byte is the body's FIRST byte — any
+client can send `Content-Length: 4` and four `0xFF` — nothing decoded, `body` is `""`, `readMessage`
+returns FALSE and there is no `-32700` at all: the stderr line, exit 2, and nothing answered behind
+`initialize`. Both shapes measured with
+`~/.cache/seed7-lsp-investigation/work/task6r1/body_shapes.py`, whose sessions are built by
+`tests/transcript.py`'s own `frame`/`split_frames`/`run` and whose `SENTINEL shapes=2` line is
+required before any count here is read: prefix decodes → `exit=2 junk=0`, answered
+`[(1, None), (None, -32700)]`, one `-32700` frame; first byte fatal → `exit=2 junk=0`, answered
+`[(1, None)]`, `-32700 frames=0`. Ruled acceptable: a body that arrived and does not parse *is* a
+Parse error, and the id is null because no id was ever read. From outside the first shape looks like
+a server that answers and then dies, which is why it is written down. No check pins either reply —
+the two body checks assert the exit code, `junk` and the stderr string — so this paragraph and that
+probe are their only record.
 
 **"Refuses" names the reader's set, not every invalid sequence.** Measured at `ut8_rtl.c(771)` and
 recorded in-tree at `src/doc_index.sd7:29-31`: a lone `FF`, the pair `FF FE`, `C3 28` and a lone `80`
@@ -957,17 +966,30 @@ both states arrive as `contentLength = 0`. `a1753f1` put `if framingFatal then �
 = 0 then …` in front of the length-less arm, and the four `… prints one framing line, not two` checks
 (one per hostile label) are what hold it there.
 
-**Which clause is proven.** Three `and not framingFatal` clauses sit on the read path and they do
-not have the same status. The one in `readFrameBody`'s loop is load-bearing: deleting it reddens
-`and the body behind a fatal header line is never answered` (measured at `676ff57` — stdout then
-holds a second reply, the `-32700` for a body whose header was never finished). The one in the header
-loop is unreached by any fixture, because `getlnSafe` returns an empty line on a raise and
-`line <> ""` ends that loop first — `8d9e630` measured both clauses together (removing either left
-217 checks green and nothing hanging) and `676ff57` separated them. The one in `readMessage`'s outer
-loop reddens nothing and hangs nothing either (measured at `a1753f1` and again at `8a6ef16`: 225
-checks, 0 failed, no session reaching the harness's 90 s timeout); what its absence does is drain the
-rest of the stream line by line to EOF, answering nothing, so it states the policy "once fatal, stop
-reading" rather than guarding a spin. The per-pass `contentLength := 0;` reset is required by
+**Which clause is proven, and which is not any more.** Three `and not framingFatal` clauses sit on the
+read path and they do not have the same status — one of them changed status on this branch. The clause
+in `readFrameBody`'s loop (`src/transport.sd7:108`) WAS load-bearing, at `676ff57`: deleting it there
+reddens exactly `and the body behind a fatal header line is never answered ([1, None])`, and the
+suite's own line goes `transcript: 219 checks, 0 failed` → `218 checks, 1 failed`. Re-measured here
+rather than inherited, by `git archive 676ff57 src tests | tar -x -C <dir>` and running that tree's
+own `tests/transcript.py` against the mutated copy. At HEAD the identical deletion reddens nothing:
+`make transcript` prints `225 checks, 0 failed`. `a1753f1` turned it into an equivalent mutant, and no
+black-box input can separate the two versions, because `readFrameBody`'s only call site (`:183`) now
+sits in the `else` of `if framingFatal then` (`:174`), so the function is never entered with the flag
+set — and inside its loop the only setter is `noteBadUtf8` in the catch, which also assigns
+`chunk := ""` → `remaining := 0` and ends the loop anyway. The clause stays as the invariant its two
+neighbours state, not as a guard anything can reach: an agent asked to reproduce the `676ff57` proof
+at HEAD cannot, and per *Every change* would have to invent a synthetic trigger, which is why the
+history is written down here instead of left as a claim to re-test.
+
+The clause in the header loop (`:168`) is unreached by any fixture for a plainer reason: `getlnSafe`
+returns an empty line on a raise, so `line <> ""` ends that loop first — `8d9e630` measured both
+clauses together (removing either left 217 checks green and nothing hanging) and `676ff57` separated
+them. The clause in `readMessage`'s outer loop (`:163`) reddens nothing and hangs nothing either
+(measured at `a1753f1` and again at `8a6ef16`: 225 checks, 0 failed, no session reaching the
+harness's 90 s timeout); what its absence does is drain the rest of the stream line by line to EOF,
+answering nothing, so it states the policy "once fatal, stop reading" rather than guarding a spin.
+The per-pass `contentLength := 0;` reset is required by
 the loop — the variable is a local, so a length parsed for an earlier frame would read the next
 frame's body with the wrong byte count — but it could not be proven by mutation: no wire input in the
 suite reaches a second pass after a pass that parsed a length, because that needs an empty body with
@@ -980,27 +1002,41 @@ interpreter that was wrong, and wrong in the direction that makes a silent run l
 `da2feb38` ("Errors trigger an exit code of 1", 2026-09-25) is in the local checkout —
 `git -C ~/seed7 log --oneline -1 da2feb38` prints it — and analysis errors now exit 1.
 
-Probes: `sh ~/.cache/seed7-lsp-investigation/work/exitcode/run.sh`, which runs each of the ten
-shapes beside it — eight files as `s7 -q <file>`, two as bare invocations — and prints `exit=` and
-`stdout_bytes=` per shape. The byte count is stdout alone, stderr discarded, because the split *is*
-the finding. SEED7 INTERPRETER Version 5.4.10:
+Probes: `sh ~/.cache/seed7-lsp-investigation/work/exitcode/run.sh`, which runs each of the twelve
+shapes beside it — ten files as `s7 -q <file>`, two as bare invocations — prints `exit=` and
+`stdout_bytes=` per shape, and ends with a `SENTINEL shapes=12` line that must be present before any
+row below counts as a result. The byte count is stdout alone, stderr discarded, because the split *is*
+the finding. `goodmain.sd7` is the positive control: a program that runs proves the probe can tell
+exit 0 with its own output from exit 0 with a complaint. SEED7 INTERPRETER Version 5.4.10:
 
 | probe | what it provokes | exit | bytes on stdout |
 |---|---|---|---|
+| `goodmain.sd7` | a `main` that declares and runs (`writeln(1)`) | **0** | **1** (its own `1`) |
 | `raise.sd7` | an uncaught `raise RANGE_ERROR` | 1 | 200 (the trace; the path is part of it) |
 | `truncated.sd7` | `"end" expected found "END OF FILE"` | 1 | 0 |
 | `nosemi.sd7` | `";" expected found "END OF FILE"` | 1 | 0 |
 | `comment.sd7` | `Unclosed comment` — an unterminated `(*` | 1 | 0 |
-| `nomatch.sd7` | `Match for nonsenseFn(n) failed` + `Declaration of "main" failed` | 1 | 0 |
+| `nomatch.sd7` | a `main` whose body matches nothing: `Match for nonsenseFn(n) failed` + `Declaration of "main" failed` | 1 | 0 |
 | `badinclude.sd7` | `Include file "no_such_module.s7i" not found` | 1 | 0 |
 | `dupmain.sd7` | `Redeclaration of "main"` + `Previous declaration of "main"` | 1 | 0 |
-| `nomain.sd7` | `*** Declaration for main missing` | **0** | **32** |
+| `nomain.sd7` | declares no `main` at all: `*** Declaration for main missing` | **0** | **32** |
+| `parammain.sd7` | a `main` with a parameter, which is not recognised as `main`: the same message | **0** | **32** |
 | `s7 -q` with no sourcefile | `*** Sourcefile missing` | **0** | **22** |
 | `s7 -q /nonexistent.sd7` | `*** File "/nonexistent.sd7" not found` | 1 | 37 |
 
-The two exit-0 shapes both print on **stdout**, and the first is the interpreter's own `printf`:
-`grep -n "Declaration for main missing" ~/seed7/src/s7.c` gives line 467. Two more shapes write to
-stdout and were never in dispute: an uncaught exception (trace, exit 1) and a command-line file that
+The three exit-0 `***` shapes all print on **stdout**, and the reason they exit 0 is in the C: the
+`printf` sits inside `if (!option.analyzeOnly && currentProg != NULL && (currentProg->error_count == 0
+|| option.executeAlways))` — `~/seed7/src/s7.c:459-460`, with the message at `:467`, which
+`grep -n "Declaration for main missing" ~/seed7/src/s7.c` finds — while `:485-486` is
+`else if (currentProg == NULL || currentProg->error_count != 0) { returnCode = 1; }`. So
+`*** Declaration for main missing` belongs to a program that analysed CLEAN and holds no `main` the
+interpreter recognises — no `main` at all, or a parameterised one — and *not* to a `main` whose
+declaration failed, which is the exit-1 row with 0 bytes on stdout. That collision with the repo's
+own vocabulary is the point: AGENTS.md's `writeln` bullet has said for a long time that an argument
+list failing to match inside `main` reports `Declaration of main failed`, and the first draft of this
+rule (commit `775cde1`) called that shape the exit-0 one. Two more shapes write to
+stdout and were never in dispute: an uncaught exception (the trace `uncaught_exception()` prints at
+`:474`, with `returnCode = 1` at `:473`) and a command-line file that
 does not exist (exit 1). What the old bullet got wrong is the analysis-error class: a syntax error,
 a `NO_MATCH`, a redeclaration, an unclosed comment and a missing include all exit 1 with nothing on
 stdout — a missing `include` complains on stderr, while a missing *command-line* file complains on
@@ -1012,18 +1048,19 @@ Two consequences, both already true of the tree and now stated rather than assum
   still fails its recipe, and the mechanism is the grep, not `s7`'s status: the recipe merges
   `2>&1` into `out`, prints it, and the shell's exit status is the final `grep -q` on the total line
   — measured with a `tests/broken_test.sd7` holding that `NO_MATCH`, which printed the error text and
-  exited 1. The exit-0 rows above are why the grep must stay: a suite whose `main` does not declare
-  prints `*** Declaration for main missing` on stdout, exits 0, and has no total line either, so a
-  recipe grading `s7`'s status would pass it unread — as it would the `*** Sourcefile missing`
-  shape, 22 bytes on stdout and exit 0. Only the comment at `Makefile:13` was corrected
-  here (it repeated "still exits 0"); the grading logic was not touched.
+  exited 1. The exit-0 rows above are why the grep must stay: a suite that declares no `main` the
+  interpreter recognises prints `*** Declaration for main missing` on stdout, exits 0, and has no
+  total line either, so a recipe grading `s7`'s status would pass it unread — as it would the
+  `*** Sourcefile missing` shape, 22 bytes on stdout and exit 0. Only the comment at `Makefile:13`
+  was corrected here (it repeated "still exits 0"); the grading logic was not touched.
 - `tools/keyword_gate.sh:62` already said 1 — "`|| true`: s7 exits 1 for an analysis error, and
   `set -e` would abort on the first refusal" — and was the only in-tree statement matching this
   interpreter. AGENTS.md and this file were the outliers, and `tools/regions_gate.sh`'s sentinel
   comment now names the same measurement for its two failure paths.
 
 The shape to keep: an exit code without a stdout byte count is half a measurement. `1` with 0 bytes
-is an analysis error, `0` with a line on stdout is a run that never analysed anything — a `main` that
-never declared, or no sourcefile at all — and `1` with a trace on stdout is an uncaught exception.
+is an analysis error, `0` with a `***` line on stdout is a run that never EXECUTED anything — a clean
+program with no `main` the interpreter recognises, or no sourcefile at all (`s7.c:455`) — and `1` with
+a trace on stdout is an uncaught exception.
 Only the third is a defect in the server, and only the second can pass a recipe that grades the
 status code.

@@ -10,10 +10,11 @@ SRC     := src
 # docs/seed7-cli.md, so build-debug traces with -tfs instead.
 RELEASE_FLAGS := -O3 -flto -oc3 -w2
 DEBUG_FLAGS   := $(RELEASE_FLAGS) -e -g-debug_c -p -tfs
-# A suite that fails to analyse prints nothing on stdout and exits 1, and one whose main fails to
-# declare prints `*** Declaration for main missing' on stdout and exits 0 -- so a recipe must grade
-# the suite's own total line, never s7's status (both measured: "Seed7 traps -- the exit code,
-# re-measured" in docs/seed7-cli.md). The name class admits digits
+# A suite that fails to analyse prints nothing on stdout and exits 1, and one that declares no main
+# the interpreter recognises prints `*** Declaration for main missing' on stdout and exits 0 -- that
+# printf is gated on a zero error count, so a main that FAILED to declare is the exit-1 shape above,
+# not this one. Either way a recipe must grade the suite's own total line, never s7's status (all
+# measured: "Seed7 traps -- the exit code, re-measured" in docs/seed7-cli.md). The name class admits digits
 # because src/utf8bytes.sd7 is a module named with one: with [a-z_]+ the recipe could
 # never grade that suite, so a missing or failing utf8bytes suite would look like a
 # passing run of the rest.
