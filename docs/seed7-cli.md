@@ -836,3 +836,61 @@ holding a surrogate pair is echoed **as it was sent**, not folded: a body whose 
 whose id is the raw character answers `22 f0 9f 98 80 22` — the same four UTF-8 bytes it came in.
 `strAt` folds a pair to one character; the id path never does, and `tests/rpc_test.sd7`'s
 14-against-3 length comparison is the pin (`idJsonOf`'s comment holds both numbers).
+
+## Every change — the two `blockRegions` post-passes, measured (2026-10-31)
+
+`blockRegions` cost two quadratic passes over its own region list after `walkRegions` returned: a
+bubble sort by `startLine`, and a clause filter that scanned the list twice per clause region — once
+for the enclosing control, once to count clauses in that window. Task 5 replaced them with an
+insertion sort and a per-window clause count, memoised. `tools/regions_gate.sh` is the equivalence
+check: `s7 -q -l src` over every `lib/*.s7i` and `prg/*.sd7`, one row per file,
+`<path>\t<n>\t<start-end[:kind] …>`, the regions taken from `blockRegions` itself.
+
+    sh tools/regions_gate.sh ~/.cache/seed7-lsp-investigation/work/gate/regions-before.txt   # at 311b34e
+    # swap src/blocks.sd7 and nothing else, run again:
+    sh tools/regions_gate.sh ~/.cache/seed7-lsp-investigation/work/gate/regions-final.txt
+    diff ~/.cache/seed7-lsp-investigation/work/gate/regions-{before,final}.txt          # empty
+
+SEED7 INTERPRETER Version 5.4.10, 215 `lib/*.s7i` + 129 `prg/*.sd7`, both sides
+`SENTINEL files=344 regions=56492 skips=1`, 345 lines each (344 rows + the sentinel), diff empty. The
+gate's own wall time went 41.4 s → 22.6 s. Two facts that run produced, both load-bearing:
+
+- `prg/chkarr.sd7` holds **4 881** regions on this tree, not the 4 847 the plan quotes for
+  `5d8b72c`. Task 4 moved the `pending` branch, so a construct keyword after `is <value>` now opens
+  its own region; the plan's figure is history, and every before/after claim here is against this
+  tree's own baseline. The mean across `lib/*.s7i` is 102 (21 975 regions over 215 files), not the
+  ~95 the deleted `ponytail:` note called a ceiling — it was always the mean, of a 213-file set.
+- `skips=1` is `prg/err.sd7`, the interpreter's own invalid-encoding test program: the one corpus
+  file that is NOT valid UTF-8. `readln` over an `openUtf8` handle raises `RANGE_ERROR` at
+  `ut8_rtl.c(771)` ("The file contains an invalid encoding") — a different raiser from the
+  `gets(f, -1)` at `ut8_rtl.c(586)` AGENTS.md names. Uncaught, that trace prints to **stdout**, which
+  is how the gate's first run appended five error lines to its own artifact; hence the catch and the
+  labelled `SKIP:not-valid-utf8` row in `tools/regions_gate.sh`.
+
+The wire sessions are the shapes the finding was measured in: `initialize` (rootUri null) +
+`initialized` + `didOpen` of `prg/chkarr.sd7` (1 761 917 characters, 33 147 newlines) + N
+`textDocument/foldingRange` + `shutdown` + `exit`, framed over stdin of
+`s7 -q -l src src/main.sd7`. Best of two runs per row, one command
+(`python3 ~/.cache/seed7-lsp-investigation/work/fold_timing.py <tree> 2`), whose sentinel is the
+reply's own `folds=4881 frame_bytes=172338` — identical in every row below and in both trees, so the
+sessions measure the same answer at different speeds.
+
+| session shape | `311b34e` | filter fixed, sort still bubble | both fixed |
+|---|---|---|---|
+| `didOpen` only | 2.90 s | 2.77 s | 2.82 s |
+| `didOpen` + 1 `foldingRange` | 17.08 s | 10.83 s | 6.87 s |
+| `didOpen` + 3 `foldingRange` | 46.99 s | 27.12 s | 15.18 s |
+| per `foldingRange` | 14.2–15.0 s | 8.1 s | 4.1 s |
+
+The middle column is the same tree with only the clause filter replaced — the mutant that separates
+the two halves, because the change as committed replaces both at once. The clause count is worth
+~6.1–6.8 s of the ~14–15 s a request cost; the insertion sort a further ~4.0 s. What is left is not
+quadratic either: a standalone driver calling `walkRegions` three times on the same text measured
+4.71 s (1.57 s per pass, the file read costing 0.04 s), and `blockRegions` three times measured
+11.92 s (3.97 s per call); stubbing the per-window counts took the call to 1.59 s, so those counts
+are ~2.38 s of the remaining ~2.4 s and the sort, split, owner walk and appends share ~0.02 s.
+`src/blocks.sd7`'s `ponytail:` note carries that split and its upgrade path.
+
+Absolute seconds move between runs of identical binaries — the caveat at the top of
+*Every change — the two hot paths, measured* applies to every row above, which is why each one names
+its tree, its shape and its rep count.

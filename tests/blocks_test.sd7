@@ -237,8 +237,12 @@ const func array fixture: allFixtures is func
     f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
     f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; out &:= f;
     f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-2"; out &:= f;
+    # The same `is new <type body>' with no value between the keywords. Task 4 moved the
+    # `pending = "func"' branch and provably did not change this answer; the check is a pin of
+    # unchanged behaviour, written after the code, and it reddens when that branch is deleted.
+    f.text := "const type: e is new enum\n  a,\n  b;\nend enum;\n"; f.expected := "0-3"; out &:= f;
     # A declaration whose `is' is followed by a value, not a name: the keyword that opens the
-    # next block must still reach its own branch. At HEAD the `begin' branch never runs and
+    # next block must still reach its own branch. At BASE the `begin' branch never runs and
     # the body region is missing from the answer.
     f.text := "const proc: q is func\n  var integer: a is 0;\nbegin\n  writeln(a);\nend func;\n";
     f.expected := "0-4 2-4"; out &:= f;
