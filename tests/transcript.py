@@ -1424,7 +1424,8 @@ expect(by_id.get(74, {}).get("result") is None,
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),
-                   ("oversized",   b"Content-Length: 999999999")]:
+                   ("oversized",   b"Content-Length: 999999999"),
+                   ("over-wide",   b"Content-Length: 99999999999999999999999")]:
     replies, code, err, junk = run([frame(msgs[0]),
                               hdr + b"\r\n\r\n",
                               frame({"jsonrpc": "2.0", "id": 11, "method": "shutdown"}),
