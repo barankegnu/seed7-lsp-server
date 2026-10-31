@@ -198,7 +198,7 @@ const func string: getlnSafe (inout file: source) is func
   end func;
 ```
 
-Finally add `and not framingFatal` to both `while` conditions in `readMessage` (the block loop at line 123 and — after Task 3 restructures it — whichever loop encloses the header read), so a raise ends the pass instead of spinning on the same byte.
+Finally add `and not framingFatal` to both `while` conditions in `readMessage` (the block loop at line 123 and — after Task 3 restructures it — whichever loop encloses the header read). State it as POLICY, not as a spin guard: Step 5 measured that deleting either clause reddens nothing and does not hang, because a raise leaves an empty line and the loops' own conditions end the pass. `readFrameBody`'s clause at line 108 has the same status. A comment that claims a mechanism must claim only the one that was measured.
 
 - [ ] **Step 4: run the suite and confirm green**
 
