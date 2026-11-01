@@ -43,3 +43,11 @@ s7c -s x
 s7c -t
 usecs / calls / place / name
 R-F10 — the two routes, measured
+*** File "<path>" not found
+<where> is not valid UTF-8
+N checks, M failed
+Seed7 traps — the exit code, re-measured
+doc_index.sd7:29-30
+find ~/seed7/lib -name '*.s7i' | wc -l
+invalid Content-Length '<value>'
+tools/regions_gate.sh:18-19
