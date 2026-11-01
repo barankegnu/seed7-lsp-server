@@ -57,10 +57,10 @@ should be said so out loud.
 A green check on a fixture the product never produces is decorative the same way, and no mutation of
 production code will tell you. When a check pins a position, a range or an offset, measure the corpus
 for its shape and give the fixture that shape: the disclosure telling the user their unsaved library
-edits are invisible was pinned against a library whose first line held a declaration, while all 265
-`lib/*.s7i` begin with an empty line — so its range collapsed to zero width on every real input and the
-suite stayed green. The story and the measurement: *The disclosure, and what pins it* in
-`docs/seed7-cli.md`.
+edits are invisible was pinned against a library whose first line held a declaration, while all 266
+`lib/*.s7i` (recursive; `find ~/seed7/lib -name '*.s7i' | wc -l`) begin with an empty line — so its
+range collapsed to zero width on every real input and the suite stayed green. The story and the
+measurement: *The disclosure, and what pins it* in `docs/seed7-cli.md`.
 
 ## Seed7 traps
 
@@ -137,7 +137,7 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   only "Declaration of main failed", which reads like a broken body.
 - `gets` on a UTF-8 file counts CHARACTERS, not bytes (`utf8.s7i:132` → `utf8_gets`), so handing
   it a `Content-Length` over-reads any body holding non-ASCII. `transport.readFrameBody` exists
-  because of this; `readln` and `getl` are the safe reads — for the count, not for the bytes.
+  because of this; `readln` and `getln` are the safe reads — for the count, not for the bytes.
 - Safe there is about the count: `getln`, `gets` and `readln` on a decoded stream (`STD_UTF8_IN`,
   `openUtf8`) all raise `RANGE_ERROR` at the first byte sequence the decoder refuses, and the
   inbound ones live in `transport.sd7` — **outside** `main.sd7`'s handler block, so an unguarded read
@@ -230,17 +230,20 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   absent `Content-Length` logs `frame without Content-Length ignored` and **keeps reading** — the
   frame behind it is still answered and the session can still end at 0. An unparsable value —
   non-digits, negative, over `MAX_FRAME_BYTES`, or **digits too wide for `integer()`** — makes the
-  frame's end unknowable: log `invalid Content-Length '<value>'`, stop reading, exit **2**; the
-  branch order in `readMessage` is what keeps that to ONE framing line per fatal frame. A byte
-  sequence the reader refuses, in a header line or in a body, logs `<where> is not valid UTF-8` and
-  exits **2** with only frames on stdout — that is the case which used to write an
+  frame's end unknowable: log `invalid Content-Length '<value>'`, stop reading, exit **2** unless the
+  session already answered `shutdown`, which earns 0; the branch order in `readMessage` is what keeps
+  that to ONE framing line per fatal frame. A byte sequence the reader refuses, in a header line or in
+  a body, logs `<where> is not valid UTF-8` and exits **2** — again unless `shutdown` was already
+  answered — with only frames on stdout; that is the case which used to write an
   `Uncaught exception` trace onto the protocol channel and exit 1. Recovering a desynced
   byte-counted stream is not possible. Two limits, stated rather than hidden: "refuses" is the
   reader's own set, not every invalid sequence (an overlong `C0 80` decodes to `chr(0)` and is
-  served); and a fatal byte in a **body** leaves the bytes already read in hand, so the server
-  answers one `-32700` and then exits 2 — a body that arrived and does not parse is a real Parse
-  error, and from outside the pair looks like a bug. The sessions, the frames and the commands:
-  *Protocol decisions — the framing outcomes, measured* in `docs/seed7-cli.md`.
+  served); and a fatal byte in a **body**, when at least one byte decoded before it, leaves the bytes
+  already read in hand, so the server answers one `-32700` and then exits 2 — a body that arrived and
+  does not parse is a real Parse error, and from outside the pair looks like a bug. A fatal FIRST byte
+  is the other half: nothing decoded, `body` is `""`, `readMessage` returns FALSE and no `-32700` is
+  answered at all. Both halves are pinned in `tests/transcript.py`. The sessions, the frames and the
+  commands: *Protocol decisions — the framing outcomes, measured* in `docs/seed7-cli.md`.
 - `-32700` with a `null` id for a non-JSON body; `-32600` for a request after `shutdown`;
   `-32002` for traffic before `initialize` — answered under the id that traffic sent, string or
   number, measured with `"id":"x1"` and `"id":"s1"` in a session that never initializes;
@@ -252,9 +255,15 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   keys on `shutdown` having been received, and this server refuses `shutdown` before `initialize`,
   so a refused shutdown can never earn the 0. `main.sd7`'s tail is the *other* ending, a stream that
   stops without an `exit` notification, and a Seed7 `main` that simply returns reports 0 (measured,
-  interpreted and compiled) — so that path is 0 unless `framingFatal` makes it 2. The sessions, the
-  frames, and the two `transcript` checks that already pin the 1: *Protocol decisions — the exit
-  code and the id on the wire, measured* in `docs/seed7-cli.md`.
+  interpreted and compiled) — so that path is 0 unless `framingFatal` makes it 2, and even then the
+  tail's `gotInitialize and gotShutdown` test comes FIRST (`src/main.sd7:52-56`), so a fatal frame
+  after an answered `shutdown` still exits 0 (measured: `initialize` + `shutdown` +
+  `Content-Length: abc` with the stream closed exits 0 and logs the framing line; drop the `shutdown`
+  and the same stream exits 2). Keep that order: the `exit` arm above keys 0 on the same pair, so a
+  tail that tested `framingFatal` first would make one server give two answers to "was `shutdown`
+  received" depending on whether the client sent `exit`. The sessions, the frames, and the two
+  `transcript` checks that already pin the 1: *Protocol decisions — the exit code and the id on the
+  wire, measured* in `docs/seed7-cli.md`.
 - Full text sync: the **last** `contentChanges` element holds the whole text.
 - A truncated buffer is the normal state while typing, so `END OF FILE`-class analyzer
   messages publish as `DiagnosticSeverity.Information`. Match that class by substring:

@@ -42,7 +42,10 @@
 #
 # The last line is the sentinel, and no payload counts as a result without it -- absent, the script
 # exits 3 and writes nothing to OUT:
-#   SENTINEL files=<rows written> regions=<regions across them>
+#   SENTINEL files=<rows written> regions=<regions across them> skips=<rows labelled SKIP>
+# `skips` is the field that discloses the corpus file this gate could NOT read (`prg/err.sd7`, the
+# interpreter's own invalid-encoding test program), so a diff of two artifacts is only a comparison
+# of the same corpus when the two sentinels agree on all three numbers.
 set -eu
 
 # The artifact is diffed line by line, so the row order must be the byte order of the glob rather
