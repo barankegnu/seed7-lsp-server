@@ -1463,6 +1463,21 @@ replies, code, err, junk = run([frame(msgs[0]),
 expect(code == 2 and junk == 0,
        "invalid UTF-8 in a body: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
 expect("frame body is not valid UTF-8" in err, "and stderr names the frame body")
+# The two halves of that shape, which no check graded before: the catch in readFrameBody hands back
+# what already decoded, so a body with a decodable PREFIX comes back non-empty and main.sd7 answers
+# one -32700 for it before the session ends at 2 (docs/seed7-cli.md, "One -32700, then exit 2").
+expect(any(r.get("error", {}).get("code") == -32700 for r in replies),
+       "a body whose prefix decoded answers one -32700 before exit 2")
+# When the fatal byte is the body's FIRST byte nothing decoded, body is "", readMessage's `okay`
+# stays FALSE and the server answers NOTHING behind initialize: same exit, no Parse error. Any
+# client can send this -- Content-Length: 4 and four 0xFF.
+FIRST_BAD = b"\xff" * 4
+replies, code, err, junk = run([frame(msgs[0]),
+                                b"Content-Length: %d\r\n\r\n" % len(FIRST_BAD) + FIRST_BAD,
+                                frame({"jsonrpc": "2.0", "id": 16, "method": "shutdown"})])
+expect(code == 2 and junk == 0 and "frame body is not valid UTF-8" in err
+       and not any(r.get("error", {}).get("code") == -32700 for r in replies),
+       "a body whose FIRST byte is fatal answers no -32700 at all (code=%d junk=%d)" % (code, junk))
 BAD_HDR = b"Content-Length: \xff7\r\n\r\n"
 replies, code, err, junk = run([frame(msgs[0]), BAD_HDR,
                                 frame({"jsonrpc": "2.0", "id": 14, "method": "shutdown"})])
