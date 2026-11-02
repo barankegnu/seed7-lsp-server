@@ -49,7 +49,7 @@ while IFS='	' read -r name cmd expected host || [ -n "$name" ]; do
     ''|'#'*) continue ;;
   esac
   checks=$((checks + 1))
-  actual=$(eval "$cmd" 2>/dev/null) || actual=""
+  actual=$(eval "$cmd" </dev/null 2>/dev/null) || actual=""
   # corpus_bytes: wc -c tail -1 prints "NNNN total" or just "NNNN"; take field 1
   case "$name" in
     corpus_bytes) actual=$(printf '%s\n' "$actual" | awk '{print $1}') ;;
@@ -62,6 +62,13 @@ while IFS='	' read -r name cmd expected host || [ -n "$name" ]; do
     printf 'FAIL %s expected=%s actual=%s host=%s\n' "$name" "$expected" "$actual" "$host"
   fi
 done < "$TSV"
+
+# An empty TSV would print `0 checks, 0 failed` and exit 0 -- a green run that checks nothing,
+# the same silent-green defect as agents_gate.sh:110-116 and graph_test.sh:156-157 name.
+if [ "$checks" -eq 0 ]; then
+  printf 'FAIL tools/figures_expected.tsv holds no rows\n'
+  failed=1
+fi
 
 printf 'figures: %d checks, %d failed\n' "$checks" "$failed"
 [ "$failed" -eq 0 ] || exit 1

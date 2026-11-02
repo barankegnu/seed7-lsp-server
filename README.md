@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 21 suites, every one reporting 0 failed, no editor required
+    make test          # 22 suites, every one reporting 0 failed, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -203,7 +203,7 @@ re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over
 scan is actually given — `lib/*.s7i` plus `prg/*.sd7`, which is fewer than every `*.sd7`/`*.s7i`
 `find` recurses to, since `lib` holds another 51 `.s7i` below its top level), `regions_gate.sh`
 (the per-file `blockRegions` dump whose two-run diff is the gate on any change to that function),
-and the two the suite runs: `project_graph.sh` and `agents_gate.sh`.
+and the three the suite runs: `project_graph.sh`, `agents_gate.sh` and `figures_gate.sh`.
 
 `docs/PROJECT_GRAPH.md` is that shape in one read — modules, includes, methods answered against
 methods advertised, suites and the module each is named after. Regenerate with `make graph`.
