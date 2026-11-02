@@ -204,6 +204,22 @@ const proc: main is func
           kindsOf("c<&d[e]"),
           "name 0:0:1 [c] | op 0:1:2 [<&] | name 0:3:1 [d] | bracket 0:4:1 [[] " &
           "| name 0:5:1 [e] | bracket 0:6:1 []]");
+    # ---- backslash as operator character ------------------------------------
+    # tokens.htm 10.2.2 lists 22 special characters including '\\'; scanner.c:361-364 includes it
+    # in SPECIALCHAR. Measured: s7 -q -a on 'writeln(1 \\ 2)' reports '")" expected found "\\"'.
+    check("a lone backslash is an operator token, per tokens.htm 10.2.2",
+          kindName(firstKindOf("\\")), "op");
+    check("and it grows a run with its neighbours, as scanner.c does",
+          str(firstWidthOf("\\+ := 3")), "2");
+    check("a backslash inside an unterminated string stays inside the string",
+          kindName(firstKindOf("\"abc \\")), "string");
+    # The mask pin: a based literal followed by a code backslash. TK_OP is never a hidden kind,
+    # so the backslash must survive in the mask (not be blanked). This is the only guard that a
+    # backslash in code is not silently lost -- tokens_gate checks length/newline invariants but
+    # not that non-code characters are blanked and code characters survive.
+    check("a backslash in code survives the mask (TK_OP is not hidden)",
+          maskOf("16#beef \\"),
+          "16#beef \\");
     check("a '<' does not absorb the name after it",
           kindsOf("if a<b then"),
           "name 0:0:2 [if] | name 0:3:1 [a] | op 0:4:1 [<] | name 0:5:1 [b] " &

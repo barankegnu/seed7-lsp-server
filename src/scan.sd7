@@ -48,7 +48,7 @@ const char: APOSTROPHE is chr(39);
 # only for wordAt's operator suppression (doc_store.sd7:355), and merging them would move that
 # suppression under a different mask.
 const set of char: SPECIAL_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
-                                     ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
+                                     ':', ';', '<', '=', '>', '?', '@', '\\', '^', '`', '|', '~'};
 const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};
 const set of char: DIGITS is {'0','1','2','3','4','5','6','7','8','9'};
 const set of char: SPACES is {' ', '\9;', '\r'};
