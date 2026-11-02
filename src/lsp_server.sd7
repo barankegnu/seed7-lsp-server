@@ -364,6 +364,7 @@ const proc: handle (in rpcMsg: msg) is func
     var refsAnswer: refs is refsAnswer.value;
     var prepareAnswer: prep is prepareAnswer.value;
     var renameAnswer: ren is renameAnswer.value;
+    var selAnswer: sel is selAnswer.value;
     var string: newName is "";
     var jsonValue: folders is jsonValue.value;
     var jsonValue: rootUriVal is jsonValue.value;
@@ -537,7 +538,12 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/selectionRange" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
+        sel := selectionResult(openDocs[uri], atKey(msg.params, "positions"));
+        # The disclosure goes out before the answer it describes, mirroring references.
+        if sel.truncated then
+          logMessage(MSG_INFO, sel.why);
+        end if;
+        sendResult(msg, sel.json);
       else
         sendResult(msg, "[]");
       end if;

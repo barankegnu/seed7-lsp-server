@@ -12,10 +12,34 @@ const func string: selOf (in string: text, in string: positionsJson) is func
   local
     var lsDoc: doc is lsDoc.value;
     var jsonValue: positions is jsonValue.value;
+    var selAnswer: ans is selAnswer.value;
   begin
     setVersion(doc, text, 1);
     positions := readJson(positionsJson);
-    out := selectionResult(doc, positions);
+    ans := selectionResult(doc, positions);
+    out := ans.json;
+  end func;
+
+# Returns answerCount|truncated|whyMentionsDropped in one row (the diagPin idiom).
+const func string: selOf2 (in string: text, in string: positionsJson) is func
+  result
+    var string: out is "";
+  local
+    var lsDoc: doc is lsDoc.value;
+    var jsonValue: positions is jsonValue.value;
+    var selAnswer: ans is selAnswer.value;
+    var jsonValue: answers is jsonValue.value;
+    var integer: cnt is 0;
+  begin
+    setVersion(doc, text, 1);
+    positions := readJson(positionsJson);
+    ans := selectionResult(doc, positions);
+    answers := readJson(ans.json);
+    if category(answers) = JSON_ARRAY then
+      cnt := length(answers);
+    end if;
+    out := str(cnt) & "|" & str(ans.truncated) & "|" &
+           str(pos(ans.why, "dropped") <> 0);
   end func;
 
 # A JSON array of n identical positions, each the whitespace position that
@@ -105,6 +129,16 @@ const proc: main is func
     check("33 positions clamp to 32 answers and 32 positions keep 32",
           str(answerCount(text, manyPositions(33))) & "/" & str(answerCount(text, manyPositions(32))),
           "32/32");
+
+    # (e2) the cap's disclosure: 32 answers with no disclosure, 33 answers 32 with disclosure,
+    # and a non-array positions answers [] with no disclosure (malformed input, not truncation).
+    text := "a  b";
+    check("32 positions answers 32 and discloses nothing",
+          selOf2(text, manyPositions(32)), "32|FALSE|FALSE");
+    check("33 positions answers 32 and discloses the cap",
+          selOf2(text, manyPositions(33)), "32|TRUE|TRUE");
+    check("a non-array positions answers [] and discloses nothing",
+          selOf2(text, "{}"), "0|FALSE|FALSE");
 
     # (f) the shipped UTF-16 defect (spec 11.8): the token range came from
     # lspRange(doc, succ(tk.line0), succ(tk.col16)), which re-reads a UTF-16 column as a

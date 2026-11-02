@@ -1645,6 +1645,28 @@ expect(by_id.get(3, {}).get("result") == [],
 expect("selectionRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
        "initialize advertises selectionRangeProvider")
 
+# The truncation disclosure: 33 positions yields 32 answers and a window/logMessage
+# that arrives BEFORE the result, mirroring the references pattern.
+SEL33_POS = [{"line": 0, "character": 2}] * 33
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(SEL_URI, "a  b")),
+                                frame(req(10, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": SEL_URI},
+                                           "positions": SEL33_POS})),
+                                frame(shutdown(11)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+sel33 = by_id.get(10, {}).get("result") or []
+expect(isinstance(sel33, list) and len(sel33) == 32,
+       "selectionRange with 33 positions answers 32, got %d" % len(sel33))
+log_at = next((i for i, r in enumerate(replies)
+               if r.get("method") == "window/logMessage" and
+               r.get("params", {}).get("type") == 3 and
+               "dropped" in r["params"].get("message", "")), None)
+ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 10), None)
+expect(log_at is not None and ans_at is not None and log_at < ans_at,
+       "the truncation disclosure arrives before the answer (%s, %s)" % (log_at, ans_at))
+expect(junk == 0, "the selectionRange truncation run put only frames on stdout (junk=%d)" % junk)
+
 # --- Task 9 / spec §4.2: one analysis per document version -------------------
 CACHE_URI = "file:///tmp/tt_cache.sd7"
 CACHE_LINES = SYMS.split("\n")
