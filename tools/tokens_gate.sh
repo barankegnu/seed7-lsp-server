@@ -29,10 +29,11 @@
 # invalid-encoding test program, and readln over it raises RANGE_ERROR at ut8_rtl.c(771). It
 # gets a labelled SKIP row so the sentinel's files= and skips= fields disclose it.
 #
-# Not wired into `make test`, and it must not be: it is a measurement over an external corpus,
-# it takes tens of seconds for prg/*.sd7 alone (~82 s measured, compiled with -O2), and it
-# compares against a baseline file rather than asserting anything by itself. Run it before and
-# after any change to scan.sd7's column or width derivation.
+# Not wired into `make test`, and it must not be: it is a measurement over an external corpus
+# (345 files: lib/*.s7i + prg/*.sd7), it takes ~2.4 s for the full run including s7c -O2
+# compile (measured 2026-11-02: real 2.375 s, user 2.156 s), and it compares against a
+# baseline file rather than asserting anything by itself. Run it before and after any change
+# to scan.sd7's column or width derivation.
 #
 #   sh tools/tokens_gate.sh [OUTFILE] [SEED7_DIR]   # OUTFILE default stdout,
 #                                                    # SEED7_DIR default /home/username/seed7
@@ -228,9 +229,9 @@ const proc: main is func
   end func;
 SD7
 
-# Compile with -O2: interpreted is far too slow for 4 million tokens (~82 s compiled vs
-# estimated hours interpreted for prg/*.sd7 alone). Compiler output goes to /dev/null --
-# only the binary's stdout is the artifact.
+# Compile with -O2: the 4 066 131 tokens across 345 files need compiled speed -- the full
+# run including compile and scan is ~2.4 s (measured 2026-11-02). Compiler output goes to
+# /dev/null -- only the binary's stdout is the artifact.
 s7c -O2 -l "$SRC" "$WORK/tokens_gate.sd7" >/dev/null 2>&1
 
 # Run the compiled binary. The exit code carries three shapes:
