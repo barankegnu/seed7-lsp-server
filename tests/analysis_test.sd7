@@ -122,6 +122,20 @@ const func analysisResult: parsedOf (in string: text, in array string: libraryDi
     out := d.parsed;
   end func;
 
+# The same narrowing with a document path, which is what an open .s7i buffer carries: the
+# driver route analyses a library through a synthetic wrapper, so `docPath' is the only thing
+# that tells the library's own errors apart from an included file's.
+const func analysisResult: parsedOf (in string: text, in array string: libraryDirs,
+                                     in string: docPath) is func
+  result
+    var analysisResult: out is analysisResult.value;
+  local
+    var docAnalysis: d is docAnalysis.value;
+  begin
+    d := analyzeAll(text, libraryDirs, docPath);
+    out := d.parsed;
+  end func;
+
 const func array symRec: symsOf (in string: text, in array string: libraryDirs,
                                 in string: docPath) is func
   result
@@ -251,6 +265,7 @@ const proc: main is func
     var string: libPath is "/tmp/seed7_lsp_probe.s7i";
     var string: lib2Path is "/tmp/seed7_lsp_probe2.s7i";
     var string: latePath is "/tmp/seed7_lsp_late.s7i";
+    var string: foreignPath is "/tmp/seed7_lsp_foreign.s7i";
     var string: lateFix is "";
     var array symRec: syms is 0 times symRec.value;
     var array symRec: wlist is 0 times symRec.value;
@@ -288,6 +303,32 @@ const proc: main is func
     check("driver analyses a real .s7i cleanly", str(length(a.diags)), "0");
     a := parsedOf(driverFor("/tmp/seed7_lsp_missing.s7i"), dirs);
     checkTrue("missing include is reported", length(a.diags) <> 0);
+
+    # A diagnostic belongs to the file that holds it. An error inside an INCLUDED file arrives
+    # named with that file and counting ITS lines (parseError.fileName -- progs.s7i:496-503), so
+    # publishing it against the open buffer draws a squiggle over a line that holds nothing
+    # wrong. Measured on this fixture: the analyzer reports 5 errors -- 4 attributed to the
+    # buffer text ("STRING") and 1 to /tmp/seed7_lsp_foreign.s7i at its own line 2 -- and only
+    # the buffer's 4 may be published here.
+    out := open(foreignPath, "w");
+    write(out, "const proc: broken is func\n  begin\n    writeln(1\n");
+    close(out);
+    a := parsedOf("$ include \"seed7_05.s7i\";\n  include \"" <& foreignPath <&
+                  "\";\nconst proc: main is func\n  begin\n    writeln(1);\n  end func;\n",
+                  dirs, "");
+    check("only the buffer's own errors reach the document", str(length(a.diags)), "4");
+    check("and the last published one is the buffer's", str(a.diags[4].line1) <& "|" <&
+          str(a.diags[4].column1) <& "|" <& str(a.diags[4].errKind),
+          "3|7|EXPECTED_SYMBOL");
+    # The other half of the rule, and the reason the predicate is isBufferFile and not a test
+    # for "STRING": an open .s7i IS the document, so the error naming its own path stays.
+    # Measured 5 for the driver route (4 STRING from the wrapper + 1 naming the library).
+    # These two checks pass today; they are the guard that the fix above does not over-drop.
+    a := parsedOf(driverFor(foreignPath), dirs, foreignPath);
+    check("a library buffer still publishes the errors of its own file",
+          str(length(a.diags)), "5");
+    check("including the one that names the library path",
+          str(a.diags[5].line1) <& "|" <& str(a.diags[5].errKind), "2|NO_MATCH");
     syms := symsOf(readAll(fixPath), dirs, "");
     checkTrue("fixture yields symbols", length(syms) <> 0);
     check("own struct is listed", symsNamed(syms, "Widget")[1].cat, "TYPEOBJECT");

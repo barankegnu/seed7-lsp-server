@@ -3,7 +3,7 @@
 
 ## modules (own name -> the src modules it includes)
 
-analysis.sd7                  376  +stdlib: progs.s7i ref_list.s7i
+analysis.sd7                  391  +stdlib: progs.s7i ref_list.s7i
 blocks.sd7                    473  scan.sd7
 diagnostics.sd7                83  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
 doc_index.sd7                 168  +stdlib: utf8.s7i

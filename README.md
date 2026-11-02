@@ -100,7 +100,9 @@ this one, which is what `make build-debug` runs:
 
 Base protocol framing, lifecycle (`initialize`/`initialized`/`shutdown`/`exit`), full
 text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from the
-analyzer: deduplicated, landed on characters even when the line ahead of it holds
+analyzer: deduplicated, only ever published for the file that holds them (an error raised
+inside an included file names that file and counts its own lines, and the server drops it rather
+than drawing it over the open buffer), landed on characters even when the line ahead of it holds
 non-ASCII text, and with a based literal in the line no longer hiding what follows
 it; whole-line where the analyzer reports no column, capped, and with
 truncation-during-typing downgraded to Information instead of a wall of red; and one
