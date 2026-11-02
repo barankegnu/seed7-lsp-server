@@ -1373,6 +1373,33 @@ expect([x.get("label") for x in sig.get("signatures", [{}])[0].get("parameters",
 expect(by_id.get(61, {}).get("result") is None,
        "signatureHelp outside a call is null")
 
+# --- signatureHelp clamps an out-of-range activeParameter to the last valid index ---
+SIG_CLAMP_TEXT = SYMS.replace('reportWidget("proto", hits)',
+                               'reportWidget("proto", hits, 42)')
+SIG_CLAMP_LINES = SIG_CLAMP_TEXT.split("\n")
+SIG_CLAMP_LINE = SIG_CLAMP_LINES.index('    reportWidget("proto", hits, 42);')
+SIG_CLAMP_CHAR = SIG_CLAMP_LINES[SIG_CLAMP_LINE].index("42")
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_clamp.sd7", "languageId": "seed7",
+                             "version": 1, "text": SIG_CLAMP_TEXT}}}),
+    frame({"jsonrpc": "2.0", "id": 70, "method": "textDocument/signatureHelp", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_clamp.sd7"},
+            "position": {"line": SIG_CLAMP_LINE, "character": SIG_CLAMP_CHAR}}}),
+    frame({"jsonrpc": "2.0", "id": 71, "method": "textDocument/shutdown"}),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+clamp = by_id.get(70, {}).get("result") or {}
+clamp_params = clamp.get("signatures", [{}])[0].get("parameters", [])
+expect("activeParameter" in clamp,
+       "activeParameter is present in the reply")
+expect(clamp.get("activeParameter") <= len(clamp_params) - 1,
+       "activeParameter %d is within the first signature's parameter count %d" %
+       (clamp.get("activeParameter"), len(clamp_params)))
+expect(junk == 0, "the clamp session put only frames on stdout (junk=%d)" % junk)
+
 # --- spec §8 M3 exit test: the features must also work on a .s7i buffer, which is
 # --- analysed through the synthetic driver because a library cannot be parsed alone ---
 LIB_PATH = "/tmp/seed7_lsp_transcript_lib.s7i"

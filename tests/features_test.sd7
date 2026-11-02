@@ -816,14 +816,18 @@ const proc: main is func
     active := 0;
     check("no callee means null", signatureHelpResult(hsyms, "", 0), "null");
     check("one signature per overload, active parameter reported",
-          signatureHelpResult(hsyms, "writeln", 1),
+          signatureHelpResult(hsyms, "writeln", 0),
           "{\"signatures\":[{\"label\":\"const proc: writeln (string: s)\"," &
           "\"parameters\":[{\"label\":\"string: s\"}]}," &
           "{\"label\":\"const func integer: writeln (integer: n)\"," &
           "\"parameters\":[{\"label\":\"integer: n\"}]}]," &
-          "\"activeSignature\":0,\"activeParameter\":1}");
-    checkTrue("an active parameter past the last one is reported, not dropped",
-              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") <> 0);
+          "\"activeSignature\":0,\"activeParameter\":0}");
+    checkTrue("an active parameter past the last one clamps to the last",
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":0") <> 0);
+    checkTrue("and the clamped answer carries no out-of-range index",
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") = 0);
+    checkTrue("index 0 survives when the active signature has one parameter",
+              pos(signatureHelpResult(hsyms, "writeln", 0), "\"activeParameter\":0") <> 0);
     check("a callee with no declarations is null",
           signatureHelpResult(hsyms, "nosuch", 0), "null");
     # ---- textDocument/references -------------------------------------------------

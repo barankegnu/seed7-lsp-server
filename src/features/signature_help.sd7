@@ -59,8 +59,9 @@ const func string: callContextOf (in lsDoc: doc, in integer: line0,
   end func;
 
 # SignatureHelp for one name: every overload, deduped by signature text. activeParameter
-# is clamped only at the bottom -- an argument index past the last parameter is reported as
-# typed, because that is the state the editor is in and dropping it would hide it.
+# is clamped to the first (active) signature's parameter count, because LSP 3.18 tells
+# the client to normalise an out-of-range value to 0, so reporting the raw index hides
+# nothing and achieves nothing either.
 # shortcut: relies on analysis.collectSyms ranking own records first; a caller that builds
 #           syms another way shows library overloads first. Upgrade when a consumer needs
 #           order-independence.
@@ -75,6 +76,7 @@ const func string: signatureHelpResult (in array symRec: syms, in string: callee
     var integer: i is 0;
     var integer: p is 0;
     var integer: activeIdx is 0;
+    var integer: firstParams is 0;
     var boolean: hasSigs is FALSE;
   begin
     if callee <> "" then
@@ -86,6 +88,9 @@ const func string: signatureHelpResult (in array symRec: syms, in string: callee
                emitted < MAX_SIGNATURES then
               shown &:= syms[i].sign;
               emitted +:= 1;
+              if emitted = 1 then
+                firstParams := length(syms[i].params);
+              end if;
               openObject(w);
                 field(w, "label"); addStr(w, syms[i].sign);
                 field(w, "parameters");
@@ -105,6 +110,8 @@ const func string: signatureHelpResult (in array symRec: syms, in string: callee
           activeIdx := active;
           if activeIdx < 0 then
             activeIdx := 0;
+          elsif activeIdx > firstParams - 1 then
+            activeIdx := max(0, firstParams - 1);
           end if;
           field(w, "activeParameter"); addInt(w, activeIdx);
           hasSigs := TRUE;
