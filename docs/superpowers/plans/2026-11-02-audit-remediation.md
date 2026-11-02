@@ -59,16 +59,22 @@ The classes below are what the audit says a user hits and no existing task tests
 
 ```seed7
     checkTrue("an active parameter past the last one clamps to the last",
-              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":1") <> 0);
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":0") <> 0);
     checkTrue("and the clamped answer carries no out-of-range index",
               pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") = 0);
     checkTrue("index 0 survives when the active signature has one parameter",
               pos(signatureHelpResult(hsyms, "writeln", 0), "\"activeParameter\":0") <> 0);
 ```
 
-The exact-string pin `one signature per overload, active parameter reported` (`:818-824`) stays
-untouched: `active: 1` against a 1-parameter first signature is already in range, and it is the
-check that stops the clamp from degrading into "always 0".
+The exact-string pin `one signature per overload, active parameter reported` (`:818-824`) cannot stay
+as written, and this task's first draft said it could: that was wrong arithmetic. A signature with one
+parameter has exactly one valid index, 0, so `active: 1` is already out of range and the clamp sends it
+to 0 — the pin must be retargeted to `active: 0`. Note what that costs: on a 1-parameter signature every
+clamp-shaped answer is 0, so no unit pin on `writeln` can tell "clamp to the last" from "always 0". The
+assertion that can is the pre-existing wire pin at `tests/transcript.py:1369` (`activeParameter == 1` for
+the second argument of a multi-parameter call), and any new wire session this task adds must pin the
+clamped value EXACTLY rather than as a bound — otherwise the branch the task adds is unproven by the
+checks the task adds.
 
 - [ ] **Step 2: Run the suite and confirm the named checks fail for the claimed reason**
 
