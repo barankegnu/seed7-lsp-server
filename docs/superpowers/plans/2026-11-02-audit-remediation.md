@@ -172,7 +172,7 @@ Run: `make test-selection_range test-lsp_server transcript` → each prints
 
 ### Task 3: `\` is an operator character, as the language says it is
 
-**Authority:** `~/Seed7Home/manual/tokens.htm` 10.2.2 (the 22 special characters include `\`) and `~/seed7/src/scanner.c:361-364` (the `SPECIALCHAR` case list includes `'\\'`). Measured on this interpreter: `s7 -q -a` on `writeln(1 \ 2)` reports `")" expected found "\"` — the analyzer read `\` as a symbol.
+**Authority:** `~/Seed7Home/manual/tokens.htm` 10.2.2 (the 22 special characters include `\`) and `~/seed7/src/scanner.c:357-361` (the `SPECIALCHAR` case list includes `'\\'`). Measured on this interpreter: `s7 -q -a` on `writeln(1 \ 2)` reports `")" expected found "\"` — the analyzer read `\` as a symbol.
 
 **Files:**
 - Modify: `src/scan.sd7:50-51` (`SPECIAL_CHARS`) and the `:44-49` note (see Task 4 for the note's wording — this task only adds the character; do not rewrite the paragraph twice)
