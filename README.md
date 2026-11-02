@@ -199,7 +199,7 @@ with the LSP features themselves in `src/features/`, one file per method plus `k
 for the shared symbol/type mappings. `tests/` has one suite each, plus
 `tests/transcript.py`, which drives the real process over real frames.
 `tools/` holds the generators and gates that keep the docs honest — `keyword_gate.sh` (the refused-name set,
-re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 344 files the
+re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 345 files the
 scan is actually given — `lib/*.s7i` plus `prg/*.sd7`, which is fewer than every `*.sd7`/`*.s7i`
 `find` recurses to, since `lib` holds another 51 `.s7i` below its top level), `regions_gate.sh`
 (the per-file `blockRegions` dump whose two-run diff is the gate on any change to that function),

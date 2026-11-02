@@ -123,6 +123,7 @@ A C textDocument/signatureHelp             signatureHelpProvider
   make test-doc_index        tests/doc_index_test.sd7         doc_index.sd7
   make test-doc_store        tests/doc_store_test.sd7         doc_store.sd7
   make test-features         tests/features_test.sd7          no src module
+  make test-figures          tools/figures_gate.sh            no src module
   make test-folding          tests/folding_test.sd7           no src module
   make test-graph            tests/graph_test.sh              no src module
   make test-jsonw            tests/jsonw_test.sd7             jsonw.sd7

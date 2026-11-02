@@ -1,0 +1,12 @@
+corpus_files	ls "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 | wc -l	345	README.md:202
+lib_top	ls "$SEED7"/lib/*.s7i | wc -l	216	tools/regions_gate.sh:25
+prg_top	ls "$SEED7"/prg/*.sd7 | wc -l	129	tools/regions_gate.sh:25
+lib_recursive	find "$SEED7"/lib -name '*.s7i' | wc -l	267	AGENTS.md:60
+corpus_bytes	LC_ALL=C wc -c "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 | tail -1	24995434	tools/regions_gate.sh:8
+syntax_lines	grep -c '^\$ syntax' "$SEED7"/lib/syntax.s7i	194	docs/seed7-cli.md:413
+lib_first_line_empty	find "$SEED7"/lib -name '*.s7i' -exec sh -c 'head -1 "$1" | wc -c' _ {} \; | sort -u	1	docs/seed7-cli.md:694
+home_lib_anchors	LC_ALL=C grep -ho '<a name="[^"]*"' "$HOME_DIR"/libraries/*.htm | wc -l	3039	docs/seed7-cli.md:409
+home_lib_anchors_distinct	LC_ALL=C grep -ho '<a name="[^"]*"' "$HOME_DIR"/libraries/*.htm | sort -u | wc -l	2961	docs/seed7-cli.md:409
+home_librefs	grep -c '<li><a href="libraries/' "$HOME_DIR"/subject_index.htm	3216	docs/seed7-cli.md:410
+home_li_all	LC_ALL=C grep -oE '<li><a href="[^"]+"' "$HOME_DIR"/subject_index.htm | wc -l	3547	docs/seed7-cli.md:411
+home_index_bytes	wc -c < "$HOME_DIR"/subject_index.htm	532702	docs/seed7-cli.md:412

@@ -283,7 +283,7 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
 # region, taken here once per control window and remembered. It counts clauses NESTED inside the
 # window, not only the ones whose own enclosing control is `control': a clause two levels down sits
 # in this window too, and leaving it out changes which clauses are emitted -- measured, the
-# direct-owner tally dropped a clause region in 86 of the 344 corpus files (lib/ar.s7i lost 175-184).
+# direct-owner tally dropped a clause region in 86 of the 345 corpus files (lib/ar.s7i lost 175-184).
 # Pinned inside `make test' by the `while TRUE do' fixture in tests/blocks_test.sd7, which reddens
 # when this counts direct owners only; tools/regions_gate.sh carries the corpus side of that claim.
 # ponytail: one scan of `clauses' per DISTINCT control window, memoised in `tally' below. Measured

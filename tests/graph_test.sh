@@ -157,7 +157,7 @@ bare_names() {
 # with no rows scores 21 file-only lines here, never 0 -eq 0.
 fs_suite_files() {
   find tests -maxdepth 1 \( -name '*_test.sd7' -o -name '*_test.sh' \) -print
-  printf '%s\n' tests/transcript.py tools/agents_gate.sh
+  printf '%s\n' tests/transcript.py tools/agents_gate.sh tools/figures_gate.sh
 }
 
 # Column 2 of every row, and the row's target name with the optional `test-' stripped.
