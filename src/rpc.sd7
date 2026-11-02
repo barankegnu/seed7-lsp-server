@@ -5,8 +5,9 @@ $ include "seed7_05.s7i";
   include "jsonw.sd7";
   include "transport.sd7";
 
-# The request id travels as its JSON TEXT, never as an integer. LSP 3.18 (RequestMessage.id,
-# L1501-1520) allows integer | string, and the two are echoed by different rules -- see idJsonOf.
+# The request id travels as its JSON TEXT, never as an integer. LSP 3.18
+# (<https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#requestMessage>)
+# defines id as integer | string, and the two are echoed by different rules -- see idJsonOf.
 
 const type: rpcMsg is new struct
     var string: method is "";

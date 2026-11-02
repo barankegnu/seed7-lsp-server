@@ -803,10 +803,9 @@ The rules are AGENTS.md's `exit` bullet and its `-32700`/`-32002` bullet.
 
 **The spec sentence, quoted.** *exit*: "The server should exit with **success code 0** if the
 shutdown request has been received before; **otherwise with error code 1**." Provenance matters here:
-that wording reaches us through this branch's LSP 3.18 spec notes (its *exit* section, citing
-`L4885`–`L4891` of a plain-text extraction held at `/tmp/lsp318.txt`), and that file is no longer on
-disk, so nobody in this tree has re-read it since. The behaviour is pinned by measurement and by two
-`transcript` checks, not by the quotation — which is why `AGENTS.md` states the contract it measured
+that wording reaches us through this branch's LSP 3.18 spec notes (its *exit* section,
+<https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#exit>;
+the `/tmp/lsp318.txt` extraction is no longer on disk, so nobody in this tree has re-read it since). The behaviour is pinned by measurement and by two `transcript` checks, not by the quotation — which is why `AGENTS.md` states the contract it measured
 rather than citing a spec file it cannot open. Treat the quote as a pointer to verify against a live
 copy before repeating it in new prose.
 

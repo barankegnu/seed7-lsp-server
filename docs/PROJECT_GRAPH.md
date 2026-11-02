@@ -5,7 +5,7 @@
 
 analysis.sd7                  391  +stdlib: progs.s7i ref_list.s7i
 blocks.sd7                    473  scan.sd7
-diagnostics.sd7                83  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
+diagnostics.sd7                82  analysis.sd7 doc_store.sd7 jsonw.sd7 rpc.sd7
 doc_index.sd7                 168  +stdlib: utf8.s7i
 doc_store.sd7                 383  scan.sd7 utf8bytes.sd7
 jsonw.sd7                     135  utf8bytes.sd7
@@ -14,7 +14,7 @@ lsp_server.sd7                580  analysis.sd7 diagnostics.sd7 doc_store.sd7 fe
 lsp_tst.sd7                    35  +stdlib: stdio.s7i
 main.sd7                       57  lsp_server.sd7
 occurrences.sd7               558  analysis.sd7 blocks.sd7 keywords.sd7 scan.sd7
-rpc.sd7                       296  jsonw.sd7 transport.sd7 utf8bytes.sd7 +stdlib: json.s7i strifile.s7i
+rpc.sd7                       297  jsonw.sd7 transport.sd7 utf8bytes.sd7 +stdlib: json.s7i strifile.s7i
 scan.sd7                      519  utf8bytes.sd7
 transport.sd7                 187  utf8bytes.sd7 +stdlib: utf8.s7i
 uris.sd7                       83  +stdlib: encoding.s7i

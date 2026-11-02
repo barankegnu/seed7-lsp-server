@@ -58,8 +58,8 @@ const func integer: firstWidthOf (in string: text) is func
     end if;
   end func;
 
-# The column of the token covering UTF-16 unit `col16` of line 0, or -1. Linear: a test helper
-# does not need tokenAt, which only arrives with Task 8.
+# The column of the token covering UTF-16 unit `col16` of line 0, or -1. A test helper may walk
+# tokens linearly; tokenAt (scan.sd7:438) is the production path and needs no second implementation.
 const func integer: tokenColOf (in string: text, in integer: col16) is func
   result
     var integer: out is -1;

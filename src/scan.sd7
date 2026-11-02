@@ -44,9 +44,9 @@ const char: APOSTROPHE is chr(39);
 # The special-character class -- manual/tokens.htm 10.2.2, and what seed7's scanner grows into
 # an operator run. doc_store.sd7 carries its own, SMALLER OP_CHARS on purpose, and it is not the
 # same set: this one also holds '$', '.' and '`', which doc_store's 18 members lack (doc_store's
-# set is a subset of this one). doc_store's list is the character-run logic behind codeText and
-# wordAt; Task 8 replaces that with these tokens and doc_store's copy goes with it. Until then,
-# do not merge the two -- renaming or shrinking either one moves the mask under existing checks.
+# set is a subset of this one). The two sets differ on purpose: doc_store's opChar survives
+# only for wordAt's operator suppression (doc_store.sd7:355), and merging them would move that
+# suppression under a different mask.
 const set of char: SPECIAL_CHARS is {'!', '$', '%', '&', '*', '+', ',', '-', '.', '/',
                                      ':', ';', '<', '=', '>', '?', '@', '^', '`', '|', '~'};
 const set of char: BRACKETS is {'(', ')', '[', ']', '{', '}'};

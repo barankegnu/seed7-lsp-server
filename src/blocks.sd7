@@ -3,7 +3,7 @@ $ include "seed7_05.s7i";
 
 # Seed7's block structure, read off the token stream. The construct inventory is
 # seed7-mode.el's seed7-block-start-regexp / seed7-block-end-regexp cross-checked against
-# manual/stats.htm 5 and decls.htm 3.2. A construct keyword inside a comment or a string cannot
+# manual/stats.htm 4 and decls.htm 3.2. A construct keyword inside a comment or a string cannot
 # reach this, because those are TK_COMMENT/TK_STRING tokens and never TK_NAME -- which is why
 # this file reads the scanner and not the source lines.
 #
