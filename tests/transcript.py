@@ -182,6 +182,9 @@ replies, code, err, junk = run([
     frame({"jsonrpc": "2.0", "method": "exit"}),
 ])
 expect("without Content-Length" in err, "frame lacking Content-Length is reported")
+expect(any(r.get("id") == 9 and "result" in r for r in replies),
+       "the frame after a length-less header block is still answered")
+expect(code == 0, "a length-less block does not end the session (code=%d)" % code)
 
 # --- spec 3.4: after shutdown, later requests are refused as InvalidRequest ---
 replies, code, err, junk = run([
@@ -1424,13 +1427,16 @@ expect(by_id.get(74, {}).get("result") is None,
 # --- hostile framing must cost a request, never the server (review I1) ---
 for label, hdr in [("non-numeric", b"Content-Length: abc"),
                    ("negative",    b"Content-Length: -5"),
-                   ("oversized",   b"Content-Length: 999999999")]:
+                   ("oversized",   b"Content-Length: 999999999"),
+                   ("over-wide",   b"Content-Length: 99999999999999999999999")]:
     replies, code, err, junk = run([frame(msgs[0]),
                               hdr + b"\r\n\r\n",
                               frame({"jsonrpc": "2.0", "id": 11, "method": "shutdown"}),
                               frame({"jsonrpc": "2.0", "method": "exit"})])
     expect(code == 2 and junk == 0 and "invalid Content-Length" in err,
            "%s Content-Length: clean fatal exit, stdout uncorrupted" % label)
+    expect("without Content-Length" not in err,
+           "%s Content-Length prints one framing line, not two" % label)
 
 # --- malformed JSON body is a Parse error (-32700), not an internal error ---
 replies, code, err, junk = run([frame(msgs[0]),
@@ -1444,6 +1450,57 @@ expect(any(r.get("id") == 12 and "result" in r for r in replies) and code == 0 a
 expect(all(r.get("id") is None or "method" in r for r in replies
            if r.get("error", {}).get("code") == -32700),
        "parse error carries a null id, per JSON-RPC")
+
+# --- a byte sequence that is not valid UTF-8 must never reach stdout (audit finding 1/2) ---
+# utf8.s7i's getln/gets raise RANGE_ERROR at the first undecodable byte (measured:
+# readln -> RANGE_ERROR ut8_rtl.c(771)); the read sits in transport, outside main.sd7's
+# handler net, so today the trace lands on stdout. The frames are hand-built bytes because
+# json.dumps cannot emit an invalid one.
+BAD_BODY = b'{"jsonrpc":"2.0","id":9,"method":"textDocument/hover","params":{"a":"\xff"}}'
+replies, code, err, junk = run([frame(msgs[0]),
+                                b"Content-Length: %d\r\n\r\n" % len(BAD_BODY) + BAD_BODY,
+                                frame({"jsonrpc": "2.0", "id": 13, "method": "shutdown"})])
+expect(code == 2 and junk == 0,
+       "invalid UTF-8 in a body: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+expect("frame body is not valid UTF-8" in err, "and stderr names the frame body")
+# The two halves of that shape, which no check graded before: the catch in readFrameBody hands back
+# what already decoded, so a body with a decodable PREFIX comes back non-empty and main.sd7 answers
+# one -32700 for it before the session ends at 2 (docs/seed7-cli.md, "One -32700, then exit 2").
+expect(any(r.get("error", {}).get("code") == -32700 for r in replies),
+       "a body whose prefix decoded answers one -32700 before exit 2")
+# When the fatal byte is the body's FIRST byte nothing decoded, body is "", readMessage's `okay`
+# stays FALSE and the server answers NOTHING behind initialize: same exit, no Parse error. Any
+# client can send this -- Content-Length: 4 and four 0xFF.
+FIRST_BAD = b"\xff" * 4
+replies, code, err, junk = run([frame(msgs[0]),
+                                b"Content-Length: %d\r\n\r\n" % len(FIRST_BAD) + FIRST_BAD,
+                                frame({"jsonrpc": "2.0", "id": 16, "method": "shutdown"})])
+expect(code == 2 and junk == 0 and "frame body is not valid UTF-8" in err
+       and not any(r.get("error", {}).get("code") == -32700 for r in replies),
+       "a body whose FIRST byte is fatal answers no -32700 at all (code=%d junk=%d)" % (code, junk))
+BAD_HDR = b"Content-Length: \xff7\r\n\r\n"
+replies, code, err, junk = run([frame(msgs[0]), BAD_HDR,
+                                frame({"jsonrpc": "2.0", "id": 14, "method": "shutdown"})])
+expect(code == 2 and junk == 0,
+       "invalid UTF-8 in a header line: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+expect("header line is not valid UTF-8" in err, "and stderr names the header line")
+
+# The desync shape the header comment names: the raise lands on a CONTINUATION header line,
+# AFTER a valid Content-Length was parsed. The body's framing is then already lost, so
+# readFrameBody must not read it -- without that loop guard the bytes behind the bad line do
+# decode, readMessage returns TRUE, and main.sd7 answers a frame whose header was never
+# finished (measured: a second reply, the -32700 for that garbage, while code and junk stay
+# at their good values -- so the count of ANSWERED frames is what can see this case).
+# The 70 trailing bytes must stay MORE than the declared 60: the proof is that decodable bytes
+# remain behind the bad line, so a shortening of the tail turns this into EOF-in-frame and rots it.
+BAD_CONT = b"Content-Length: 60\r\n\xff\r\n\r\n" + b"x" * 70
+replies, code, err, junk = run([frame(msgs[0]), BAD_CONT,
+                                frame({"jsonrpc": "2.0", "id": 15, "method": "shutdown"})])
+expect(code == 2 and junk == 0 and "header line is not valid UTF-8" in err,
+       "invalid UTF-8 on a continuation header line: exit 2 and only frames on stdout (code=%d junk=%d)" % (code, junk))
+answered = [r.get("id") for r in replies if "result" in r or "error" in r]
+expect(answered == [msgs[0]["id"]],
+       "and the body behind a fatal header line is never answered (%s)" % answered)
 
 # --- Task 1/2 wire proofs: analyzer byte columns arrive as UTF-16 character ranges,
 # --- and code after a based literal is visible to wordAt again ---

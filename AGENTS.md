@@ -57,10 +57,10 @@ should be said so out loud.
 A green check on a fixture the product never produces is decorative the same way, and no mutation of
 production code will tell you. When a check pins a position, a range or an offset, measure the corpus
 for its shape and give the fixture that shape: the disclosure telling the user their unsaved library
-edits are invisible was pinned against a library whose first line held a declaration, while all 265
-`lib/*.s7i` begin with an empty line — so its range collapsed to zero width on every real input and the
-suite stayed green. The story and the measurement: *The disclosure, and what pins it* in
-`docs/seed7-cli.md`.
+edits are invisible was pinned against a library whose first line held a declaration, while all 266
+`lib/*.s7i` (recursive; `find ~/seed7/lib -name '*.s7i' | wc -l`) begin with an empty line — so its
+range collapsed to zero width on every real input and the suite stayed green. The story and the
+measurement: *The disclosure, and what pins it* in `docs/seed7-cli.md`.
 
 ## Seed7 traps
 
@@ -106,12 +106,24 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   so a `-te` build writes non-frame bytes into the LSP stream. Trace a running server with `-tfs`.
   The release and debug lines, and the measurement that separated them: *Build — the two flag sets*
   in `docs/seed7-cli.md`.
-- `s7` reports analysis errors on stderr **and exits 0**; uncaught exceptions print to
-  **stdout** and exit 1. Never judge a run by its status code, and never let an
-  exception reach stdout — it corrupts the protocol channel.
-  A test suite inherits the trap: one that fails to analyse prints nothing, exits 0,
-  and would pass the recipe unread, so `Makefile`'s `test-%` rule grades the suite's
-  own `N checks, M failed` line.
+- `s7` reports analysis errors on stderr **and exits 1**, with nothing on stdout — measured for a
+  syntax error, a `NO_MATCH`-style failure, an unclosed comment, a redeclaration and a missing
+  `include` (upstream `da2feb38`, "Errors trigger an exit code of 1", 2026-09-25). The exit-0
+  shapes both print on **stdout**: `*** Declaration for main missing`, which a program that analysed
+  CLEAN but holds no `main` the interpreter recognises reports — a file with no `main` at all, or a
+  parameterised one — and `*** Sourcefile missing` for an invocation with no file at all. That
+  `printf` is gated on a zero error count (`s7.c:459-460`, message at `:467`; `returnCode = 1` at
+  `:485-486`), so a
+  `main` whose declaration FAILS is the exit-1 shape above and not this one: it reports
+  `Declaration of "main" failed` on stderr with 0 bytes on stdout. Uncaught exceptions print to
+  **stdout** and exit 1, unchanged — and so does a file that does not exist, which reports
+  `*** File "<path>" not found` at exit 1. So never judge a run by its status code, and never let an
+  exception reach stdout — it corrupts the protocol channel. A test suite inherits the exit-0 half:
+  one that declares no `main` prints that line, exits 0, and would pass the recipe unread, so
+  `Makefile`'s `test-%` rule grades the suite's own `N checks, M failed` line — a grading that holds
+  whichever way the interpreter exits.
+  The twelve probes, their commands and their stdout byte counts: *Seed7 traps — the exit code,
+  re-measured* in `docs/seed7-cli.md`.
 - `include` of our own modules needs `-l src`. Seed7 has no module system, so every
   file repeats `$ include "seed7_05.s7i";` and the includes it uses. Subdirectories work
   (`include "features/hover.sd7"` resolves against `-l src`), which is how `src/features/`
@@ -125,7 +137,16 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   only "Declaration of main failed", which reads like a broken body.
 - `gets` on a UTF-8 file counts CHARACTERS, not bytes (`utf8.s7i:132` → `utf8_gets`), so handing
   it a `Content-Length` over-reads any body holding non-ASCII. `transport.readFrameBody` exists
-  because of this; `readln` and `getl` are the safe reads.
+  because of this; `readln` and `getln` are the safe reads — for the count, not for the bytes.
+- Safe there is about the count: `getln`, `gets` and `readln` on a decoded stream (`STD_UTF8_IN`,
+  `openUtf8`) all raise `RANGE_ERROR` at the first byte sequence the decoder refuses, and the
+  inbound ones live in `transport.sd7` — **outside** `main.sd7`'s handler block, so an unguarded read
+  writes its trace onto the protocol channel (one `0xFF` in a frame body did, and the session
+  exited 1). Guard a new inbound read at its own site. `readln` raising is not a prediction:
+  `doc_index.sd7:29-30` and `tools/regions_gate.sh:18-19` each catch it in code that ships, and the
+  corpus gate labels `prg/err.sd7` SKIP for it. Which sequences the reader refuses is measured, and
+  an overlong `C0 80` is not one of them (*Protocol decisions — the framing outcomes, measured* in
+  `docs/seed7-cli.md`).
 - A Seed7 array literal is `[]("a", "b")`. `("a","b","c")` does not match and `{...}` is a
   block, so a brace-form array declaration fails somewhere far away in the error tree.
 - `in` and `not in` work for hashes and sets, but not for arrays: `k in arr` fails to
@@ -205,9 +226,24 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   `STD_UTF8_IN/OUT/ERR` are mandatory (plain `STD_OUT` raises `RANGE_ERROR` on
   non-ASCII), and `Content-Length` is the **byte** count while `length()` counts
   characters.
-- An absent `Content-Length` logs and keeps reading. An unparsable, negative, or
-  over-`MAX_FRAME_BYTES` value makes the frame's end unknowable: log, stop reading,
-  exit **2**. Recovering a desynced byte-counted stream is not possible.
+- Framing is three-way, and each way is pinned by a named check in `tests/transcript.py`. An
+  absent `Content-Length` logs `frame without Content-Length ignored` and **keeps reading** — the
+  frame behind it is still answered and the session can still end at 0. An unparsable value —
+  non-digits, negative, over `MAX_FRAME_BYTES`, or **digits too wide for `integer()`** — makes the
+  frame's end unknowable: log `invalid Content-Length '<value>'`, stop reading, exit **2** unless the
+  session already answered `shutdown`, which earns 0; the branch order in `readMessage` is what keeps
+  that to ONE framing line per fatal frame. A byte sequence the reader refuses, in a header line or in
+  a body, logs `<where> is not valid UTF-8` and exits **2** — again unless `shutdown` was already
+  answered — with only frames on stdout; that is the case which used to write an
+  `Uncaught exception` trace onto the protocol channel and exit 1. Recovering a desynced
+  byte-counted stream is not possible. Two limits, stated rather than hidden: "refuses" is the
+  reader's own set, not every invalid sequence (an overlong `C0 80` decodes to `chr(0)` and is
+  served); and a fatal byte in a **body**, when at least one byte decoded before it, leaves the bytes
+  already read in hand, so the server answers one `-32700` and then exits 2 — a body that arrived and
+  does not parse is a real Parse error, and from outside the pair looks like a bug. A fatal FIRST byte
+  is the other half: nothing decoded, `body` is `""`, `readMessage` returns FALSE and no `-32700` is
+  answered at all. Both halves are pinned in `tests/transcript.py`. The sessions, the frames and the
+  commands: *Protocol decisions — the framing outcomes, measured* in `docs/seed7-cli.md`.
 - `-32700` with a `null` id for a non-JSON body; `-32600` for a request after `shutdown`;
   `-32002` for traffic before `initialize` — answered under the id that traffic sent, string or
   number, measured with `"id":"x1"` and `"id":"s1"` in a session that never initializes;
@@ -219,9 +255,15 @@ Each of these cost a debugging cycle. Seed7 is not Python and will not warn you 
   keys on `shutdown` having been received, and this server refuses `shutdown` before `initialize`,
   so a refused shutdown can never earn the 0. `main.sd7`'s tail is the *other* ending, a stream that
   stops without an `exit` notification, and a Seed7 `main` that simply returns reports 0 (measured,
-  interpreted and compiled) — so that path is 0 unless `framingFatal` makes it 2. The sessions, the
-  frames, and the two `transcript` checks that already pin the 1: *Protocol decisions — the exit
-  code and the id on the wire, measured* in `docs/seed7-cli.md`.
+  interpreted and compiled) — so that path is 0 unless `framingFatal` makes it 2, and even then the
+  tail's `gotInitialize and gotShutdown` test comes FIRST (`src/main.sd7:52-56`), so a fatal frame
+  after an answered `shutdown` still exits 0 (measured: `initialize` + `shutdown` +
+  `Content-Length: abc` with the stream closed exits 0 and logs the framing line; drop the `shutdown`
+  and the same stream exits 2). Keep that order: the `exit` arm above keys 0 on the same pair, so a
+  tail that tested `framingFatal` first would make one server give two answers to "was `shutdown`
+  received" depending on whether the client sent `exit`. The sessions, the frames, and the two
+  `transcript` checks that already pin the 1: *Protocol decisions — the exit code and the id on the
+  wire, measured* in `docs/seed7-cli.md`.
 - Full text sync: the **last** `contentChanges` element holds the whole text.
 - A truncated buffer is the normal state while typing, so `END OF FILE`-class analyzer
   messages publish as `DiagnosticSeverity.Information`. Match that class by substring:

@@ -108,8 +108,9 @@ extra `Information` diagnostic, appended once per publish, telling an open `.s7i
 that its analysis comes from the file on disk. Error handling is spec-shaped: `-32002`
 before initialize, `-32600` after shutdown, `-32700`
 for a non-JSON body, `-32601` for unimplemented methods, and a fatal exit (status `2`) on
-a frame whose `Content-Length` cannot be trusted. Every answer comes back under the id the client
-sent — LSP 3.18 allows an integer or a string, and a request tagged `"42"` is answered `"42"`, even
+a frame whose `Content-Length` cannot be trusted — unless the session already answered
+`shutdown`, which earns 0. Every answer comes back under the id the client sent — LSP 3.18
+allows an integer or a string, and a request tagged `"42"` is answered `"42"`, even
 for the `-32002` that arrives before `initialize` — and a notification is never answered at all.
 
 On top of that, the symbol features, all read from the analyzer's own object table:
@@ -196,10 +197,11 @@ with the LSP features themselves in `src/features/`, one file per method plus `k
 for the shared symbol/type mappings. `tests/` has one suite each, plus
 `tests/transcript.py`, which drives the real process over real frames.
 `tools/` holds the generators and gates that keep the docs honest — `keyword_gate.sh` (the refused-name set,
-re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 343 files the
+re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 344 files the
 scan is actually given — `lib/*.s7i` plus `prg/*.sd7`, which is fewer than every `*.sd7`/`*.s7i`
-`find` recurses to, since `lib` holds another 51 `.s7i` below its top level), and the two the
-suite runs: `project_graph.sh` and `agents_gate.sh`.
+`find` recurses to, since `lib` holds another 51 `.s7i` below its top level), `regions_gate.sh`
+(the per-file `blockRegions` dump whose two-run diff is the gate on any change to that function),
+and the two the suite runs: `project_graph.sh` and `agents_gate.sh`.
 
 `docs/PROJECT_GRAPH.md` is that shape in one read — modules, includes, methods answered against
 methods advertised, suites and the module each is named after. Regenerate with `make graph`.

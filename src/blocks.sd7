@@ -16,10 +16,10 @@ const type: blockRef is new struct
     var string: kind is "";
     # "func" for the body of a routine, "" for everything else. `kind' cannot carry this:
     # features/folding_range.sd7:31-32 serialises it into FoldingRange.kind, so it may only hold
-    # what a client is meant to read. The two `# Strip internal marker' assignments in
-    # blockRegions blank a CLAUSE region (:332) and a SECTION (:337); a routine body is
-    # pushed with kind "" (:240), so it was never marked to begin with. Seed7 closes a proc body
-    # with `end func' too -- there is no `end proc' -- so "proc" is a value no input reaches.
+    # what a client is meant to read. blockRegions has one `# Strip internal marker' assignment
+    # (:392), blanking a CLAUSE region and a SECTION; a routine body is pushed with kind "" (:256),
+    # so it was never marked to begin with. Seed7 closes a proc body with `end func' too -- there is
+    # no `end proc' -- so "proc" is a value no input reaches.
     var string: closer is "";
   end struct;
 
@@ -234,13 +234,6 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
             end if;
           elsif word = "is" or word = "new" or word = "sub" then
             pending := "func";
-          elsif pending = "func" then
-            pending := "";
-            if word = "func" then
-              pushBlock(st, "end func", tk.line0, "");
-            elsif isTypeBody(word) then
-              pushBlock(st, "end " & word, tk.line0, "");
-            end if;
           elsif isControl(word) then
             pushBlock(st, "end " & word, tk.line0, "");
           elsif word = "repeat" then
@@ -255,6 +248,15 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
           elsif isClause(word) then
             closeFrom(st, out, firstAtOrAbove(st, "clause"), tk.line0);
             pushBlock(st, "clause", succ(tk.line0), "clause");
+          # LAST on purpose: `is <value>' leaves `pending' set, and a construct keyword must reach
+          # its own branch first -- testing this above them is the defect Task 4 fixed.
+          elsif pending = "func" then
+            pending := "";
+            if word = "func" then
+              pushBlock(st, "end func", tk.line0, "");
+            elsif isTypeBody(word) then
+              pushBlock(st, "end " & word, tk.line0, "");
+            end if;
           end if;
         end if;
         if tk.kind <> TK_LINE_COMMENT and inRun then
@@ -277,63 +279,116 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
     closeFrom(st, out, 1, lastLine);
   end func;
 
+# Every clause region that fits inside `control' -- the count the old filter took per clause
+# region, taken here once per control window and remembered. It counts clauses NESTED inside the
+# window, not only the ones whose own enclosing control is `control': a clause two levels down sits
+# in this window too, and leaving it out changes which clauses are emitted -- measured, the
+# direct-owner tally dropped a clause region in 86 of the 344 corpus files (lib/ar.s7i lost 175-184).
+# Pinned inside `make test' by the `while TRUE do' fixture in tests/blocks_test.sd7, which reddens
+# when this counts direct owners only; tools/regions_gate.sh carries the corpus side of that claim.
+# ponytail: one scan of `clauses' per DISTINCT control window, memoised in `tally' below. Measured
+# on prg/chkarr.sd7, interpreted: one blockRegions call costs 3.97 s -- 1.57 s of it walkRegions'
+# own pass over the tokens, 2.38 s these counts, and the sort, split, owner walk and appends share
+# the last ~0.02 s. Upgrade path: a clause count keyed by endLine, taken in one pass; it must move
+# no answer, so tools/regions_gate.sh is the gate that decides whether the upgrade is worth it.
+const func integer: clausesWithin (in array blockRef: raw,
+                                   in array integer: clauses,
+                                   in blockRef: control) is func
+  result
+    var integer: out is 0;
+  local
+    var integer: m is 0;
+  begin
+    for m range 1 to length(clauses) do
+      if raw[clauses[m]].startLine >= control.startLine and raw[clauses[m]].endLine <= control.endLine then
+        out +:= 1;
+      end if;
+    end for;
+  end func;
+
 const func array blockRef: blockRegions (in string: text,
                                          in integer: lastLine) is func
   result
     var array blockRef: out is 0 times blockRef.value;
   local
     var array blockRef: raw is 0 times blockRef.value;
+    var array integer: controls is 0 times 0;
+    var array integer: clauses is 0 times 0;
+    var array integer: owner is 0 times 0;
+    var array integer: tally is 0 times 0;
     var integer: i is 0;
     var integer: j is 0;
+    var integer: held is 0;
     var blockRef: tmp is blockRef.value;
     var blockRef: r is blockRef.value;
-    var integer: clauseCount is 0;
-    var integer: controlStart is 0;
-    var integer: controlEnd is 0;
-    var boolean: isClauseRegion is FALSE;
+    var boolean: emit is FALSE;
   begin
     walkRegions(text, raw, lastLine);
-    # ponytail: O(n^2) bubble sort, measured ceiling is ~95 regions per file across 213 lib/*.s7i
-    # files (20,151 total regions). Upgrade path: replace with insertion sort or stdlib sort if
-    # profiling shows this is a bottleneck.
-    # Sort by startLine ascending (document order).
-    for i range 1 to length(raw) do
-      for j range 1 to length(raw) - i do
-        if raw[j].startLine > raw[succ(j)].startLine then
-          tmp := raw[j];
-          raw[j] := raw[succ(j)];
-          raw[succ(j)] := tmp;
-        end if;
-      end for;
+    # Sort by startLine ascending (document order), by insertion. This and the bubble sort it
+    # replace move an element only on a STRICTLY-greater key, so both are stable: regions sharing a
+    # startLine keep the order walkRegions put them in, and every input gets the same array in the
+    # same order -- which tools/regions_gate.sh observes over the corpus rather than argues.
+    # Measured size of `raw' with that tool: 4 881 regions in prg/chkarr.sd7, the largest file in
+    # ~/seed7, and a mean of 102 across the 215 lib/*.s7i files. The note this replaces called ~95
+    # the ceiling; that was the mean of a 213-file, 20 151-region library set.
+    for i range 2 to length(raw) do
+      tmp := raw[i];
+      j := pred(i);
+      while j > 0 and raw[j].startLine > tmp.startLine do
+        raw[succ(j)] := raw[j];
+        j := pred(j);
+      end while;
+      raw[succ(j)] := tmp;
     end for;
-    # Filter out clause regions that are the only clause in their control block.
+    # Split the sorted regions once: the non-clause regions are the controls a clause can sit in,
+    # and the clause regions are what those windows count. Both lists are in document order, so one
+    # pass replaces the two full scans of `raw' the old filter made per clause region.
+    for i range 1 to length(raw) do
+      if raw[i].kind = "clause" then
+        clauses &:= i;
+      else
+        controls &:= i;
+      end if;
+    end for;
+    owner := length(raw) times 0;
+    for i range 1 to length(clauses) do
+      # `held' only ever grows: `raw' is sorted, so a control starting at or after this clause's
+      # first line was behind it in the old loop's scan and could not be its last match.
+      while held < length(controls) and raw[controls[succ(held)]].startLine < raw[clauses[i]].startLine do
+        held := succ(held);
+      end while;
+      # The last control in document order that still reaches past this clause's end -- the same
+      # element the old loop settled on by overwriting every match, found from the front. 0 means no
+      # control reaches, which leaves the fallback window below.
+      j := held;
+      while owner[clauses[i]] = 0 and j > 0 do
+        if raw[controls[j]].endLine >= raw[clauses[i]].endLine then
+          owner[clauses[i]] := j;
+        else
+          j := pred(j);
+        end if;
+      end while;
+    end for;
+    # Filter out clause regions that are the only clause in their control block. A clause with no
+    # enclosing control keeps the fallback the old code produces: window [0, lastLine], which holds
+    # every clause in the document, so an orphan clause is emitted when the document has more than
+    # one -- an answer, not a cleaner one, and pinned by the corpus diff.
+    tally := length(controls) times -1;
     for i range 1 to length(raw) do
       r := raw[i];
-      isClauseRegion := r.kind = "clause";
-      if isClauseRegion then
-        # Find the enclosing control block.
-        controlStart := 0;
-        controlEnd := lastLine;
-        for j range 1 to length(raw) do
-          if raw[j].kind <> "clause" and raw[j].startLine < r.startLine and raw[j].endLine >= r.endLine then
-            controlStart := raw[j].startLine;
-            controlEnd := raw[j].endLine;
+      emit := TRUE;
+      if r.kind = "clause" then
+        if owner[i] = 0 then
+          emit := length(clauses) > 1;
+        else
+          if tally[owner[i]] < 0 then
+            tally[owner[i]] := clausesWithin(raw, clauses, raw[controls[owner[i]]]);
           end if;
-        end for;
-        # Count clause regions in this control block.
-        clauseCount := 0;
-        for j range 1 to length(raw) do
-          if raw[j].kind = "clause" and raw[j].startLine >= controlStart and raw[j].endLine <= controlEnd then
-            clauseCount +:= 1;
-          end if;
-        end for;
-        # Only emit if there are multiple clauses.
-        if clauseCount > 1 then
-          r.kind := "";  # Strip internal marker
-          out &:= r;
+          emit := tally[owner[i]] > 1;
         end if;
-      else
-        if r.kind = "section" then
+      end if;
+      if emit then
+        if r.kind = "section" or r.kind = "clause" then
           r.kind := "";  # Strip internal marker
         end if;
         out &:= r;

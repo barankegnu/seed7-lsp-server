@@ -227,6 +227,14 @@ const func array fixture: allFixtures is func
     f.text := "const proc: a is func\nbegin\n  if TRUE then\n    noop;\n  end if;\nend func;\n"; f.expected := "0-5 1-5 2-4"; out &:= f;
     f.text := "repeat\n  noop;\nuntil TRUE;\nwriteln(1);\n"; f.expected := "0-2"; out &:= f;
     f.text := "if a then\n  x := 1;\nelsif b then\n  x := 2;\nend if;\n"; f.expected := "0-4 1-2 3-4"; out &:= f;
+    # The `else' region belongs to the `while' window, which also holds the inner if's clause: the
+    # count is per WINDOW (two clause regions inside [0, 8]), not per direct owner (the while owns
+    # one). Measured answer,
+    # distilled from prg/spigotpi.sd7; a pin of unchanged behaviour written after the code and proven
+    # by mutation -- counting only clauses whose own enclosing control is `control' (the plan's Task 5
+    # Step 4 shape) reddens this fixture and no other region check in `make test'.
+    f.text := "while TRUE do\n  if x then\n    if y then\n      p;\n    end if;\n  else\n    q;\n  end if;\nend while;\n";
+    f.expected := "0-8 1-4 6-8"; out &:= f;
     f.text := "(* one\n   two *)\nwriteln(1);\n"; f.expected := "0-1:comment"; out &:= f;
     f.text := "# a\n# b\n# c\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
     f.text := "# only one\nwriteln(1);\n"; f.expected := ""; out &:= f;
@@ -236,7 +244,18 @@ const func array fixture: allFixtures is func
     f.text := "(* unclosed\n"; f.expected := "0-1:comment"; out &:= f;
     f.text := "(* unclosed\nwriteln(1);\n"; f.expected := "0-2:comment"; out &:= f;
     f.text := "const proc: a is func\nbegin\n  if TRUE then\n"; f.expected := "0-3 1-3 2-3"; out &:= f;
-    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-3"; out &:= f;
+    f.text := "const type: t is new struct\n  var integer: a is 0;\nend struct;\n"; f.expected := "0-2"; out &:= f;
+    # The same `is new <type body>' with no value between the keywords. Task 4 moved the
+    # `pending = "func"' branch and provably did not change this answer; the check is a pin of
+    # unchanged behaviour, written after the code, and it reddens when that branch is deleted.
+    f.text := "const type: e is new enum\n  a,\n  b;\nend enum;\n"; f.expected := "0-3"; out &:= f;
+    # A declaration whose `is' is followed by a value, not a name: the keyword that opens the
+    # next block must still reach its own branch. Before Task 4's fix (`c1fc801') the `begin' branch
+    # never ran and the body region was missing from the answer.
+    f.text := "const proc: q is func\n  var integer: a is 0;\nbegin\n  writeln(a);\nend func;\n";
+    f.expected := "0-4 2-4"; out &:= f;
+    f.text := "const proc: p is func\n  local\n    var integer: a is 0;\n  begin\n    writeln(a);\n  end func;\n";
+    f.expected := "0-5 1-3 3-5"; out &:= f;
     f.text := demo();
     f.expected := "0-1:imports 2-5 3-5 6-14 7-12 8-11 9-11 12-14 17-24 18-24 19-23 20-21 22-23";
     out &:= f;
@@ -308,7 +327,9 @@ const proc: main is func
     check("a declaration below every routine body pairs with nothing",
           regionOfDeclaration(demo(), 26), "none");
     # The no-match answer, pinned as a record. startLine 0 alone cannot mean "nothing": a real
-    # region may start at line 0 (fixture 1 is exactly that), so `closer' is the discriminator.
+    # region may start at line 0 -- "a routine on the first line still pairs" below pins one as
+    # "0/3//func", and it is fixture 2's text, not fixture 1 (the empty text, which shows nothing) --
+    # so `closer' is the discriminator.
     check("an unpaired declaration answers the empty region",
           regionPin(routineRegionFor(blockRegions(demo(), pred(linesIn(demo()))), 26)), "0/0//");
     check("a routine on the first line still pairs",
