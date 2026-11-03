@@ -875,7 +875,14 @@ check: `s7 -q -l src` over every `lib/*.s7i` and `prg/*.sd7`, one row per file,
 
 SEED7 INTERPRETER Version 5.4.10, 215 `lib/*.s7i` + 129 `prg/*.sd7`, both sides
 `SENTINEL files=344 regions=56492 skips=1`, 345 lines each (344 rows + the sentinel), diff empty. The
-gate's own wall time went 41.4 s → 22.6 s. Two facts that run produced, both load-bearing:
+gate's own wall time went 41.4 s → 22.6 s. That sentinel is history, and here is today's: the same
+command **re-run 2026-11-02** on this tree (22.6 s), against `~/seed7` at `0e72ddfb`, reads
+`SENTINEL files=345 regions=56588 skips=1`, 346 lines (345 rows + the sentinel), and its artifact —
+`~/.cache/seed7-lsp-investigation/work/gate/regions-2026-11-02.txt` — is byte-identical, one md5
+`0541ee27145ee8c7c83f900e6f20f33e`, to the `regions-baseline.txt` already in that directory. What
+moved is the corpus, not `blockRegions`: one more `lib/*.s7i` is installed (`lib/lzip.s7i`, added at
+Seed7 `b572f2aa`, 83 regions in this artifact) and the sibling tree moved with it. Two facts the
+dated run produced, both load-bearing:
 
 - `prg/chkarr.sd7` holds **4 881** regions on this tree, not the 4 847 the plan quotes for
   `5d8b72c`. Task 4 moved the `pending` branch, so a construct keyword after `is <value>` now opens
@@ -890,6 +897,13 @@ gate's own wall time went 41.4 s → 22.6 s. Two facts that run produced, both l
   754, the same awk with `{n += $2; c++} END {printf "%.1f", n/c}` for the mean.
   `regions-before.txt`, `regions-final.txt` and `regions-round1.txt` there are one md5
   (`c6cabda22a9bcdea3571902dbf0a3b86`), which is the empty diff above restated as a checksum.
+  Those three are **no longer on disk** — listed 2026-11-02, the directory holds only
+  `regions-baseline.txt`, `tokens-baseline.txt` and this wave's `regions-2026-11-02.txt` — so the
+  two `awk` commands and that md5 are history a reader cannot re-run, the same note the `#exit`
+  section above carries for `/tmp/lsp318.txt`. Both figures do re-derive from the artifact this
+  wave wrote, which is the same shape: `lib/tiff.s7i` is still **754** and `prg/chkarr.sd7` still
+  **4 881**, and the mean over today's 216 `lib/*.s7i` is **102.2** (22 071 regions) against the
+  dated 102 over 215 (21 975).
 - `skips=1` is `prg/err.sd7`, the interpreter's own invalid-encoding test program: the one corpus
   file that is NOT valid UTF-8. `readln` over an `openUtf8` handle raises `RANGE_ERROR` at
   `ut8_rtl.c(771)` ("The file contains an invalid encoding") — a different raiser from the
@@ -914,7 +928,10 @@ the 41.4 s measured above — against the HEAD run's ~23 s. `SENTINEL files=344 
 pre-Task-4 against `files=344 regions=56492 skips=1` at HEAD, 345 lines each, so the two artifacts
 cover the same corpus. Compared pair by pair with
 `~/.cache/seed7-lsp-investigation/work/gate/foldloss.py <pre> <head>`, whose own last line is
-`SENTINEL paths=344 changed=269 added=5394 removed=2531 lost=0`: 269 rows changed — 268 of them
+`SENTINEL paths=344 changed=269 added=5394 removed=2531 lost=0` (that script, its two artifacts and
+the `wt-c1fc801` worktree the commands above create are no longer on disk either — listed
+2026-11-02 — so this paragraph is a record rather than a recipe; `tools/regions_gate.sh`, which
+produces the rows it compares, is not): 269 rows changed — 268 of them
 gained regions, **none lost any**, and the 269th (`lib/stars.s7i`) changed one pair at an unchanged
 count. All 2 531 vanished pairs have a same-start replacement at HEAD whose `end` moved down. That is
 the `local`/section window ending at the `begin` Task 4 stopped swallowing instead of running to
@@ -928,8 +945,9 @@ The wire sessions are the shapes the finding was measured in: `initialize` (root
 `initialized` + `didOpen` of `prg/chkarr.sd7` (1 761 917 characters, 33 147 newlines) + N
 `textDocument/foldingRange` + `shutdown` + `exit`, framed over stdin of
 `s7 -q -l src src/main.sd7`. Best of two runs per row, one command
-(`python3 ~/.cache/seed7-lsp-investigation/work/fold_timing.py <tree> 2`), whose sentinel is the
-reply's own `folds=4881 frame_bytes=172338` — identical in every row below and in both trees, so the
+(`python3 ~/.cache/seed7-lsp-investigation/work/fold_timing.py <tree> 2`, a script that is no longer
+on disk either — `work/` holds only `gate/`), whose sentinel is the reply's own
+`folds=4881 frame_bytes=172338` — identical in every row below and in both trees, so the
 sessions measure the same answer at different speeds.
 
 | session shape | `311b34e` | filter fixed, sort still bubble | both fixed |
