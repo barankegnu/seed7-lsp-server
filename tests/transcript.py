@@ -1387,7 +1387,7 @@ replies, code, err, junk = run([
     frame({"jsonrpc": "2.0", "id": 70, "method": "textDocument/signatureHelp", "params":
            {"textDocument": {"uri": "file:///tmp/tt_clamp.sd7"},
             "position": {"line": SIG_CLAMP_LINE, "character": SIG_CLAMP_CHAR}}}),
-    frame({"jsonrpc": "2.0", "id": 71, "method": "textDocument/shutdown"}),
+    frame(shutdown(71)),
     frame({"jsonrpc": "2.0", "method": "exit"}),
 ])
 by_id = {r.get("id"): r for r in replies if "id" in r}
@@ -1398,6 +1398,7 @@ expect("activeParameter" in clamp,
 expect(clamp.get("activeParameter") <= len(clamp_params) - 1,
        "activeParameter %d is within the first signature's parameter count %d" %
        (clamp.get("activeParameter"), len(clamp_params)))
+expect(code == 0, "the clamp session saw a real shutdown and exits 0 (got %d)" % code)
 expect(junk == 0, "the clamp session put only frames on stdout (junk=%d)" % junk)
 
 # --- spec §8 M3 exit test: the features must also work on a .s7i buffer, which is
