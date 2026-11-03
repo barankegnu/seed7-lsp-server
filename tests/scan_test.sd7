@@ -205,18 +205,24 @@ const proc: main is func
           "name 0:0:1 [c] | op 0:1:2 [<&] | name 0:3:1 [d] | bracket 0:4:1 [[] " &
           "| name 0:5:1 [e] | bracket 0:6:1 []]");
     # ---- backslash as operator character ------------------------------------
-    # tokens.htm 10.2.2 lists 22 special characters including '\\'; scanner.c:361-364 includes it
-    # in SPECIALCHAR. Measured: s7 -q -a on 'writeln(1 \\ 2)' reports '")" expected found "\\"'.
+    # tokens.htm 10.2.2 lists 22 special characters including '\\'; scanner.c:357-361 is the
+    # SPECIALCHAR case list and '\\' is on its line 360 (361-364 is `case '|': case '~':` and the
+    # body). Measured: s7 -q -a on 'writeln(1 \\ 2)' reports '")" expected found "\\"'.
     check("a lone backslash is an operator token, per tokens.htm 10.2.2",
           kindName(firstKindOf("\\")), "op");
     check("and it grows a run with its neighbours, as scanner.c does",
           str(firstWidthOf("\\+ := 3")), "2");
     check("a backslash inside an unterminated string stays inside the string",
           kindName(firstKindOf("\"abc \\")), "string");
-    # The mask pin: a based literal followed by a code backslash. TK_OP is never a hidden kind,
-    # so the backslash must survive in the mask (not be blanked). This is the only guard that a
-    # backslash in code is not silently lost -- tokens_gate checks length/newline invariants but
-    # not that non-code characters are blanked and code characters survive.
+    # The mask pin: a based literal followed by a code backslash. A TK_OP is not a hidden kind
+    # (`hiddenKind`, src/scan.sd7:414, lists only TK_STRING, TK_CHAR, TK_COMMENT and
+    # TK_LINE_COMMENT), so maskOf's else branch at :510-511 copies it verbatim rather than
+    # blanking it. What this check does NOT pin: the SPECIAL_CHARS addition above. That same
+    # else branch copies a TK_ILLEGAL backslash verbatim too, so deleting '\\' from SPECIAL_CHARS
+    # leaves this check green -- measured, and the two kind/width checks above it go FAIL in the
+    # same run. It is a guard on the mask's non-hidden path, not on the operator set, and no
+    # mutation of that set reddens it (AGENTS.md: say so out loud rather than let the comment
+    # claim a role the check does not have).
     check("a backslash in code survives the mask (TK_OP is not hidden)",
           maskOf("16#beef \\"),
           "16#beef \\");
