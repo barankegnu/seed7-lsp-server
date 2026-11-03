@@ -426,6 +426,20 @@ const proc: main is func
     check("and the disclosure is Information, not Error",
           describe(discloseStaleLibrary(0 times lspDiag.value, libUri, openDocs[libUri])),
           "3|unsaved edits");
+    # The OTHER disclosure on the same publish path: `refresh` logs this when the analysis dropped
+    # errors that name an included file (review I3 -- the drop was silent, and the cascade errors left
+    # on the include line never name the file that holds the cause). Pure for the same reason as the
+    # checks above: the sentence goes out on the protocol channel, which a unit suite cannot capture.
+    # One spelling serves 1 and N on purpose -- four errors in one included file must not read as four
+    # files, so the path is named as the FIRST.
+    check("the foreign-drop disclosure carries the count and the first file",
+          foreignDropMessage(4, "/tmp/seed7_lsp_foreign2.s7i"),
+          "diagnostics: dropped 4 analyzer error(s) that name an included file rather than" <&
+          " the document being edited; the first is /tmp/seed7_lsp_foreign2.s7i");
+    check("and one drop reads the same way, with no plural to get wrong",
+          foreignDropMessage(1, "/tmp/x.s7i"),
+          "diagnostics: dropped 1 analyzer error(s) that name an included file rather than" <&
+          " the document being edited; the first is /tmp/x.s7i");
     # ---- past the occurrence cap ------------------------------------------------
     # 2 002 statements, so occurrencesOf stops at its 2 001st record and the cursor on the LAST
     # line has no record to find. The refusal is right and so is `refused'; only the old sentence

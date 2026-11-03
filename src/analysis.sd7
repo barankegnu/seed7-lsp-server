@@ -14,6 +14,12 @@ const type: lspDiag is new struct
 const type: analysisResult is new struct
     var boolean: completed is FALSE;
     var array lspDiag: diags is 0 times lspDiag.value;
+    # What collectDiags dropped, so the drop can be SAID: how many errors named an included file
+    # rather than this document, and the first such file. `diags' is the narrower answer and these
+    # two are its disclosure, carried out to the publisher because a notification is the
+    # dispatcher's to send, not the analyzer's (invariant 4: analysis knows nothing about LSP).
+    var integer: foreignDropped is 0;
+    var string: foreignFile is "";
   end struct;
 
 const func string: driverFor (in string: path) is
@@ -46,9 +52,16 @@ const func boolean: isBufferFile (in string: fname, in string: docPath) is func
 # `isBufferFile' on the ERROR's file, not just on a declaration's: a parse of a buffer also
 # analyses everything it includes, and an error in one of those files arrives named with that
 # file and counting ITS lines. Landing it on the open buffer publishes a squiggle over a line
-# that holds nothing wrong, so a foreign error is dropped here rather than re-anchored. The
+# that holds nothing wrong, so a foreign error is dropped here rather than re-anchored -- and
+# counted, with its file kept, because the dropped error is the only text that named the file
+# holding the real defect: what survives it is a cascade anchored on the include line. The
 # other half of the same predicate is what keeps an open `.s7i' talking: for that buffer
 # `docPath' IS the library, so its own errors (and the wrapper's) still reach the client.
+#
+# Known limit, recorded and not handled: `parseError.fileName' defaults to "" (progs.s7i:498) and
+# an empty name is foreign to every docPath, so such an error is dropped and counted with no file
+# to name. No errorType this server reaches produces one -- the reviewer probed 11 -- and
+# inventing a spelling for an unobserved case is a guess, not a guard.
 const proc: collectDiags (in program: prog, inout analysisResult: res,
                           in string: docPath) is func
   local
@@ -59,15 +72,21 @@ const proc: collectDiags (in program: prog, inout analysisResult: res,
     res.completed := TRUE;
     for i range 1 to errorCount(prog) do
       err := getError(prog, i);
-      if not isBufferFile(err.fileName, docPath) then
-        # belongs to an included file, not to this document
+      if isBufferFile(err.fileName, docPath) then
+        diag.line1 := err.lineNumber;
+        diag.column1 := err.columnNumber;
+        diag.message := err.message;
+        diag.errKind := err.error;
+        diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
+        res.diags &:= diag;
       else
-      diag.line1 := err.lineNumber;
-      diag.column1 := err.columnNumber;
-      diag.message := err.message;
-      diag.errKind := err.error;
-      diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
-      res.diags &:= diag;
+        # Belongs to an included file, not to this document. `foreignFile' keeps the first NAME it
+        # sees -- an empty one, the limit above, does not claim the slot -- so one included file
+        # erroring four times is disclosed as four errors in that file, never as four files.
+        res.foreignDropped +:= 1;
+        if res.foreignFile = "" then
+          res.foreignFile := err.fileName;
+        end if;
       end if;
     end for;
   end func;

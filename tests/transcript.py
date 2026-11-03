@@ -215,6 +215,38 @@ bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnost
 expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
        "last of several contentChanges wins")
 
+# --- review I3: an analyzer error that names an included file is dropped, and says so ---
+# The buffer below includes a file whose four errors all name THAT file and none names the
+# buffer, so the open document publishes an empty list and the disclosure is the only thing
+# telling the user where the cause is. Oracle for the four: `s7 -q -a` on the same driver
+# reports exactly them, every one on the included file.
+FG_LIB = "/tmp/seed7_lsp_transcript_foreign.s7i"
+with open(FG_LIB, "w") as f:
+    f.write('const proc: brokenA is func\n  begin\n    writeln(1 + "a");\n  end func;\n'
+            'const proc: brokenB is func\n  begin\n    writeln(2 + "b");\n  end func;\n')
+FG_URI = "file:///tmp/tt_foreign.sd7"
+FG_TEXT = ('$ include "seed7_05.s7i";\n  include "' + FG_LIB + '";\n'
+           'const proc: main is func\n  begin\n    writeln(1);\n  end func;\n')
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(FG_URI, FG_TEXT)),
+                                frame(shutdown(2)), frame(exit_())])
+fg_pub = next((i for i, r in enumerate(replies)
+               if r.get("method") == "textDocument/publishDiagnostics"
+               and r.get("params", {}).get("uri") == FG_URI), None)
+fg_log = next((i for i, r in enumerate(replies)
+               if r.get("method") == "window/logMessage"
+               and r.get("params", {}).get("type") == 3
+               and FG_LIB in r["params"].get("message", "")), None)
+fg_diags = replies[fg_pub]["params"]["diagnostics"] if fg_pub is not None else None
+expect(fg_diags == [],
+       "the premise: this buffer's own diagnostics are empty, so a silent drop is total (%r)" %
+       (fg_diags,))
+expect(fg_log is not None,
+       "the dropped errors reach the client as a logMessage naming the file that holds them")
+expect(fg_log is not None and fg_pub is not None and fg_log < fg_pub,
+       "and the disclosure arrives before the diagnostics it explains (%s, %s)" % (fg_log, fg_pub))
+expect(junk == 0, "the foreign-drop session put only frames on stdout (junk=%d)" % junk)
+
 # --- M3: documentSymbol answers from the analyzer's own global objects ---
 with open(os.path.join(ROOT, "tests/programs/symbols.sd7")) as f:
     SYMS = f.read()

@@ -102,7 +102,10 @@ Base protocol framing, lifecycle (`initialize`/`initialized`/`shutdown`/`exit`),
 text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from the
 analyzer: deduplicated, only ever published for the file that holds them (an error raised
 inside an included file names that file and counts its own lines, and the server drops it rather
-than drawing it over the open buffer), landed on characters even when the line ahead of it holds
+than drawing it over the open buffer — and says so, once per publish, in a `window/logMessage`
+carrying how many errors it dropped and the first file that holds them, because what survives on
+the buffer is a cascade anchored on the include line that never names the cause), landed on
+characters even when the line ahead of it holds
 non-ASCII text, and with a based literal in the line no longer hiding what follows
 it; whole-line where the analyzer reports no column, capped, and with
 truncation-during-typing downgraded to Information instead of a wall of red; and one
@@ -184,7 +187,10 @@ diagnostics come from the file on disk", which `didClose` clears — the silence
 staleness does not),
 `utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` in
 `src/lsp_server.sd7`'s `capabilitiesJson` and honours no client preference), `workspace/configuration`, and
-Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
+Windows. An error the analyzer attributes to an included file is disclosed but never published:
+the `window/logMessage` above names the file and the count, and reading the errors themselves
+means opening it — a file the editor never opened is not analysed at all, which is M6's index.
+Asking for an unimplemented method returns `-32601 Method not found`, which
 editors display as "no data" rather than as a failure — and a capability is advertised
 only once its method is answered.
 

@@ -1,4 +1,4 @@
-corpus_files	ls "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 | wc -l	345	README.md:202
+corpus_files	ls "$SEED7"/lib/*.s7i "$SEED7"/prg/*.sd7 | wc -l	345	README.md:208
 lib_top	ls "$SEED7"/lib/*.s7i | wc -l	216	tools/regions_gate.sh:25
 prg_top	ls "$SEED7"/prg/*.sd7 | wc -l	129	tools/regions_gate.sh:25
 lib_recursive	find "$SEED7"/lib -name '*.s7i' | wc -l	267	AGENTS.md:60
