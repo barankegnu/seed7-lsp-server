@@ -224,3 +224,7 @@ methods advertised, suites and the module each is named after. Regenerate with `
   figures, citations and decision history.
 - `docs/superpowers/plans/` — the task-by-task plans as they were executed; each describes the
   tree before it landed, so read its status line first.
+
+# CONTRIBUTING
+
+branch: `pull_requests`
