@@ -128,7 +128,7 @@ check "every tsv method appears exactly once" \
 # prose claimed three suites name no src module and offered `lsp_server' as one of them;
 # src/lsp_server.sd7 exists, and the tree answers five -- folding, features, agents, graph,
 # transcript. A literal would go stale the day a module is renamed, so no expected count is pinned
-# here. The two paths fs_suite_files names below are not a pinned count: they are the price of a floor
+# here. The three paths fs_suite_files names below are not a pinned count: they are the price of a floor
 # that must not read the Makefile, and the tree gives no pattern that separates a suite gate from
 # tools/keyword_gate.sh.
 #
@@ -150,14 +150,14 @@ bare_names() {
 }
 
 # The floor: the suite files that exist on disk. `*_test.sd7' and `*_test.sh' under tests/ can only
-# be suites (the Makefile's own test-% convention names them); the other two are NAMED, not globbed,
+# be suites (the Makefile's own test-% convention names them); the other three are NAMED, not globbed,
 # because `tools/*_gate.sh' also matches tools/keyword_gate.sh, which is a generator and not a suite
-# -- measured, it puts the floor at 22 against 21 rows and reddens a correct tree. Printing the two
+# -- measured, it puts the floor at 22 against 22 rows and reddens a correct tree. Printing the three
 # named paths unconditionally is what makes an empty extraction loud rather than vacuous: a section
-# with no rows scores 21 file-only lines here, never 0 -eq 0.
+# with no rows scores 22 file-only lines here, never 0 -eq 0.
 fs_suite_files() {
   find tests -maxdepth 1 \( -name '*_test.sd7' -o -name '*_test.sh' \) -print
-  printf '%s\n' tests/transcript.py tools/agents_gate.sh
+  printf '%s\n' tests/transcript.py tools/agents_gate.sh tools/figures_gate.sh
 }
 
 # Column 2 of every row, and the row's target name with the optional `test-' stripped.
@@ -199,7 +199,7 @@ check "every Makefile suite name has a row, and no row lacks one" \
       'for n in $(suite_names) $(bare_names); do printf "%s\n" "$n"; done | sort -u >/tmp/s1; artifact_rows name >/tmp/s2; test $(comm -3 /tmp/s1 /tmp/s2 | grep -c .) -eq 0'
 # One comm over two sets does three jobs, which is why there is no separate "column 2 exists" check:
 # a row naming a file that is not on disk shows up as a row-only line, a suite file with no row as a
-# file-only line, and a section with no rows at all as 21 file-only lines. Neither input comes from
+# file-only line, and a section with no rows at all as 22 file-only lines. Neither input comes from
 # the Makefile or the generator, so the shape change that silences the check above cannot silence
 # this one.
 check "the suite map is floored on suite files that exist, not on the Makefile" \

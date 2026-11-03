@@ -519,6 +519,7 @@ const proc: main is func
     var symRec: ap is symRec.value;
     var symRec: h1 is symRec.value;
     var symRec: h2 is symRec.value;
+    var symRec: h3 is symRec.value;
     var array symRec: hsyms is 0 times symRec.value;
     var integer: active is 0;
     var lsDoc: sig is lsDoc.value;
@@ -810,20 +811,35 @@ const proc: main is func
     h2.file := "/tmp/a.sd7"; h2.line1 := 7;
     h2.sign := "const func integer: writeln (integer: n)";
     h2.params := []("integer: n");
+    h3.name := "reportWidget"; h3.cat := "BLOCKOBJECT"; h3.ty := "proc";
+    h3.file := "/tmp/a.sd7"; h3.line1 := 11;
+    h3.sign := "const proc: reportWidget (in string: label, inout integer: counter, in integer: depth)";
+    h3.params := []("string: label", "integer: counter", "integer: depth");
     hsyms &:= h1;
     hsyms &:= h2;
+    hsyms &:= h3;
     setVersion(sig, "go(\"a, b\", x);\nconst integer: q is 1;\n", 1);
     active := 0;
     check("no callee means null", signatureHelpResult(hsyms, "", 0), "null");
     check("one signature per overload, active parameter reported",
-          signatureHelpResult(hsyms, "writeln", 1),
+          signatureHelpResult(hsyms, "writeln", 0),
           "{\"signatures\":[{\"label\":\"const proc: writeln (string: s)\"," &
           "\"parameters\":[{\"label\":\"string: s\"}]}," &
           "{\"label\":\"const func integer: writeln (integer: n)\"," &
           "\"parameters\":[{\"label\":\"integer: n\"}]}]," &
-          "\"activeSignature\":0,\"activeParameter\":1}");
-    checkTrue("an active parameter past the last one is reported, not dropped",
-              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") <> 0);
+          "\"activeSignature\":0,\"activeParameter\":0}");
+    checkTrue("an active parameter past the last one clamps to the last",
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":0") <> 0);
+    checkTrue("and the clamped answer carries no out-of-range index",
+              pos(signatureHelpResult(hsyms, "writeln", 9), "\"activeParameter\":9") = 0);
+    checkTrue("index 0 survives when the active signature has one parameter",
+              pos(signatureHelpResult(hsyms, "writeln", 0), "\"activeParameter\":0") <> 0);
+    checkTrue("an in-range non-zero index survives unchanged (kills always-0)",
+              pos(signatureHelpResult(hsyms, "reportWidget", 1), "\"activeParameter\":1") <> 0);
+    checkTrue("an out-of-range index clamps to the last valid index (kills no-clamp and always-0)",
+              pos(signatureHelpResult(hsyms, "reportWidget", 9), "\"activeParameter\":2") <> 0);
+    checkTrue("the clamped answer carries no out-of-range index",
+              pos(signatureHelpResult(hsyms, "reportWidget", 9), "\"activeParameter\":9") = 0);
     check("a callee with no declarations is null",
           signatureHelpResult(hsyms, "nosuch", 0), "null");
     # ---- textDocument/references -------------------------------------------------

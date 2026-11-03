@@ -8,7 +8,7 @@ Requires a working `s7` on `PATH` plus its standard library; built and tested ag
 SEED7 5.4.10 on Linux. No `SEED7_LIBRARY` needed — the interpreter resolves its own
 libraries.
 
-    make test          # 21 suites, every one reporting 0 failed, no editor required
+    make test          # 22 suites, every one reporting 0 failed, no editor required
     make server        # speak LSP on stdin/stdout
 
 ## Security: opening a file runs its code
@@ -100,7 +100,12 @@ this one, which is what `make build-debug` runs:
 
 Base protocol framing, lifecycle (`initialize`/`initialized`/`shutdown`/`exit`), full
 text synchronisation (`didOpen`/`didChange`/`didClose`), and diagnostics from the
-analyzer: deduplicated, landed on characters even when the line ahead of it holds
+analyzer: deduplicated, only ever published for the file that holds them (an error raised
+inside an included file names that file and counts its own lines, and the server drops it rather
+than drawing it over the open buffer — and says so, once per publish, in a `window/logMessage`
+carrying how many errors it dropped and the first file that holds them, because what survives on
+the buffer is a cascade anchored on the include line that never names the cause), landed on
+characters even when the line ahead of it holds
 non-ASCII text, and with a based literal in the line no longer hiding what follows
 it; whole-line where the analyzer reports no column, capped, and with
 truncation-during-typing downgraded to Information instead of a wall of red; and one
@@ -182,7 +187,10 @@ diagnostics come from the file on disk", which `didClose` clears — the silence
 staleness does not),
 `utf-8`/`utf-32` position encoding (the server announces `"positionEncoding":"utf-16"` in
 `src/lsp_server.sd7`'s `capabilitiesJson` and honours no client preference), `workspace/configuration`, and
-Windows. Asking for an unimplemented method returns `-32601 Method not found`, which
+Windows. An error the analyzer attributes to an included file is disclosed but never published:
+the `window/logMessage` above names the file and the count, and reading the errors themselves
+means opening it — a file the editor never opened is not analysed at all, which is M6's index.
+Asking for an unimplemented method returns `-32601 Method not found`, which
 editors display as "no data" rather than as a failure — and a capability is advertised
 only once its method is answered.
 
@@ -197,11 +205,11 @@ with the LSP features themselves in `src/features/`, one file per method plus `k
 for the shared symbol/type mappings. `tests/` has one suite each, plus
 `tests/transcript.py`, which drives the real process over real frames.
 `tools/` holds the generators and gates that keep the docs honest — `keyword_gate.sh` (the refused-name set,
-re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 344 files the
+re-derived from the interpreter), `corpus_scan.sh` (the occurrence pass run over all 345 files the
 scan is actually given — `lib/*.s7i` plus `prg/*.sd7`, which is fewer than every `*.sd7`/`*.s7i`
 `find` recurses to, since `lib` holds another 51 `.s7i` below its top level), `regions_gate.sh`
 (the per-file `blockRegions` dump whose two-run diff is the gate on any change to that function),
-and the two the suite runs: `project_graph.sh` and `agents_gate.sh`.
+and the three the suite runs: `project_graph.sh`, `agents_gate.sh` and `figures_gate.sh`.
 
 `docs/PROJECT_GRAPH.md` is that shape in one read — modules, includes, methods answered against
 methods advertised, suites and the module each is named after. Regenerate with `make graph`.

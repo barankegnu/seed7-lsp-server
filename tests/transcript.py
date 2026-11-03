@@ -215,6 +215,38 @@ bnotes = [r for r in replies if r.get("method") == "textDocument/publishDiagnost
 expect(bool(bnotes) and any(d["severity"] == 1 for d in bnotes[-1]["params"]["diagnostics"]),
        "last of several contentChanges wins")
 
+# --- review I3: an analyzer error that names an included file is dropped, and says so ---
+# The buffer below includes a file whose four errors all name THAT file and none names the
+# buffer, so the open document publishes an empty list and the disclosure is the only thing
+# telling the user where the cause is. Oracle for the four: `s7 -q -a` on the same driver
+# reports exactly them, every one on the included file.
+FG_LIB = "/tmp/seed7_lsp_transcript_foreign.s7i"
+with open(FG_LIB, "w") as f:
+    f.write('const proc: brokenA is func\n  begin\n    writeln(1 + "a");\n  end func;\n'
+            'const proc: brokenB is func\n  begin\n    writeln(2 + "b");\n  end func;\n')
+FG_URI = "file:///tmp/tt_foreign.sd7"
+FG_TEXT = ('$ include "seed7_05.s7i";\n  include "' + FG_LIB + '";\n'
+           'const proc: main is func\n  begin\n    writeln(1);\n  end func;\n')
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(FG_URI, FG_TEXT)),
+                                frame(shutdown(2)), frame(exit_())])
+fg_pub = next((i for i, r in enumerate(replies)
+               if r.get("method") == "textDocument/publishDiagnostics"
+               and r.get("params", {}).get("uri") == FG_URI), None)
+fg_log = next((i for i, r in enumerate(replies)
+               if r.get("method") == "window/logMessage"
+               and r.get("params", {}).get("type") == 3
+               and FG_LIB in r["params"].get("message", "")), None)
+fg_diags = replies[fg_pub]["params"]["diagnostics"] if fg_pub is not None else None
+expect(fg_diags == [],
+       "the premise: this buffer's own diagnostics are empty, so a silent drop is total (%r)" %
+       (fg_diags,))
+expect(fg_log is not None,
+       "the dropped errors reach the client as a logMessage naming the file that holds them")
+expect(fg_log is not None and fg_pub is not None and fg_log < fg_pub,
+       "and the disclosure arrives before the diagnostics it explains (%s, %s)" % (fg_log, fg_pub))
+expect(junk == 0, "the foreign-drop session put only frames on stdout (junk=%d)" % junk)
+
 # --- M3: documentSymbol answers from the analyzer's own global objects ---
 with open(os.path.join(ROOT, "tests/programs/symbols.sd7")) as f:
     SYMS = f.read()
@@ -1373,6 +1405,34 @@ expect([x.get("label") for x in sig.get("signatures", [{}])[0].get("parameters",
 expect(by_id.get(61, {}).get("result") is None,
        "signatureHelp outside a call is null")
 
+# --- signatureHelp clamps an out-of-range activeParameter to the last valid index ---
+SIG_CLAMP_TEXT = SYMS.replace('reportWidget("proto", hits)',
+                               'reportWidget("proto", hits, 42)')
+SIG_CLAMP_LINES = SIG_CLAMP_TEXT.split("\n")
+SIG_CLAMP_LINE = SIG_CLAMP_LINES.index('    reportWidget("proto", hits, 42);')
+SIG_CLAMP_CHAR = SIG_CLAMP_LINES[SIG_CLAMP_LINE].index("42")
+replies, code, err, junk = run([
+    frame(msgs[0]), frame(msgs[1]),
+    frame({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_clamp.sd7", "languageId": "seed7",
+                             "version": 1, "text": SIG_CLAMP_TEXT}}}),
+    frame({"jsonrpc": "2.0", "id": 70, "method": "textDocument/signatureHelp", "params":
+           {"textDocument": {"uri": "file:///tmp/tt_clamp.sd7"},
+            "position": {"line": SIG_CLAMP_LINE, "character": SIG_CLAMP_CHAR}}}),
+    frame(shutdown(71)),
+    frame({"jsonrpc": "2.0", "method": "exit"}),
+])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+clamp = by_id.get(70, {}).get("result") or {}
+clamp_params = clamp.get("signatures", [{}])[0].get("parameters", [])
+expect("activeParameter" in clamp,
+       "activeParameter is present in the reply")
+expect(clamp.get("activeParameter") <= len(clamp_params) - 1,
+       "activeParameter %d is within the first signature's parameter count %d" %
+       (clamp.get("activeParameter"), len(clamp_params)))
+expect(code == 0, "the clamp session saw a real shutdown and exits 0 (got %d)" % code)
+expect(junk == 0, "the clamp session put only frames on stdout (junk=%d)" % junk)
+
 # --- spec §8 M3 exit test: the features must also work on a .s7i buffer, which is
 # --- analysed through the synthetic driver because a library cannot be parsed alone ---
 LIB_PATH = "/tmp/seed7_lsp_transcript_lib.s7i"
@@ -1617,6 +1677,28 @@ expect(by_id.get(3, {}).get("result") == [],
        "selectionRange for an unopened uri is []")
 expect("selectionRangeProvider" in replies[0].get("result", {}).get("capabilities", {}),
        "initialize advertises selectionRangeProvider")
+
+# The truncation disclosure: 33 positions yields 32 answers and a window/logMessage
+# that arrives BEFORE the result, mirroring the references pattern.
+SEL33_POS = [{"line": 0, "character": 2}] * 33
+replies, code, err, junk = run([frame(initialize(1)), frame(msgs[1]),
+                                frame(opened(SEL_URI, "a  b")),
+                                frame(req(10, "textDocument/selectionRange",
+                                          {"textDocument": {"uri": SEL_URI},
+                                           "positions": SEL33_POS})),
+                                frame(shutdown(11)), frame(exit_())])
+by_id = {r.get("id"): r for r in replies if "id" in r}
+sel33 = by_id.get(10, {}).get("result") or []
+expect(isinstance(sel33, list) and len(sel33) == 32,
+       "selectionRange with 33 positions answers 32, got %d" % len(sel33))
+log_at = next((i for i, r in enumerate(replies)
+               if r.get("method") == "window/logMessage" and
+               r.get("params", {}).get("type") == 3 and
+               "dropped" in r["params"].get("message", "")), None)
+ans_at = next((i for i, r in enumerate(replies) if r.get("id") == 10), None)
+expect(log_at is not None and ans_at is not None and log_at < ans_at,
+       "the truncation disclosure arrives before the answer (%s, %s)" % (log_at, ans_at))
+expect(junk == 0, "the selectionRange truncation run put only frames on stdout (junk=%d)" % junk)
 
 # --- Task 9 / spec §4.2: one analysis per document version -------------------
 CACHE_URI = "file:///tmp/tt_cache.sd7"

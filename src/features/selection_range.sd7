@@ -4,10 +4,18 @@ $ include "seed7_05.s7i";
   include "blocks.sd7";
   include "rpc.sd7";
 
-# Ponytail: cap at 32 positions per request, the way folding_range caps regions.
-# The scan is shared now, so what each position still costs is one chain build -- the cap
-# bounds that per-position work and the response size, not the region pass.
+# Cap at 32 positions per request. Each position costs one tokenAt walk over the whole
+# document plus a chain build, so the cap bounds per-request work, not just response size.
+# Unlike foldingRange's rangeLimit this is not a client hint -- the server decides -- so
+# a request that exceeds it is answered with fewer positions and the drop is disclosed
+# through selAnswer.truncated / selAnswer.why (the references pattern).
 const integer: MAX_SELECT_POSITIONS is 32;
+
+const type: selAnswer is new struct
+    var string: json is "[]";
+    var boolean: truncated is FALSE;
+    var string: why is "";
+  end struct;
 
 # Builds a SelectionRange JSON node: {"range":<rangeJson>,"parent":<parentJson>}
 # or {"range":<rangeJson>} if parentJson is "".
@@ -96,12 +104,13 @@ const func string: chainForPosition (in lsDoc: doc, in jsonValue: posObj,
     out := chain;
   end func;
 
-const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is func
+const func selAnswer: selectionResult (in lsDoc: doc, in jsonValue: positions) is func
   result
-    var string: out is "";
+    var selAnswer: out is selAnswer.value;
   local
     var jsonWriter: w is jsonWriter.value;
     var integer: n is 0;
+    var integer: asked is 0;
     var integer: i is 0;
     var integer: lastLine is 0;
     var array blockRef: allRegions is 0 times blockRef.value;
@@ -109,11 +118,15 @@ const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is f
     var string: chain is "";
   begin
     if category(positions) <> JSON_ARRAY then
-      out := "[]";
+      out.json := "[]";
     else
-      n := length(positions);
+      asked := length(positions);
+      n := asked;
       if n > MAX_SELECT_POSITIONS then
         n := MAX_SELECT_POSITIONS;
+        out.truncated := TRUE;
+        out.why := "selectionRange: dropped " <& str(asked - n) <&
+                   " position(s) beyond the cap of " <& str(MAX_SELECT_POSITIONS);
       end if;
       lastLine := pred(lineCount(doc));
       allRegions := blockRegions(doc.text, lastLine);
@@ -124,6 +137,6 @@ const func string: selectionResult (in lsDoc: doc, in jsonValue: positions) is f
         raw(w, chain);
       end for;
       closeArray(w);
-      out := finishJson(w);
+      out.json := finishJson(w);
     end if;
   end func;

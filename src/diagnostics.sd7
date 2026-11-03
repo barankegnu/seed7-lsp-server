@@ -7,7 +7,6 @@ $ include "seed7_05.s7i";
 const type: seenHash is hash [string] integer;
 
 const integer: SEV_ERROR is 1;
-const integer: SEV_WARNING is 2;
 const integer: SEV_INFORMATION is 3;
 
 const func array lspDiag: mapDiagnostics (in array lspDiag: raw,

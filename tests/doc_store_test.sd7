@@ -224,6 +224,13 @@ const proc: main is func
     setVersion(doc, "a \8; b", 1);
     check("a non-ASCII character under the cursor answers nothing",
           wordAt(doc, 0, 2).word, "");
+    # A backslash is now a TK_OP token in the scanner (scan.sd7 SPECIAL_CHARS includes it),
+    # but doc_store.OP_CHARS deliberately excludes it so hovering a bare backslash answers
+    # nothing. This is the load-bearing asymmetry: merging OP_CHARS into SPECIAL_CHARS would
+    # break this check. Mutation-proved: adding '\\' to OP_CHARS makes this check FAIL.
+    setVersion(doc, "a \\ b", 1);
+    check("a bare backslash under the cursor answers nothing",
+          wordAt(doc, 0, 2).word, "");
     # Two guards in the scanner's pastNumber that no fixture above reaches. The first is the one
     # standing between this rule and a comment leak: '#' after a non-digit must comment,
     # and only the left-neighbour test says so. The second is the truncated buffer a

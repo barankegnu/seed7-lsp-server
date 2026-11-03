@@ -58,8 +58,8 @@ const func integer: firstWidthOf (in string: text) is func
     end if;
   end func;
 
-# The column of the token covering UTF-16 unit `col16` of line 0, or -1. Linear: a test helper
-# does not need tokenAt, which only arrives with Task 8.
+# The column of the token covering UTF-16 unit `col16` of line 0, or -1. A test helper may walk
+# tokens linearly; tokenAt (scan.sd7:438) is the production path and needs no second implementation.
 const func integer: tokenColOf (in string: text, in integer: col16) is func
   result
     var integer: out is -1;
@@ -204,6 +204,28 @@ const proc: main is func
           kindsOf("c<&d[e]"),
           "name 0:0:1 [c] | op 0:1:2 [<&] | name 0:3:1 [d] | bracket 0:4:1 [[] " &
           "| name 0:5:1 [e] | bracket 0:6:1 []]");
+    # ---- backslash as operator character ------------------------------------
+    # tokens.htm 10.2.2 lists 22 special characters including '\\'; scanner.c:357-361 is the
+    # SPECIALCHAR case list and '\\' is on its line 360 (361-364 is `case '|': case '~':` and the
+    # body). Measured: s7 -q -a on 'writeln(1 \\ 2)' reports '")" expected found "\\"'.
+    check("a lone backslash is an operator token, per tokens.htm 10.2.2",
+          kindName(firstKindOf("\\")), "op");
+    check("and it grows a run with its neighbours, as scanner.c does",
+          str(firstWidthOf("\\+ := 3")), "2");
+    check("a backslash inside an unterminated string stays inside the string",
+          kindName(firstKindOf("\"abc \\")), "string");
+    # The mask pin: a based literal followed by a code backslash. A TK_OP is not a hidden kind
+    # (`hiddenKind`, src/scan.sd7:414, lists only TK_STRING, TK_CHAR, TK_COMMENT and
+    # TK_LINE_COMMENT), so maskOf's else branch at :510-511 copies it verbatim rather than
+    # blanking it. What this check does NOT pin: the SPECIAL_CHARS addition above. That same
+    # else branch copies a TK_ILLEGAL backslash verbatim too, so deleting '\\' from SPECIAL_CHARS
+    # leaves this check green -- measured, and the two kind/width checks above it go FAIL in the
+    # same run. It is a guard on the mask's non-hidden path, not on the operator set, and no
+    # mutation of that set reddens it (AGENTS.md: say so out loud rather than let the comment
+    # claim a role the check does not have).
+    check("a backslash in code survives the mask (TK_OP is not hidden)",
+          maskOf("16#beef \\"),
+          "16#beef \\");
     check("a '<' does not absorb the name after it",
           kindsOf("if a<b then"),
           "name 0:0:2 [if] | name 0:3:1 [a] | op 0:4:1 [<] | name 0:5:1 [b] " &

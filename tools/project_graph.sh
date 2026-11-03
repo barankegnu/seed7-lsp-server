@@ -26,8 +26,9 @@
 # shortcut: `for x in $(find ...)` word-splits, so a module path with a space would become two
 #           rows. Upgrade to a `while IFS= read -r` loop (tools/agents_gate.sh) the day one exists.
 # shortcut: the guard checks src/ only, so a tree without src/features still exits 0 -- measured on
-#           such a copy: 16 module rows, 0 feature rows, 21 suite rows of which 7 read
-#           `no src module', and one `find: .../src/features: No such file or directory' on stderr.
+#           such a copy: 16 module rows, 0 feature rows, 22 suite rows of which 6 read
+#           `no src module' (`grep -c "^  make " docs/PROJECT_GRAPH.md` / `grep -c "no src module" docs/PROJECT_GRAPH.md`),
+#           and one `find: .../src/features: No such file or directory' on stderr.
 #           Only tests/graph_test.sh's stderr check reddens that; the feature-row count becomes
 #           `0 -eq 0' and passes, so it is not the guard's backstop. (The old comment claimed the
 #           feature-row count would catch it. It does not.)
@@ -62,7 +63,7 @@ METHOD_RE='msg\.method = "[^"]+"'
 # The artifact's size ceiling, read out of this file by tests/graph_test.sh (one line holds the
 # number, so the generator and the suite cannot drift). A ceiling exists because the graph is only a
 # saving while it is smaller than the reads it replaces: it stands in for walking 28 modules, the 75
-# client->server methods and the 21 suites, and once it costs more to read than that walk it is just
+# client->server methods and the 22 suites, and once it costs more to read than that walk it is just
 # another file to grep. Measured 2026-10-17 at 9 426 bytes / 139 lines for the whole artifact: 7 552
 # through `## reconciliation' plus 1 686 for the suite map, plus the 188-byte header clause `e31ad02' added. Rounded UP to the next 512 so a
 # legitimate one-row addition does not redden the suite. The generator does not enforce it: `make

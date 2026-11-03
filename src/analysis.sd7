@@ -14,31 +14,16 @@ const type: lspDiag is new struct
 const type: analysisResult is new struct
     var boolean: completed is FALSE;
     var array lspDiag: diags is 0 times lspDiag.value;
+    # What collectDiags dropped, so the drop can be SAID: how many errors named an included file
+    # rather than this document, and the first such file. `diags' is the narrower answer and these
+    # two are its disclosure, carried out to the publisher because a notification is the
+    # dispatcher's to send, not the analyzer's (invariant 4: analysis knows nothing about LSP).
+    var integer: foreignDropped is 0;
+    var string: foreignFile is "";
   end struct;
 
 const func string: driverFor (in string: path) is
   return "$ include \"seed7_05.s7i\";\n  include " <& literal(path) <& ";\n";
-
-# The diagnostics half of an already-parsed `program`. The parse is the expensive part
-# (it builds the whole stdlib), and one parse can also answer the symbol half.
-# analyzeAll is the only caller and the only entry point this server has.
-const proc: collectDiags (in program: prog, inout analysisResult: res) is func
-  local
-    var parseError: err is parseError.value;
-    var integer: i is 0;
-    var lspDiag: diag is lspDiag.value;
-  begin
-    res.completed := TRUE;
-    for i range 1 to errorCount(prog) do
-      err := getError(prog, i);
-      diag.line1 := err.lineNumber;
-      diag.column1 := err.columnNumber;
-      diag.message := err.message;
-      diag.errKind := err.error;
-      diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
-      res.diags &:= diag;
-    end for;
-  end func;
 
 # Reflection's file for anything declared in the text handed to parseStri -- every buffer
 # the editor owns. Included libraries keep their real absolute path, so this is what tells a
@@ -55,6 +40,55 @@ const func boolean: isBufferFile (in string: fname, in string: docPath) is func
     var boolean: out is FALSE;
   begin
     out := fname = BUFFER_FILE or fname = docPath;
+  end func;
+
+# Both of these sit ABOVE collectDiags, which is their second reader, because a Seed7
+# func cannot call something declared later in the file (AGENTS.md, "Declare before use").
+
+# The diagnostics half of an already-parsed `program`. The parse is the expensive part
+# (it builds the whole stdlib), and one parse can also answer the symbol half.
+# analyzeAll is the only caller and the only entry point this server has.
+#
+# `isBufferFile' on the ERROR's file, not just on a declaration's: a parse of a buffer also
+# analyses everything it includes, and an error in one of those files arrives named with that
+# file and counting ITS lines. Landing it on the open buffer publishes a squiggle over a line
+# that holds nothing wrong, so a foreign error is dropped here rather than re-anchored -- and
+# counted, with its file kept, because the dropped error is the only text that named the file
+# holding the real defect: what survives it is a cascade anchored on the include line. The
+# other half of the same predicate is what keeps an open `.s7i' talking: for that buffer
+# `docPath' IS the library, so its own errors (and the wrapper's) still reach the client.
+#
+# Known limit, recorded and not handled: `parseError.fileName' defaults to "" (progs.s7i:498) and
+# an empty name is foreign to every docPath, so such an error is dropped and counted with no file
+# to name. No errorType this server reaches produces one -- the reviewer probed 11 -- and
+# inventing a spelling for an unobserved case is a guess, not a guard.
+const proc: collectDiags (in program: prog, inout analysisResult: res,
+                          in string: docPath) is func
+  local
+    var parseError: err is parseError.value;
+    var integer: i is 0;
+    var lspDiag: diag is lspDiag.value;
+  begin
+    res.completed := TRUE;
+    for i range 1 to errorCount(prog) do
+      err := getError(prog, i);
+      if isBufferFile(err.fileName, docPath) then
+        diag.line1 := err.lineNumber;
+        diag.column1 := err.columnNumber;
+        diag.message := err.message;
+        diag.errKind := err.error;
+        diag.atEof := err.message <> "" and pos(err.message, "END OF FILE") <> 0;
+        res.diags &:= diag;
+      else
+        # Belongs to an included file, not to this document. `foreignFile' keeps the first NAME it
+        # sees -- an empty one, the limit above, does not claim the slot -- so one included file
+        # erroring four times is disclosed as four errors in that file, never as four files.
+        res.foreignDropped +:= 1;
+        if res.foreignFile = "" then
+          res.foreignFile := err.fileName;
+        end if;
+      end if;
+    end for;
   end func;
 
 # One name visible inside a routine's own scope: a parameter, a local constant, a local
@@ -360,7 +394,7 @@ const func docAnalysis: analyzeAll (in string: text,
     var program: prog is program.EMPTY;
   begin
     prog := parseStri(text, parseOptions.value, libraryDirs);
-    collectDiags(prog, out.parsed);
+    collectDiags(prog, out.parsed, docPath);
     block
       collectSyms(prog, out.syms, docPath);
     exception

@@ -3,7 +3,7 @@ $ include "seed7_05.s7i";
 
 # Seed7's block structure, read off the token stream. The construct inventory is
 # seed7-mode.el's seed7-block-start-regexp / seed7-block-end-regexp cross-checked against
-# manual/stats.htm 5 and decls.htm 3.2. A construct keyword inside a comment or a string cannot
+# manual/stats.htm 4 and decls.htm 3.2. A construct keyword inside a comment or a string cannot
 # reach this, because those are TK_COMMENT/TK_STRING tokens and never TK_NAME -- which is why
 # this file reads the scanner and not the source lines.
 #
@@ -283,7 +283,7 @@ const proc: walkRegions (in string: text, inout array blockRef: out,
 # region, taken here once per control window and remembered. It counts clauses NESTED inside the
 # window, not only the ones whose own enclosing control is `control': a clause two levels down sits
 # in this window too, and leaving it out changes which clauses are emitted -- measured, the
-# direct-owner tally dropped a clause region in 86 of the 344 corpus files (lib/ar.s7i lost 175-184).
+# direct-owner tally dropped a clause region in 86 of the 344 corpus files (measured 2026-10-31 against the then-344-file corpus; lib/ar.s7i lost 175-184).
 # Pinned inside `make test' by the `while TRUE do' fixture in tests/blocks_test.sd7, which reddens
 # when this counts direct owners only; tools/regions_gate.sh carries the corpus side of that claim.
 # ponytail: one scan of `clauses' per DISTINCT control window, memoised in `tally' below. Measured

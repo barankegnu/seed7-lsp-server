@@ -57,7 +57,7 @@ should be said so out loud.
 A green check on a fixture the product never produces is decorative the same way, and no mutation of
 production code will tell you. When a check pins a position, a range or an offset, measure the corpus
 for its shape and give the fixture that shape: the disclosure telling the user their unsaved library
-edits are invisible was pinned against a library whose first line held a declaration, while all 266
+edits are invisible was pinned against a library whose first line held a declaration, while all 267
 `lib/*.s7i` (recursive; `find ~/seed7/lib -name '*.s7i' | wc -l`) begin with an empty line — so its
 range collapsed to zero width on every real input and the suite stayed green. The story and the
 measurement: *The disclosure, and what pins it* in `docs/seed7-cli.md`.

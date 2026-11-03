@@ -10,7 +10,7 @@
 # could not find. That is a positive control, not a coverage claim: the name comes from the
 # scanner, so a zero is a bug in the index rather than a missing fixture.
 #
-# Not wired into `make test`, and it must not be: it shells out over 340 files and takes
+# Not wired into `make test`, and it must not be: it shells out over 345 files and takes
 # minutes. Run it when scan.sd7, occurrences.sd7 or utf8bytes.sd7 changes.
 #
 #   sh tools/corpus_scan.sh [SEED7_DIR]        # default /home/username/seed7

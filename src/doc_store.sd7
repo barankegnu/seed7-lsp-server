@@ -330,7 +330,7 @@ const func integer: charIndexOf (in lsDoc: doc, in integer: line0,
 # - TK_ILLEGAL: a non-ASCII character under the cursor is one illegal token in the
 #   scanner, but the old machine returned nothing for it. Hovering a control character
 #   should not offer a one-character word.
-# - Operators whose first character is not in OP_CHARS: `.`, `$` and `` ` `` are special
+# - Operators whose first character is not in OP_CHARS: `.`, `$`, `` ` `` and `\` are special
 #   characters per manual/tokens.htm 10.2.2 and the scanner recognizes them as tokens,
 #   but the old machine's OP_CHARS excluded them. `.` is a declared operator with 79
 #   overloads in the base program, so this suppression is a known loss, not a rule about
@@ -353,7 +353,7 @@ const func wordRef: wordAt (in lsDoc: doc, in integer: line0,
       tk := tokenAt(doc.text, idx);
       if tk.start > 0 and not hiddenKind(tk.kind) and tk.kind <> TK_ILLEGAL then
         if tk.kind = TK_OP and not opChar(doc.text[tk.start]) then
-          (* `.`, `$`, `` ` ``: suppressed per the comment above *)
+          (* `.`, `$`, `` ` ``, `\`: suppressed per the comment above *)
         else
           out.word := doc.text[tk.start .. tk.stop];
           out.line1 := succ(tk.line0);

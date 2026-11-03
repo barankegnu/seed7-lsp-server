@@ -310,6 +310,20 @@ const func array lspDiag: discloseStaleLibrary (in array lspDiag: mapped,
     end if;
   end func;
 
+# The OTHER thing a publish can owe the user. `collectDiags' drops every error that names an
+# included file, and what survives is a cascade anchored on the include line: correctly placed,
+# and silent about the file that holds the cause. So the count and that file go out as a
+# window/logMessage BEFORE the diagnostics they explain -- the references/selectionRange route.
+# Not a second synthetic Information diagnostic: LIB_STALE_MESSAGE's one-diagnostic-per-publish
+# shape stays reserved for the R-F10 case it describes, and a diagnostic is anchored on a line of
+# this document, which is exactly what a foreign error has none of. Pure, so a unit suite can pin
+# the sentence: one spelling for 1 and N, with the path named as the FIRST, so four errors in one
+# included file cannot read as four files.
+const func string: foreignDropMessage (in integer: dropped, in string: fname) is
+  return "diagnostics: dropped " <& str(dropped) <&
+         " analyzer error(s) that name an included file rather than" <&
+         " the document being edited; the first is " <& fname;
+
 const proc: refresh (in string: uri) is func
   local
     var analysisResult: a is analysisResult.value;
@@ -322,6 +336,11 @@ const proc: refresh (in string: uri) is func
       a := analyzeDocument(uri);
       mapped := mapDiagnostics(a.diags, MAX_DIAGNOSTICS);
       buf := openDocs[uri];
+      # Once per publish, and before the list it explains -- the log-before-answer order the
+      # references and selectionRange disclosures keep.
+      if a.foreignDropped > 0 then
+        logMessage(MSG_INFO, foreignDropMessage(a.foreignDropped, a.foreignFile));
+      end if;
       publish(uri, buf, discloseStaleLibrary(mapped, uri, buf));
     end if;
   end func;
@@ -364,6 +383,7 @@ const proc: handle (in rpcMsg: msg) is func
     var refsAnswer: refs is refsAnswer.value;
     var prepareAnswer: prep is prepareAnswer.value;
     var renameAnswer: ren is renameAnswer.value;
+    var selAnswer: sel is selAnswer.value;
     var string: newName is "";
     var jsonValue: folders is jsonValue.value;
     var jsonValue: rootUriVal is jsonValue.value;
@@ -537,7 +557,12 @@ const proc: handle (in rpcMsg: msg) is func
     elsif msg.method = "textDocument/selectionRange" then
       uri := uriOfRequest(msg);
       if uri <> "" and uri in openDocs then
-        sendResult(msg, selectionResult(openDocs[uri], atKey(msg.params, "positions")));
+        sel := selectionResult(openDocs[uri], atKey(msg.params, "positions"));
+        # The disclosure goes out before the answer it describes, mirroring references.
+        if sel.truncated then
+          logMessage(MSG_INFO, sel.why);
+        end if;
+        sendResult(msg, sel.json);
       else
         sendResult(msg, "[]");
       end if;

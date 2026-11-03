@@ -24,7 +24,7 @@ TESTS   := jsonw uris utf8bytes scan occurrences keywords blocks folding selecti
 # Suites that are a shell script rather than an s7 program. There is ONE test-% rule below: with
 # two same-stem pattern rules, which one matches depends on file order and on what already exists,
 # so a suite can silently stop running while `make test` prints green lines (ledger R1).
-TESTS_SH := agents graph
+TESTS_SH := agents graph figures
 
 .PHONY: test graph server build build-debug clean-build $(addprefix test-,$(TESTS) $(TESTS_SH)) transcript
 

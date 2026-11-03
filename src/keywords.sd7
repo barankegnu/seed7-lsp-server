@@ -47,11 +47,11 @@ const func boolean: isKeyword (in string: nm) is func
   end func;
 
 # THE COMPLETION CANDIDATES, first half: the 39 words features/completion.sd7 has always
-# offered (copied from ~/seed7-mode/seed7-mode.el's seed7--statement-enclosing-keywords and
-# seed7--declaration-intro-keywords), kept verbatim so its two pinned checks cannot go
-# red. A typist's vocabulary, not the gate: it overlaps (while is in both), it keeps legal names
-# the gate does not refuse (type, proc, result, enum, nested, out), and it omits gate words
-# nobody types (conj, elem, key, len).
+# offered. A hand-picked typist's vocabulary cross-checked against seed7-mode.el's three keyword
+# lists (seed7--statement-enclosing-keywords, seed7--declaration-intro-keywords,
+# seed7--in-middle-statement-keywords): 9 of the 39 (by, end, interface, is, nested, new, out,
+# return, type) are in none of those lists, and 20 entries from them (11 single-word plus 9
+# 'end <word>' forms) are not in the 39. The list is not a copy of any one source.
 const array string: CANDIDATES_BASE is
   []("attr", "block", "by", "case", "catch", "const", "do", "else", "elsif", "end", "enum",
      "exception", "for", "func", "global", "if", "in", "inout", "interface", "is", "local",

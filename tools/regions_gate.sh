@@ -4,8 +4,8 @@
 # It prints the ANSWER, not a verdict: one line per Seed7 source file,
 #   <path>\t<region count>\t<start-end[:kind] ...>
 # for every `lib/*.s7i` and `prg/*.sd7` in the Seed7 checkout. The value is the diff between two
-# runs: a refactor of the post-passes in `src/blocks.sd7` may move no answer, and 344 real files
-# (24 981 055 bytes of source -- `LC_ALL=C wc -c ~/seed7/lib/*.s7i ~/seed7/prg/*.sd7 | tail -1', the
+# runs: a refactor of the post-passes in `src/blocks.sd7` may move no answer, and 345 real files
+# (24 995 434 bytes of source -- `LC_ALL=C wc -c ~/seed7/lib/*.s7i ~/seed7/prg/*.sd7 | tail -1', the
 # same two globs the run below passes; 4 881 regions in the worst one, prg/chkarr.sd7) is the widest
 # such check this tree can build. The regions come from `blockRegions` in `src/blocks.sd7` itself --
 # a retyped copy would gate a machine the server does not have.
@@ -22,7 +22,7 @@
 # trace to STDOUT -- the artifact's own stream -- which is how the first run of this gate came to
 # have five trace lines appended to it.
 #
-# The 215 `lib/*.s7i` and 129 `prg/*.sd7` files are otherwise valid UTF-8; nothing here opens an
+# The 216 `lib/*.s7i` and 129 `prg/*.sd7` files are otherwise valid UTF-8; nothing here opens an
 # undecodable file without the catch above.
 #
 # lastLine is computed the way `tests/blocks_test.sd7` computes it -- pred(linesIn(text)) over the
